@@ -103,7 +103,9 @@ T4 → T5
 **Gate**: full
 **Commit**: `feat(demo): build interactive CRM interface`
 
-### T3: Empacotar a aplicação
+### T3: Empacotar a aplicação ✅
+
+**Status**: Complete — imagem construída, processo não privilegiado e healthcheck `healthy` em 2026-08-17.
 
 **What**: Definir uma imagem pequena e não privilegiada para executar o servidor do protótipo.
 **Where**: `Dockerfile`
@@ -118,10 +120,10 @@ T4 → T5
 
 **Done when**:
 
-- [ ] A imagem copia apenas os arquivos necessários.
-- [ ] O processo executa como usuário não privilegiado.
-- [ ] A imagem declara healthcheck para `/health`.
-- [ ] A construção termina com código zero.
+- [x] A imagem copia apenas os arquivos necessários.
+- [x] O processo executa como usuário não privilegiado.
+- [x] A imagem declara healthcheck para `/health`.
+- [x] A construção termina com código zero.
 
 **Tests**: build + health
 **Gate**: build
