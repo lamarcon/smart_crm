@@ -187,7 +187,9 @@ T5 → T6 → T7 → T8
 **Gate**: build
 **Commit**: `docs: explain local CRM prototype`
 
-### T6: Preparar a suíte de navegador
+### T6: Preparar a suíte de navegador ✅
+
+**Status**: Complete — dependências instaladas e Chrome headless iniciado pelo Playwright em 2026-08-17.
 
 **What**: Declarar o Playwright, o comando de testes e as exclusões de artefatos locais necessárias para uma suíte reproduzível.
 **Where**: `package.json`
@@ -202,9 +204,9 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] A dependência de desenvolvimento e o script `test` estão declarados.
-- [ ] O lockfile está versionável e `node_modules`/caches estão ignorados.
-- [ ] O Playwright pode abrir o Chrome local em modo headless.
+- [x] A dependência de desenvolvimento e o script `test` estão declarados.
+- [x] O lockfile está versionável e `node_modules`/caches estão ignorados.
+- [x] O Playwright pode abrir o Chrome local em modo headless.
 
 **Tests**: toolchain smoke
 **Gate**: quick

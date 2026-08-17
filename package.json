@@ -1,0 +1,16 @@
+{
+  "name": "smart-crm-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Testes de navegador para o protótipo local do Smart CRM",
+  "scripts": {
+    "test": "node tests/ui-prototype.spec.cjs",
+    "test:ui": "node tests/ui-prototype.spec.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
