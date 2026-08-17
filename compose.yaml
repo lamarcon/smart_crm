@@ -1,0 +1,16 @@
+name: smart-crm-demo
+
+services:
+  crm:
+    build:
+      context: .
+    image: smart-crm-demo:local
+    init: true
+    ports:
+      - "${SMART_CRM_PORT:-8080}:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

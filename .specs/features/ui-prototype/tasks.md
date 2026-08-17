@@ -129,7 +129,9 @@ T4 → T5
 **Gate**: build
 **Commit**: `build(demo): add application container`
 
-### T4: Configurar a execução local
+### T4: Configurar a execução local ✅
+
+**Status**: Complete — Compose válido, serviço `healthy` e respostas HTTP 200 em `localhost:8080` em 2026-08-17.
 
 **What**: Publicar o container em `localhost:8080` sem banco ou dependências externas.
 **Where**: `compose.yaml`
@@ -144,10 +146,10 @@ T4 → T5
 
 **Done when**:
 
-- [ ] `docker compose config` é válido.
-- [ ] O serviço sobe em segundo plano.
-- [ ] `/health` e `/` respondem em `localhost:8080`.
-- [ ] O gate Build termina com código zero.
+- [x] `docker compose config` é válido.
+- [x] O serviço sobe em segundo plano.
+- [x] `/health` e `/` respondem em `localhost:8080`.
+- [x] O gate Build termina com código zero.
 
 **Tests**: configuration + runtime
 **Gate**: build
