@@ -89,22 +89,22 @@ O cliente precisa visualizar rapidamente como o Smart CRM poderá funcionar ante
 
 | Requirement | Task | Status |
 | --- | --- | --- |
-| DEMO-01 | T4, T5 | Complete |
-| DEMO-02 | T1, T3, T4 | Complete |
-| DEMO-03 | T2 | Complete |
-| DEMO-04 | T2 | Complete |
-| DEMO-05 | T2 | Complete |
-| DEMO-06 | T2 | Complete |
-| DEMO-07 | T2 | Complete |
-| DEMO-08 | T2 | Complete |
-| DEMO-09 | T2 | Complete |
-| DEMO-10 | T2 | Complete |
-| DEMO-11 | T2 | Complete |
-| DEMO-12 | T2 | Complete |
-| DEMO-13 | T2 | Complete |
-| DEMO-14 | T2 | Complete |
-| DEMO-15 | T2, T5 | Complete |
-| DEMO-16 | T2 | Complete |
+| DEMO-01 | T4, T5, T8 | Needs Fix |
+| DEMO-02 | T1, T3, T4, T8 | Verified |
+| DEMO-03 | T2, T7 | Needs Fix |
+| DEMO-04 | T2, T7 | Needs Fix |
+| DEMO-05 | T2, T7 | Needs Fix |
+| DEMO-06 | T2, T7 | Needs Fix |
+| DEMO-07 | T2, T7 | Needs Fix |
+| DEMO-08 | T2, T7 | Needs Fix |
+| DEMO-09 | T2, T7 | Needs Fix |
+| DEMO-10 | T2, T7 | Needs Fix |
+| DEMO-11 | T2, T7 | Needs Fix |
+| DEMO-12 | T2, T7 | Needs Fix |
+| DEMO-13 | T2, T7 | Needs Fix |
+| DEMO-14 | T2, T7 | Needs Fix |
+| DEMO-15 | T2, T5, T7 | Needs Fix |
+| DEMO-16 | T2, T7 | Needs Fix |
 
 ## Success Criteria
 

@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 4,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "surviving_mutant::include behavior level ui tests in the full gate so automation condition mutants fail",
+      "text": "Include behavior-level UI tests in the Full gate so automation condition mutants fail",
+      "signal": "surviving_mutant",
+      "scope": "ui-tests",
+      "status": "candidate",
+      "features": [
+        "ui-prototype"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md mutation 2 (ui-tests)"
+      ],
+      "created": "2026-08-17T20:30:29Z",
+      "last_seen": "2026-08-17T20:30:29Z"
+    },
+    {
+      "id": "L-002",
+      "key": "ac_gap::persist executable browser assertions for every interactive acceptance criterion before closing a ui feature",
+      "text": "Persist executable browser assertions for every interactive acceptance criterion before closing a UI feature",
+      "signal": "ac_gap",
+      "scope": "ui-tests",
+      "status": "candidate",
+      "features": [
+        "ui-prototype"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "DEMO-03-DEMO-16 (ui-tests)"
+      ],
+      "created": "2026-08-17T20:30:29Z",
+      "last_seen": "2026-08-17T20:30:29Z"
+    },
+    {
+      "id": "L-003",
+      "key": "ac_gap::seed an off team record when testing role based visibility boundaries",
+      "text": "Seed an off-team record when testing role-based visibility boundaries",
+      "signal": "ac_gap",
+      "scope": "permissions",
+      "status": "candidate",
+      "features": [
+        "ui-prototype"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "DEMO-14 (permissions)"
+      ],
+      "created": "2026-08-17T20:30:29Z",
+      "last_seen": "2026-08-17T20:30:29Z"
+    }
+  ]
+}

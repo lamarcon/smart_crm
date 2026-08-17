@@ -9,14 +9,14 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/ui-prototype/design.md`  
-**Status**: Done
+**Status**: In Progress — remediation after independent validation
 
 ## Test Coverage Matrix
 
 | Code layer | Required test | Evidence |
 | --- | --- | --- |
 | Python HTTP server | self-test | `server.py --self-test` |
-| Static UI and browser state | structural + browser smoke | self-test markers and visual walkthrough |
+| Static UI and browser state | Playwright browser regression + visual smoke | checked-in assertions and visual walkthrough |
 | Container image | build + health | `docker build` and `/health` |
 | Compose wiring | configuration + runtime | `docker compose config` and HTTP checks |
 | Documentation | command verification | commands copied from README run successfully |
@@ -24,8 +24,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ## Gate Check Commands
 
 - **Quick**: `python app/server.py --self-test`
-- **Full**: `python app/server.py --self-test` followed by JavaScript syntax verification extracted from `app/static/index.html`
-- **Build**: `docker compose config`, `docker compose build`, `docker compose up -d` and HTTP checks for `/health` and `/`
+- **Full**: `python app/server.py --self-test` followed by `pnpm test`
+- **Build**: `python scripts/verify_demo.py` followed by `pnpm test`
 
 ## Execution Plan
 
@@ -45,6 +45,12 @@ T2 → T3 → T4
 
 ```text
 T4 → T5
+```
+
+### Phase 4: Validation remediation
+
+```text
+T5 → T6 → T7 → T8
 ```
 
 ## Task Breakdown
@@ -181,12 +187,84 @@ T4 → T5
 **Gate**: build
 **Commit**: `docs: explain local CRM prototype`
 
+### T6: Preparar a suíte de navegador
+
+**What**: Declarar o Playwright, o comando de testes e as exclusões de artefatos locais necessárias para uma suíte reproduzível.
+**Where**: `package.json`
+**Depends on**: T5
+**Reuses**: Chrome instalado no ambiente local
+**Requirement**: DEMO-03–DEMO-16
+
+**Tools**:
+
+- MCP: package manager
+- Skill: `tlc-spec-driven`
+
+**Done when**:
+
+- [ ] A dependência de desenvolvimento e o script `test` estão declarados.
+- [ ] O lockfile está versionável e `node_modules`/caches estão ignorados.
+- [ ] O Playwright pode abrir o Chrome local em modo headless.
+
+**Tests**: toolchain smoke
+**Gate**: quick
+**Commit**: `test(demo): add browser test toolchain`
+
+### T7: Corrigir e testar os fluxos interativos
+
+**What**: Restringir o Gestor à sua equipe e persistir asserções de navegador para todos os comportamentos DEMO-03 a DEMO-16.
+**Where**: `app/static/index.html`
+**Depends on**: T6
+**Reuses**: massa fictícia, fluxos e seletores acessíveis já implementados
+**Requirement**: DEMO-03–DEMO-16
+
+**Tools**:
+
+- MCP: Playwright
+- Skill: `tlc-spec-driven`
+
+**Done when**:
+
+- [ ] Administrador vê tudo e Gestor não vê o registro fora da equipe Vendas CMS.
+- [ ] A suíte cobre navegação, busca, CRUD, recarga, restauração, Pipelines, conversão, Faturando, orçamento, perfis, aviso e viewport móvel.
+- [ ] As conjunções de conversão, Faturando e orçamento validam o payload completo.
+- [ ] O gate Full termina com código zero.
+
+**Tests**: browser regression
+**Gate**: full
+**Commit**: `test(demo): cover interactive CRM flows`
+
+### T8: Automatizar o gate do Compose
+
+**What**: Criar um verificador que constrói e sobe o Compose, aguarda saúde e afirma porta, payload e documento raiz.
+**Where**: `scripts/verify_demo.py`
+**Depends on**: T7
+**Reuses**: `compose.yaml` e `/health`
+**Requirement**: DEMO-01, DEMO-02
+
+**Tools**:
+
+- MCP: Docker Compose CLI
+- Skill: `tlc-spec-driven`
+
+**Done when**:
+
+- [ ] Configuração, build e startup retornam sucesso.
+- [ ] A rota de saúde possui o payload exato esperado.
+- [ ] A raiz responde HTTP 200 e contém o marcador do Smart CRM.
+- [ ] O gate Build termina com código zero.
+
+**Tests**: integration gate
+**Gate**: build
+**Commit**: `test(demo): automate compose acceptance gate`
+
 ## Phase Execution Map
 
 ```text
 Phase 1: T1 → T2
 Phase 2:      T2 → T3 → T4
 Phase 3:                T4 → T5
+Phase 4:                     T5 → T6 → T7 → T8
 ```
 
 ## Task Granularity Check
@@ -198,6 +276,9 @@ Phase 3:                T4 → T5
 | T3 | uma definição de imagem | Granular |
 | T4 | uma definição Compose | Granular |
 | T5 | um documento de uso | Granular |
+| T6 | uma configuração de ferramenta de teste | Coeso |
+| T7 | uma correção de permissão com sua suíte de regressão | Coeso por dependência de teste |
+| T8 | um verificador de integração | Granular |
 
 ## Diagram-Definition Cross-Check
 
@@ -208,6 +289,9 @@ Phase 3:                T4 → T5
 | T3 | T2 | T2 → T3 | Match |
 | T4 | T3 | T3 → T4 | Match |
 | T5 | T4 | T4 → T5 | Match |
+| T6 | T5 | T5 → T6 | Match |
+| T7 | T6 | T6 → T7 | Match |
+| T8 | T7 | T7 → T8 | Match |
 
 ## Test Co-location Validation
 
@@ -218,3 +302,6 @@ Phase 3:                T4 → T5
 | T3 | imagem | build + health | build + health | OK |
 | T4 | Compose | configuration + runtime | configuration + runtime | OK |
 | T5 | documentação | command verification | command verification | OK |
+| T6 | test toolchain | toolchain smoke | toolchain smoke | OK |
+| T7 | interface | browser regression | browser regression | OK |
+| T8 | Compose | integration gate | integration gate | OK |
