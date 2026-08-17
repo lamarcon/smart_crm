@@ -353,7 +353,8 @@
         { id: 'N-16311', title: 'Renovação ALS Pharma', company: 'ALS Pharma', contact: 'Giovani Oliveira', amount: 32700, stage: 'Negociação Revisão', responsibleId: 'u-vitor', assistants: [], updatedAt: 'Há 42 min', quotes: [] },
         { id: 'N-16310', title: 'Projeto Solvitta 2026', company: 'Solvitta', contact: 'Marina Ferreira', amount: 78200, stage: 'Pedido aprovado Consultar', responsibleId: 'u-vitor', assistants: ['u-camila'], updatedAt: 'Hoje, 08:45', quotes: [] },
         { id: 'N-16309', title: 'Expansão Open Analítica', company: 'Open Analítica', contact: 'Gisele Bertolini', amount: 21600, stage: 'Em Contato', responsibleId: 'u-paula', assistants: [], updatedAt: 'Ontem, 17:20', quotes: [] },
-        { id: 'N-16308', title: 'Licenças Biocare', company: 'Biocare Farmacêutica', contact: 'João Vilela', amount: 19400, stage: 'Ganho', responsibleId: 'u-paula', assistants: ['u-camila'], updatedAt: '15 ago, 15:12', quotes: [] }
+        { id: 'N-16308', title: 'Licenças Biocare', company: 'Biocare Farmacêutica', contact: 'João Vilela', amount: 19400, stage: 'Ganho', responsibleId: 'u-paula', assistants: ['u-camila'], updatedAt: '15 ago, 15:12', quotes: [] },
+        { id: 'N-16307', title: 'Conferência fiscal interna', company: 'Smart CRM Demo', contact: 'Equipe Financeira', amount: 8500, stage: 'Faturando', responsibleId: 'u-billing', team: 'Faturamento', assistants: [], updatedAt: '15 ago, 09:10', quotes: [] }
       ],
       notifications: [
         { id: 'NT-3', userId: 'u-admin', text: 'Novo Lead recebido pelo formulário do Site.', detail: 'Larissa Spinola — UNAERP', time: 'Há 9 min', read: false },
@@ -386,7 +387,9 @@
     function nextId(prefix, items) { return `${prefix}-${Math.max(0, ...items.map(item => Number(String(item.id).split('-')[1]) || 0)) + 1}`; }
     function canSee(record) {
       const user = currentUser();
-      if (user.role === 'Administrador' || user.role === 'Gestor') return true;
+      if (user.role === 'Administrador') return true;
+      const responsibleTeam = state.users.find(candidate => candidate.id === record.responsibleId)?.team;
+      if (user.role === 'Gestor') return (record.team || responsibleTeam) === user.team;
       return record.responsibleId === user.id || (record.assistants || []).includes(user.id);
     }
     function visibleLeads() { return state.leads.filter(canSee); }
@@ -577,6 +580,7 @@
       const existing = form.dataset.id ? state[collection].find(item => item.id === form.dataset.id) : null;
       if (data.assistants !== undefined) data.assistants = data.assistants ? [data.assistants] : [];
       if (data.amount !== undefined) data.amount = Number(data.amount);
+      if (['lead', 'deal'].includes(entity)) data.team = state.users.find(user => user.id === data.responsibleId)?.team || currentUser().team;
       if (existing) Object.assign(existing, data, { updatedAt: 'Agora' });
       else {
         const base = { id: nextId(prefixes[entity], state[collection]) };
@@ -608,6 +612,7 @@
       const deal = {
         id: nextId('N', state.deals), title: `Oportunidade ${lead.company}`, company: lead.company,
         contact: lead.name, amount: 0, stage: 'Em Contato', responsibleId: lead.responsibleId,
+        team: lead.team || state.users.find(user => user.id === lead.responsibleId)?.team,
         assistants: [...(lead.assistants || [])], updatedAt: 'Agora', quotes: []
       };
       state.deals.unshift(deal);
@@ -630,6 +635,7 @@
       let message = `Negócio movido para ${stage}.`;
       if (stage === 'Faturando') {
         deal.responsibleId = 'u-billing';
+        deal.team = 'Faturamento';
         notify('Responsabilidade alterada automaticamente.', `${deal.id} agora está com Equipe Faturamento`, 'u-billing');
         if (state.currentUserId !== 'u-billing') {
           notify('Automação de Faturamento executada.', `${deal.id} foi atribuído à Equipe Faturamento`);

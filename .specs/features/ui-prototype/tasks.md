@@ -212,7 +212,9 @@ T5 → T6 → T7 → T8
 **Gate**: quick
 **Commit**: `test(demo): add browser test toolchain`
 
-### T7: Corrigir e testar os fluxos interativos
+### T7: Corrigir e testar os fluxos interativos ✅
+
+**Status**: Complete — 15 testes de navegador aprovados em Chrome headless em 2026-08-17.
 
 **What**: Restringir o Gestor à sua equipe e persistir asserções de navegador para todos os comportamentos DEMO-03 a DEMO-16.
 **Where**: `app/static/index.html`
@@ -227,10 +229,10 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Administrador vê tudo e Gestor não vê o registro fora da equipe Vendas CMS.
-- [ ] A suíte cobre navegação, busca, CRUD, recarga, restauração, Pipelines, conversão, Faturando, orçamento, perfis, aviso e viewport móvel.
-- [ ] As conjunções de conversão, Faturando e orçamento validam o payload completo.
-- [ ] O gate Full termina com código zero.
+- [x] Administrador vê tudo e Gestor não vê o registro fora da equipe Vendas CMS.
+- [x] A suíte cobre navegação, busca, CRUD, recarga, restauração, Pipelines, conversão, Faturando, orçamento, perfis, aviso e viewport móvel.
+- [x] As conjunções de conversão, Faturando e orçamento validam o payload completo.
+- [x] O gate Full termina com código zero.
 
 **Tests**: browser regression
 **Gate**: full

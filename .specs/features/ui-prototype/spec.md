@@ -91,20 +91,20 @@ O cliente precisa visualizar rapidamente como o Smart CRM poderá funcionar ante
 | --- | --- | --- |
 | DEMO-01 | T4, T5, T8 | Needs Fix |
 | DEMO-02 | T1, T3, T4, T8 | Verified |
-| DEMO-03 | T2, T7 | Needs Fix |
-| DEMO-04 | T2, T7 | Needs Fix |
-| DEMO-05 | T2, T7 | Needs Fix |
-| DEMO-06 | T2, T7 | Needs Fix |
-| DEMO-07 | T2, T7 | Needs Fix |
-| DEMO-08 | T2, T7 | Needs Fix |
-| DEMO-09 | T2, T7 | Needs Fix |
-| DEMO-10 | T2, T7 | Needs Fix |
-| DEMO-11 | T2, T7 | Needs Fix |
-| DEMO-12 | T2, T7 | Needs Fix |
-| DEMO-13 | T2, T7 | Needs Fix |
-| DEMO-14 | T2, T7 | Needs Fix |
-| DEMO-15 | T2, T5, T7 | Needs Fix |
-| DEMO-16 | T2, T7 | Needs Fix |
+| DEMO-03 | T2, T7 | Implemented — pending re-verification |
+| DEMO-04 | T2, T7 | Implemented — pending re-verification |
+| DEMO-05 | T2, T7 | Implemented — pending re-verification |
+| DEMO-06 | T2, T7 | Implemented — pending re-verification |
+| DEMO-07 | T2, T7 | Implemented — pending re-verification |
+| DEMO-08 | T2, T7 | Implemented — pending re-verification |
+| DEMO-09 | T2, T7 | Implemented — pending re-verification |
+| DEMO-10 | T2, T7 | Implemented — pending re-verification |
+| DEMO-11 | T2, T7 | Implemented — pending re-verification |
+| DEMO-12 | T2, T7 | Implemented — pending re-verification |
+| DEMO-13 | T2, T7 | Implemented — pending re-verification |
+| DEMO-14 | T2, T7 | Implemented — pending re-verification |
+| DEMO-15 | T2, T5, T7 | Implemented — pending re-verification |
+| DEMO-16 | T2, T7 | Implemented — pending re-verification |
 
 ## Success Criteria
 
