@@ -6,10 +6,10 @@ O cliente precisa visualizar rapidamente como o Smart CRM poderá funcionar ante
 
 ## Goals
 
-- [ ] Disponibilizar uma demonstração navegável por Docker Compose.
-- [ ] Representar os módulos e Pipelines já aprovados com dados fictícios.
-- [ ] Permitir experimentar ações locais sem banco de dados.
-- [ ] Comunicar claramente que o ambiente é demonstrativo e não produtivo.
+- [x] Disponibilizar uma demonstração navegável por Docker Compose.
+- [x] Representar os módulos e Pipelines já aprovados com dados fictícios.
+- [x] Permitir experimentar ações locais sem banco de dados.
+- [x] Comunicar claramente que o ambiente é demonstrativo e não produtivo.
 
 ## Out of Scope
 
@@ -89,7 +89,7 @@ O cliente precisa visualizar rapidamente como o Smart CRM poderá funcionar ante
 
 | Requirement | Task | Status |
 | --- | --- | --- |
-| DEMO-01 | T4, T5 | In Progress (T4 complete) |
+| DEMO-01 | T4, T5 | Complete |
 | DEMO-02 | T1, T3, T4 | Complete |
 | DEMO-03 | T2 | Complete |
 | DEMO-04 | T2 | Complete |
@@ -103,13 +103,13 @@ O cliente precisa visualizar rapidamente como o Smart CRM poderá funcionar ante
 | DEMO-12 | T2 | Complete |
 | DEMO-13 | T2 | Complete |
 | DEMO-14 | T2 | Complete |
-| DEMO-15 | T2, T5 | In Progress (T2 complete) |
+| DEMO-15 | T2, T5 | Complete |
 | DEMO-16 | T2 | Complete |
 
 ## Success Criteria
 
-- [ ] O ambiente sobe com Docker Compose sem banco configurado.
-- [ ] Todos os módulos demonstrativos são navegáveis.
-- [ ] Os fluxos de Lead, Negócio, orçamento e notificação podem ser experimentados.
-- [ ] O seletor de perfil altera a visibilidade percebida.
-- [ ] O protótipo permanece utilizável em desktop e dispositivo móvel.
+- [x] O ambiente sobe com Docker Compose sem banco configurado.
+- [x] Todos os módulos demonstrativos são navegáveis.
+- [x] Os fluxos de Lead, Negócio, orçamento e notificação podem ser experimentados.
+- [x] O seletor de perfil altera a visibilidade percebida.
+- [x] O protótipo permanece utilizável em desktop e dispositivo móvel.

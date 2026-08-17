@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/ui-prototype/design.md`  
-**Status**: Approved
+**Status**: Done
 
 ## Test Coverage Matrix
 
@@ -155,7 +155,9 @@ T4 → T5
 **Gate**: build
 **Commit**: `build(demo): add local compose service`
 
-### T5: Documentar uso e limitações
+### T5: Documentar uso e limitações ✅
+
+**Status**: Complete — comandos do README conferidos contra o container saudável em 2026-08-17.
 
 **What**: Explicar como iniciar, acessar, restaurar e encerrar o protótipo e distinguir a demonstração do MVP de produção.
 **Where**: `README.md`
@@ -170,10 +172,10 @@ T4 → T5
 
 **Done when**:
 
-- [ ] Os comandos de início, logs e encerramento estão documentados.
-- [ ] A URL local e a restauração dos dados estão explicadas.
-- [ ] As limitações sem banco, integrações e segurança estão explícitas.
-- [ ] O gate Build permanece verde.
+- [x] Os comandos de início, logs e encerramento estão documentados.
+- [x] A URL local e a restauração dos dados estão explicadas.
+- [x] As limitações sem banco, integrações e segurança estão explícitas.
+- [x] O gate Build permanece verde.
 
 **Tests**: command verification
 **Gate**: build
