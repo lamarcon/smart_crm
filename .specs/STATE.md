@@ -19,3 +19,12 @@
 - **Status**: active
 
 ## Handoff
+
+- **Feature**: Protótipo local do Smart CRM / `.specs/features/ui-prototype`
+- **Phase / Task**: Execute concluído e validado independentemente
+- **Completed**: T1, T2, T3, T4, T5, T6, T7, T8
+- **In-progress** (file:line): none
+- **Next step**: Revisar o protótipo em `http://localhost:8080`; a implementação do MVP de produção com PostgreSQL continua como trabalho futuro.
+- **Blockers**: none
+- **Uncommitted files**: none após o commit final de validação
+- **Branch**: main

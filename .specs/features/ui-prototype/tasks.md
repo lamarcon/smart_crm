@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/ui-prototype/design.md`  
-**Status**: Done — pending independent re-verification
+**Status**: Done — independently verified (16/16 ACs, 22 gates, 2/2 mutants killed)
 
 ## Test Coverage Matrix
 

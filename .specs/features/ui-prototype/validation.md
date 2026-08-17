@@ -1,189 +1,128 @@
-# UI Prototype Validation — FAIL ❌
+# Validation: UI Prototype — PASS ✅
 
-**Date**: 2026-08-17  
-**Spec**: `.specs/features/ui-prototype/spec.md`  
-**Diff range**: `5462aba..HEAD` (`7a5df6b`)  
+**Date**: 2026-08-17
+**Spec**: `.specs/features/ui-prototype/spec.md`
+**Diff range**: `5462aba..HEAD` (`28a0cd1`)
 **Verifier**: independent sub-agent (author ≠ verifier)
+**Re-verification**: fix→re-verify iteration 1
 
-The implementation is not ready to verify. The mandatory Build gate passes, but the feature has no persisted browser-behavior tests for 15 of 16 acceptance criteria. A deliberate break in the Faturando automation survives the declared Full gate.
-
----
+The remediation is ready. The mandatory Build gate passes, all 16 acceptance criteria have spec-matching executable evidence, and both required behavior mutations are killed.
 
 ## Task Completion
 
-| Task | Recorded status | Verification result |
+| Task | Status | Verification |
 | --- | --- | --- |
-| T1 | ✅ Complete | Server self-test passes. |
-| T2 | ✅ Complete | ❌ UI behavior is not covered by executable assertions; a DEMO-12 mutant survives. |
-| T3 | ✅ Complete | Image builds and runs as the non-root `smartcrm` user. |
-| T4 | ✅ Complete | Compose config, startup, health, and root HTTP probes pass. |
-| T5 | ✅ Complete | README commands and limitations match the running service. |
-
----
+| T1 | ✅ Done | Health/static server implementation remains covered by exact HTTP assertions. |
+| T2 | ✅ Done | Interactive UI outcomes are now covered by browser regression tests. |
+| T3 | ✅ Done | The Compose verifier builds the image successfully. |
+| T4 | ✅ Done | Compose starts the service and the localhost HTTP probes pass. |
+| T5 | ✅ Done | The documented default URL and demo limitation markers match the runtime. |
+| T6 | ✅ Done | The checked-in Playwright toolchain launches Chrome headless. |
+| T7 | ✅ Done | All 15 browser cases pass, including the Gestor boundary. |
+| T8 | ✅ Done | The checked-in Compose verifier reports 7 passed checks. |
 
 ## Spec-Anchored Acceptance Criteria
 
-Evidence-or-zero is applied literally: implementation code or an ad hoc browser observation does not replace a checked-in `file:line` assertion. The browser smoke run found no console warnings/errors and confirmed the current seeded UI at desktop and 390×844, but those observations are not regression tests.
-
 | Criterion | Spec-defined outcome | `file:line` + assertion evidence | Result |
 | --- | --- | --- | --- |
-| DEMO-01 | `docker compose up --build` exposes `/` on `localhost:8080`. | Port wiring exists at `compose.yaml:10`; the verifier observed HTTP 200 from `/`. No checked-in assertion starts Compose and asserts host port/root availability. | ❌ GAP |
-| DEMO-02 | Running service returns a healthy response without PostgreSQL or an external service. | `app/server.py:95` — `assert response.status == HTTPStatus.OK`; `app/server.py:96` — `assert health == {"status": "ok", "service": "smart-crm-demo"}`. `compose.yaml:3` declares the sole service. | ✅ PASS |
-| DEMO-03 | First open seeds enough fictitious data for every included module. | Seed data exists at `app/static/index.html:322`, but there is no assertion for first-open state or per-module record sufficiency. | ❌ GAP |
-| DEMO-04 | Sidebar exposes Dashboard, Leads, Contatos, Empresas, Negócios, and Notificações. | Markup exists at `app/static/index.html:236`; browser smoke observed all six destinations. No test asserts the six labels and navigation outcomes. | ❌ GAP |
-| DEMO-05 | Search/filter changes visible records without page reload. | Filtering is implemented at `app/static/index.html:462`, `app/static/index.html:484`, and `app/static/index.html:708`. No test asserts before/after records and unchanged navigation state. | ❌ GAP |
-| DEMO-06 | Create/edit/delete updates the list and related indicators. | Mutation/render paths exist at `app/static/index.html:572`, `app/static/index.html:597`, and `app/static/index.html:419`. No test asserts all three CRUD operations and indicator deltas. | ❌ GAP |
-| DEMO-07 | Reload restores previously manipulated local browser state. | `localStorage` load/save exists at `app/static/index.html:370` and `app/static/index.html:380`. No test mutates, reloads, and asserts restored values. | ❌ GAP |
-| DEMO-08 | Restore replaces local state with the original fictitious data. | Reset exists at `app/static/index.html:680`. No test asserts the restored state equals the original seed after mutation. | ❌ GAP |
-| DEMO-09 | Lead stages are exactly Em contato, Lead descartado, and Lead convertido, with no “Nome” stage. | The stage array is at `app/static/index.html:307`; browser smoke observed the seeded Lead UI. No assertion checks the exact set and forbidden stage. | ❌ GAP |
-| DEMO-10 | Converting a Lead closes it as converted and creates a new Negócio in Em Contato. | Conjunction is implemented at `app/static/index.html:604` through `app/static/index.html:615`. No test asserts both the Lead state and new Negócio payload. | ❌ GAP |
-| DEMO-11 | Negócios expose the nine approved functional stages. | The nine values are at `app/static/index.html:308`; browser smoke observed all nine pipeline labels. No assertion checks exact membership/order/count. | ❌ GAP |
-| DEMO-12 | Entering Faturando assigns a Faturamento member and creates a notification. | Implementation is at `app/static/index.html:626` through `app/static/index.html:641`. No assertion checks both responsibility and notification payload. Mutation `stage === 'Faturando'` → `stage === 'Nunca'` survived the Full gate. | ❌ GAP |
-| DEMO-13 | Quote inputs recalculate `quantity × unit price − discount` and accept optional PDF selection. | Calculation/save paths are at `app/static/index.html:654` through `app/static/index.html:674`. No test asserts the computed value or with/without-PDF payload. | ❌ GAP |
-| DEMO-14 | Switching profiles filters Leads/Negócios by responsibility, team, or Assistant participation. | Seller/Assistant filtering is implemented at `app/static/index.html:387`; browser smoke observed different seeded counts. The Gestor branch returns all records unconditionally at `app/static/index.html:389`, contradicting the Vendas CMS team rule at `.specs/features/ui-prototype/design.md:66`; no off-team assertion detects it. | ❌ FAIL |
-| DEMO-15 | A persistent notice states that data are fictitious and local. | Banner markup exists at `app/static/index.html:249`; browser smoke observed it. No test asserts visibility across every view/state. | ❌ GAP |
-| DEMO-16 | Reduced width keeps navigation and primary actions usable. | Responsive rules are at `app/static/index.html:197`; browser smoke at 390×844 observed the menu, opened navigation, and visible “Novo Lead” action. No checked-in viewport assertion protects the behavior. | ❌ GAP |
+| DEMO-01 | Compose exposes the root document on `localhost:8080`. | `scripts/verify_demo.py:15` defaults the port to 8080; `scripts/verify_demo.py:44`-`scripts/verify_demo.py:46` require config/build/start success; `scripts/verify_demo.py:54` asserts HTTP 200 and `scripts/verify_demo.py:56` asserts the Smart CRM marker. | ✅ PASS |
+| DEMO-02 | The running service returns the exact healthy response without a database or external service. | `scripts/verify_demo.py:49` asserts HTTP 200 and `scripts/verify_demo.py:51` asserts `{"status":"ok","service":"smart-crm-demo"}`; `compose.yaml:3` declares the sole service. | ✅ PASS |
+| DEMO-03 | A fresh browser seeds fictitious records for every included data module. | `tests/ui-prototype.spec.cjs:74`-`tests/ui-prototype.spec.cjs:79` assert non-empty Leads, Contatos, Empresas, Negócios, and Notificações in a fresh browser context. | ✅ PASS |
+| DEMO-04 | The sidebar provides Dashboard/Visão geral, Leads, Contatos, Empresas, Negócios, and Notificações. | `tests/ui-prototype.spec.cjs:83`-`tests/ui-prototype.spec.cjs:90` assert six destinations and the heading reached by each navigation action. | ✅ PASS |
+| DEMO-05 | Search and stage filtering update visible records without leaving the page. | `tests/ui-prototype.spec.cjs:97`-`tests/ui-prototype.spec.cjs:105` assert row-count/content changes for search and filter, while `tests/ui-prototype.spec.cjs:101` asserts the URL is unchanged. | ✅ PASS |
+| DEMO-06 | Create, edit, and delete update the Lead list and related count. | `tests/ui-prototype.spec.cjs:108`-`tests/ui-prototype.spec.cjs:122` assert the count delta, edited name, deletion, and restored count. | ✅ PASS |
+| DEMO-07 | Reload restores browser-local mutations. | `tests/ui-prototype.spec.cjs:126`-`tests/ui-prototype.spec.cjs:130` create a Lead, reload, and assert it in both the rendered list and persisted state. | ✅ PASS |
+| DEMO-08 | Restore replaces mutations with the original fictitious state. | `tests/ui-prototype.spec.cjs:134`-`tests/ui-prototype.spec.cjs:141` mutate the state, restore it, and assert deep equality with the original seed. | ✅ PASS |
+| DEMO-09 | Lead stages are exactly Em contato, Lead descartado, and Lead convertido, without “Nome”. | `tests/ui-prototype.spec.cjs:146`-`tests/ui-prototype.spec.cjs:148` assert the exact ordered stage set and absence of “Nome”. | ✅ PASS |
+| DEMO-10 | Converting a Lead closes it as converted and creates an Em Contato Negócio. | `tests/ui-prototype.spec.cjs:153`-`tests/ui-prototype.spec.cjs:163` assert the source Lead state plus the new Negócio stage, responsible, assistants, and team. | ✅ PASS |
+| DEMO-11 | The Negócio pipeline exposes exactly the nine approved stages. | `tests/ui-prototype.spec.cjs:168`-`tests/ui-prototype.spec.cjs:171` assert exact ordered membership, count nine, and absence of “Nome”. | ✅ PASS |
+| DEMO-12 | Entering Faturando assigns a Faturamento member and creates notifications. | `tests/ui-prototype.spec.cjs:180`-`tests/ui-prototype.spec.cjs:186` assert stage, `u-billing`, team, and both exact notification payloads. | ✅ PASS |
+| DEMO-13 | Quote inputs calculate quantity × unit price − discount and support optional PDF. | `tests/ui-prototype.spec.cjs:193`-`tests/ui-prototype.spec.cjs:214` assert the displayed/calculated total, a no-PDF quote, and a PDF filename payload. | ✅ PASS |
+| DEMO-14 | Profile changes enforce administrator, team-manager, responsible-seller, and assistant visibility. | `tests/ui-prototype.spec.cjs:218`-`tests/ui-prototype.spec.cjs:234` assert exact role counts and the off-team record's exclusion for Gestor and inclusion for Administrador. | ✅ PASS |
+| DEMO-15 | The fictitious/local-data warning stays visible. | `tests/ui-prototype.spec.cjs:238`-`tests/ui-prototype.spec.cjs:242` assert banner visibility in all six destinations. | ✅ PASS |
+| DEMO-16 | Reduced width preserves usable navigation and the main Lead action. | `tests/ui-prototype.spec.cjs:246`-`tests/ui-prototype.spec.cjs:252` set 390×844, open the mobile menu, navigate, and assert “Novo Lead” remains visible. | ✅ PASS |
 
-**Status**: ❌ 1/16 ACs have spec-matching executable assertion evidence. No spec-precision gaps were found; the failures are implementation/coverage gaps.
-
----
+**Status**: ✅ 16/16 ACs match precise spec outcomes. No spec-precision gaps were found.
 
 ## Discrimination Sensor
 
-The sensor ran in detached worktree `7a5df6b` under an isolated temporary directory. The real worktree was never mutated.
+The sensor used an external scratch copy of `app/` and `tests/`, served on ports 18081 and 18082. The checked-in test suite was not changed.
 
-| Mutation | File:line | Description | Relevant gate | Result |
+| Mutation | Scratch source | Description | Evidence of kill | Killed? |
 | --- | --- | --- | --- | --- |
-| 1 | `app/server.py:38` | Changed health status from `ok` to `degraded`. | Python self-test | ✅ Killed by `app/server.py:96`. |
-| 2 | `app/static/index.html:631` | Changed the Faturando automation condition to an unreachable stage. | Full gate: Python self-test + extracted JavaScript syntax check | ❌ Survived; both checks exited zero. |
+| 1 | `app/static/index.html:636` | Changed `stage === 'Faturando'` to an unreachable stage. | Browser gate exited 1; DEMO-12 failed at `tests/ui-prototype.spec.cjs:183` because `u-paula !== u-billing`. | ✅ Killed |
+| 2 | `app/static/index.html:392` | Changed the Gestor team predicate to unconditional visibility. | Browser gate exited 1; DEMO-14 failed at `tests/ui-prototype.spec.cjs:220` because six visible deals did not equal five. | ✅ Killed |
 
-**Sensor depth**: lightweight, 2 targeted behavior-level mutations  
-**Result**: 1/2 killed — FAIL ❌  
-**Isolation evidence**: real-tree porcelain before and after was identical: `?? app/__pycache__/server.cpython-312.pyc`. The temporary worktree was removed, and `git worktree list` again contained only the main worktree.
-
----
-
-## Runtime Browser Smoke
-
-| Check | Result | Details |
-| --- | --- | --- |
-| Initial page | ✅ | Title loaded from `http://localhost:8080/`; no console warnings/errors. |
-| Navigation | ✅ | Six destinations observed. |
-| Deal pipeline | ✅ | Nine stage labels observed. |
-| Demo warning | ✅ | Persistent banner visible on the loaded UI. |
-| Role seed behavior | ⚠️ | Visible Lead rows: Admin 5, Gestor 5, Paula 2, Vitor 3, Assistente 2. No off-team seed distinguishes Admin from Gestor. |
-| Mobile 390×844 | ✅ smoke only | Mobile menu and primary “Novo Lead” action visible; sidebar navigation usable after opening. |
-
-These are verifier observations, not persisted assertions, so they do not raise an AC from GAP to PASS.
-
----
+**Sensor depth**: lightweight, 2 targeted behavior-level mutations
+**Result**: 2/2 killed — PASS ✅
+**Isolation evidence**: the scratch directory was deleted. Real-tree porcelain before and after was identical: `?? .pnpm-store/`.
 
 ## Code Quality
 
 | Principle | Status |
 | --- | --- |
-| Minimum/cohesive code for a disposable prototype | ✅ |
-| Surgical diff limited to feature artifacts, server, UI, container, and README | ✅ |
-| No unrelated scope creep found in `5462aba..HEAD` | ✅ |
+| Minimum/cohesive implementation for the disposable prototype | ✅ |
+| Surgical feature diff with no unrelated production behavior | ✅ |
+| No unrequested external services or persistence | ✅ |
 | Matches the approved dependency-free/local-only design | ✅ |
-| Spec-anchored outcome assertions | ❌ 15 ACs lack checked-in assertion evidence. |
-| Per-layer coverage expectation | ❌ Browser state/domain behaviors have no executable outcome tests. |
-| Payload/conjunction rule | ❌ Conversion, Faturando, and quote payloads are not asserted. |
-| Every existing self-test maps to an AC or task Done-when | ✅ Health, root delivery, and traversal map to DEMO-01/02 and T1. |
-| Documented project guidelines | ✅ `.specs/features/ui-prototype/tasks.md` and design were followed structurally; the promised browser coverage was not persisted. |
-
----
+| Spec-anchored assertions match all 16 outcomes | ✅ |
+| Payload/conjunction rule covers conversion, Faturando, and quotes | ✅ |
+| Every checked-in browser case maps to an AC or documented edge case | ✅ |
+| No skipped or disabled tests | ✅ |
+| Project guidance followed: `design.md`, `tasks.md`, and `coding-principles.md` | ✅ |
 
 ## Edge Cases
 
-- [ ] Corrupted `localStorage` falls back to seed data (`app/static/index.html:370`), but no test asserts recovery.
-- [ ] Restore after local mutation is implemented (`app/static/index.html:680`), but no test asserts exact replacement.
-- [ ] Non-PDF selection is rejected (`app/static/index.html:665`), but no test asserts the rejection and unchanged quote state.
-- [ ] Faturando responsibility and both notification paths (`app/static/index.html:631`) lack outcome assertions.
-- [ ] Gestor visibility after a deal transfers to the Faturamento team is incorrect/unprotected (`app/static/index.html:389`).
-
----
+- [x] Corrupted local storage is replaced with the seed state: `tests/ui-prototype.spec.cjs:255`-`tests/ui-prototype.spec.cjs:260`.
+- [x] Restore after mutation reproduces the original state exactly: `tests/ui-prototype.spec.cjs:133`-`tests/ui-prototype.spec.cjs:141`.
+- [x] Quote creation covers both absent and present PDF metadata: `tests/ui-prototype.spec.cjs:189`-`tests/ui-prototype.spec.cjs:214`.
+- [x] Off-team Faturamento data is excluded from the Gestor view: `tests/ui-prototype.spec.cjs:217`-`tests/ui-prototype.spec.cjs:234`.
 
 ## Gate Check
 
-- **Declared Full gate**: containerized `python app/server.py --self-test`, followed by inline JavaScript extraction and containerized `node --check -`.
-- **Mandatory Build gate**: `docker compose config`; `docker compose build`; `docker compose up -d`; HTTP probes for `/health` and `/`.
-- **Result**: 9 checks passed, 0 failed, 0 skipped (3 Python self-test scenarios, 1 JavaScript syntax check, 5 Build/runtime checks).
-- **Container evidence**: service `smart-crm-demo-crm-1` was `healthy`; `/health` returned `{"status":"ok","service":"smart-crm-demo"}`; `/` returned HTTP 200.
-- **Host-tool note**: host `python` and `node` were not on PATH, so the same declared checks ran inside official Python/Node containers. This does not affect the Docker-only user startup path.
-- **Test count before feature**: 0 executable test cases found at `5462aba`.
-- **Test count after feature**: 3 server self-test scenarios; no persisted UI behavior tests.
-- **Delta**: +3 server scenarios, +0 UI behavior tests.
-- **Skipped tests**: none.
-- **Failures**: none in the declared gate; the surviving sensor mutant proves the gate is insufficient for DEMO-03 through DEMO-16.
+- **Gate commands**: bundled Python `scripts/verify_demo.py`, then bundled pnpm `test`.
+- **Compose/runtime result**: 7 passed, 0 failed.
+- **Browser result**: 15 passed, 0 failed, 0 skipped.
+- **Combined result**: 22 passed, 0 failed, 0 skipped.
+- **Runtime**: `http://localhost:8080`; exact health payload and root markers passed.
+- **Test count before feature**: 0 checked-in feature tests at `5462aba`.
+- **Test count after feature**: 15 browser cases plus the 7-check Compose acceptance gate.
+- **Delta**: +22 executable gate checks.
 
----
+## Interactive UAT
 
-## Ranked Gaps and Fix Plans
-
-### 1. Browser behavior has no discriminating regression suite — Blocker
-
-- **Affected criteria**: DEMO-03 through DEMO-16.
-- **Root cause**: the Full gate checks only server behavior and JavaScript syntax. `tasks.md` names “structural + browser smoke” but no checked-in browser tests or equivalent DOM-state assertions exist.
-- **Fix task**: add a deterministic browser test layer that maps one-to-one to every UI AC. Assert exact list contents, CRUD/indicator deltas, reload persistence, reset equality, exact pipeline stages, conversion payload, Faturando assignment+notification, quote totals/PDF metadata, all profile visibility branches, banner persistence, and mobile navigation/actions.
-- **Verify**: all UI tests pass; re-run the Faturando mutant and at least one persistence/role mutant, and confirm each is killed.
-
-### 2. Gestor visibility ignores team scope — Major
-
-- **Affected criterion**: DEMO-14.
-- **Root cause**: `app/static/index.html:389` treats Administrador and Gestor identically, while `.specs/features/ui-prototype/design.md:66` limits Gestor to Vendas CMS.
-- **Fix task**: model/derive record team and restrict Gestor to Vendas CMS. Cover a Faturamento-owned deal and an off-team record; keep Administrador unrestricted.
-- **Verify**: an exact role-visibility test proves Admin sees all, Gestor sees Vendas CMS only, sellers see responsible/assistant records, and Assistant sees participating records only.
-
-### 3. Compose accessibility is verified only ad hoc — Major
-
-- **Affected criterion**: DEMO-01.
-- **Root cause**: no checked-in gate script asserts the Compose-published host port and root response.
-- **Fix task**: add a repeatable build-gate script/test that starts Compose, waits for healthy state, asserts the exact health payload, and asserts HTTP 200 plus the expected app marker at `localhost:${SMART_CRM_PORT:-8080}/`.
-- **Verify**: the script exits non-zero for a wrong port, missing root document, unhealthy container, or wrong health payload.
-
-### 4. Current browser smoke is not reviewable evidence — Major
-
-- **Affected criteria**: DEMO-03–DEMO-11 and DEMO-13–DEMO-16.
-- **Root cause**: results were recorded as task prose rather than executable assertions with stable expected values.
-- **Fix task**: persist the tests and include their command in the Full gate; report assertion-level `file:line` evidence for each AC on re-verification.
-- **Verify**: every criterion has a checked-in `file:line` assertion, and no criterion relies only on implementation lines or a manual note.
-
----
+Not performed in this automated independent pass. The 15-case browser suite covers the specified observable behaviors at desktop and 390×844; subjective visual review remains optional product UAT and does not block these acceptance criteria.
 
 ## Requirement Traceability Result
 
 | Requirement | Previous status | Verifier status |
 | --- | --- | --- |
-| DEMO-01 | Complete | ❌ Needs Fix |
-| DEMO-02 | Complete | ✅ Verified |
-| DEMO-03 | Complete | ❌ Needs Fix |
-| DEMO-04 | Complete | ❌ Needs Fix |
-| DEMO-05 | Complete | ❌ Needs Fix |
-| DEMO-06 | Complete | ❌ Needs Fix |
-| DEMO-07 | Complete | ❌ Needs Fix |
-| DEMO-08 | Complete | ❌ Needs Fix |
-| DEMO-09 | Complete | ❌ Needs Fix |
-| DEMO-10 | Complete | ❌ Needs Fix |
-| DEMO-11 | Complete | ❌ Needs Fix |
-| DEMO-12 | Complete | ❌ Needs Fix |
-| DEMO-13 | Complete | ❌ Needs Fix |
-| DEMO-14 | Complete | ❌ Needs Fix |
-| DEMO-15 | Complete | ❌ Needs Fix |
-| DEMO-16 | Complete | ❌ Needs Fix |
+| DEMO-01 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-02 | Verified | ✅ Verified |
+| DEMO-03 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-04 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-05 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-06 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-07 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-08 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-09 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-10 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-11 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-12 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-13 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-14 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-15 | Implemented — pending re-verification | ✅ Verified |
+| DEMO-16 | Implemented — pending re-verification | ✅ Verified |
 
 This table records the verifier outcome only. `spec.md` was not modified because the verifier's authorized write scope is limited to this report.
 
----
-
 ## Summary
 
-**Overall**: FAIL ❌ — Not Ready
+**Overall**: ✅ Ready
 
-**Spec-anchored check**: 1/16 ACs matched by executable assertion evidence; 0 spec-precision gaps.  
-**Sensor**: 1/2 mutations killed; the DEMO-12 mutant survived.  
-**Gate**: 9 checks passed, 0 failed, 0 skipped.  
-**What works now**: Docker/Compose packaging, health endpoint, static delivery, current seeded navigation, nine visible deal stages, persistent warning, and mobile smoke behavior.  
-**Issues found**: UI outcomes are not regression-tested, Gestor team visibility is incorrect/unprotected, and the declared Full gate cannot detect broken Faturando automation.  
-**Lessons**: not written because the verifier was explicitly restricted to modifying only `validation.md`; the orchestrator should distill the surviving-mutant lesson after routing fix tasks.  
-**Next step**: implement the ranked fix tasks, then dispatch a fresh independent verifier and rerun the sensor.
+**Spec-anchored check**: 16/16 ACs matched; 0 spec-precision gaps.
+**Sensor**: 2/2 mutations killed.
+**Gate**: 22 passed, 0 failed, 0 skipped.
+**Issues found**: none.
+**Lessons**: clean PASS; no new lesson recorded.
+**Next step**: no verifier fix task remains.
