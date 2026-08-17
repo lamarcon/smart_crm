@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/ui-prototype/design.md`  
-**Status**: In Progress — remediation after independent validation
+**Status**: Done — pending independent re-verification
 
 ## Test Coverage Matrix
 
@@ -238,7 +238,9 @@ T5 → T6 → T7 → T8
 **Gate**: full
 **Commit**: `test(demo): cover interactive CRM flows`
 
-### T8: Automatizar o gate do Compose
+### T8: Automatizar o gate do Compose ✅
+
+**Status**: Complete — 7 asserções de Compose/HTTP e 15 testes de navegador aprovados em 2026-08-17.
 
 **What**: Criar um verificador que constrói e sobe o Compose, aguarda saúde e afirma porta, payload e documento raiz.
 **Where**: `scripts/verify_demo.py`
@@ -253,10 +255,10 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Configuração, build e startup retornam sucesso.
-- [ ] A rota de saúde possui o payload exato esperado.
-- [ ] A raiz responde HTTP 200 e contém o marcador do Smart CRM.
-- [ ] O gate Build termina com código zero.
+- [x] Configuração, build e startup retornam sucesso.
+- [x] A rota de saúde possui o payload exato esperado.
+- [x] A raiz responde HTTP 200 e contém o marcador do Smart CRM.
+- [x] O gate Build termina com código zero.
 
 **Tests**: integration gate
 **Gate**: build

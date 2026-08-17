@@ -89,7 +89,7 @@ O cliente precisa visualizar rapidamente como o Smart CRM poderá funcionar ante
 
 | Requirement | Task | Status |
 | --- | --- | --- |
-| DEMO-01 | T4, T5, T8 | Needs Fix |
+| DEMO-01 | T4, T5, T8 | Implemented — pending re-verification |
 | DEMO-02 | T1, T3, T4, T8 | Verified |
 | DEMO-03 | T2, T7 | Implemented — pending re-verification |
 | DEMO-04 | T2, T7 | Implemented — pending re-verification |
