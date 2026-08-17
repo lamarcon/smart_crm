@@ -75,7 +75,9 @@ T4 → T5
 **Gate**: quick
 **Commit**: `feat(demo): add dependency-free web server`
 
-### T2: Implementar a interface demonstrativa
+### T2: Implementar a interface demonstrativa ✅
+
+**Status**: Complete — gate Full, fluxo desktop e viewport móvel aprovados em 2026-08-17, sem erros no console.
 
 **What**: Criar a aplicação autocontida com layout responsivo, dados fictícios e fluxos locais aprovados.
 **Where**: `app/static/index.html`
@@ -90,12 +92,12 @@ T4 → T5
 
 **Done when**:
 
-- [ ] Os seis destinos da navegação estão funcionais.
-- [ ] Busca, filtros, CRUD local e restauração atualizam a interface.
-- [ ] Conversão de Lead, etapas de Negócio, Faturando, orçamento e notificações funcionam.
-- [ ] O seletor dos quatro perfis altera a visibilidade de Leads e Negócios.
-- [ ] O aviso de ambiente demonstrativo é persistente.
-- [ ] O gate Full termina com código zero.
+- [x] Os seis destinos da navegação estão funcionais.
+- [x] Busca, filtros, CRUD local e restauração atualizam a interface.
+- [x] Conversão de Lead, etapas de Negócio, Faturando, orçamento e notificações funcionam.
+- [x] O seletor dos quatro perfis altera a visibilidade de Leads e Negócios.
+- [x] O aviso de ambiente demonstrativo é persistente.
+- [x] O gate Full termina com código zero.
 
 **Tests**: structural + browser smoke
 **Gate**: full

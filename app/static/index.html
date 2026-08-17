@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101828">
+  <title>Smart CRM — Ambiente de demonstração</title>
+  <style>
+    :root {
+      --navy-950: #0a1020;
+      --navy-900: #101828;
+      --navy-800: #1d2939;
+      --navy-700: #344054;
+      --slate-600: #475467;
+      --slate-500: #667085;
+      --slate-400: #98a2b3;
+      --slate-300: #d0d5dd;
+      --slate-200: #e4e7ec;
+      --slate-100: #f2f4f7;
+      --slate-50: #f8fafc;
+      --white: #fff;
+      --lime-500: #a3e635;
+      --lime-600: #84cc16;
+      --blue-500: #2e90fa;
+      --blue-100: #d1e9ff;
+      --green-600: #039855;
+      --green-100: #d1fadf;
+      --amber-600: #dc6803;
+      --amber-100: #fef0c7;
+      --red-600: #d92d20;
+      --red-100: #fee4e2;
+      --purple-600: #7f56d9;
+      --purple-100: #ebe9fe;
+      --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06);
+      --shadow-md: 0 10px 25px rgba(16, 24, 40, .08);
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--navy-900);
+      background: #f6f8fb;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+    }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    .app { min-height: 100vh; display: grid; grid-template-columns: 256px minmax(0, 1fr); }
+    .sidebar {
+      position: sticky; top: 0; height: 100vh; z-index: 30;
+      display: flex; flex-direction: column; padding: 24px 16px;
+      color: #e7edf7; background: linear-gradient(180deg, var(--navy-950), #111a2e 70%, #18233a);
+    }
+    .brand { display: flex; align-items: center; gap: 11px; padding: 0 8px 27px; }
+    .brand-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; color: var(--navy-950); background: var(--lime-500); font-weight: 900; box-shadow: 0 0 0 5px rgba(163,230,53,.09); }
+    .brand strong { display: block; color: white; font-size: 17px; letter-spacing: -.3px; }
+    .brand small { color: #99a7be; font-size: 11px; }
+    .nav-label { padding: 0 12px 8px; color: #73839f; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .nav { display: grid; gap: 5px; }
+    .nav button { width: 100%; border: 0; border-radius: 9px; padding: 11px 12px; display: flex; align-items: center; gap: 12px; color: #b7c2d4; background: transparent; text-align: left; transition: .18s ease; }
+    .nav button:hover { color: white; background: rgba(255,255,255,.06); }
+    .nav button.active { color: white; background: rgba(163,230,53,.13); box-shadow: inset 3px 0 var(--lime-500); }
+    .nav-icon { width: 18px; text-align: center; font-size: 16px; }
+    .nav-count { margin-left: auto; min-width: 21px; padding: 2px 6px; border-radius: 999px; color: #d8e3f4; background: rgba(255,255,255,.09); font-size: 11px; text-align: center; }
+    .sidebar-note { margin-top: auto; padding: 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 11px; color: #9eabc0; background: rgba(255,255,255,.035); font-size: 12px; line-height: 1.5; }
+    .sidebar-note strong { color: #dce6f5; }
+
+    .main { min-width: 0; }
+    .demo-banner { min-height: 38px; display: flex; justify-content: center; align-items: center; gap: 9px; padding: 8px 18px; color: #4b3500; background: #fff5cb; border-bottom: 1px solid #f7df88; font-size: 12px; font-weight: 650; text-align: center; }
+    .demo-dot { width: 7px; height: 7px; border-radius: 50%; background: #f79009; box-shadow: 0 0 0 4px rgba(247,144,9,.13); }
+    .topbar { height: 72px; display: flex; align-items: center; gap: 16px; padding: 0 28px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--slate-200); backdrop-filter: blur(9px); }
+    .mobile-menu { display: none; width: 38px; height: 38px; border: 1px solid var(--slate-300); border-radius: 9px; background: white; }
+    .page-heading { min-width: 0; }
+    .page-heading h1 { margin: 0; font-size: 19px; letter-spacing: -.25px; }
+    .page-heading p { margin: 3px 0 0; color: var(--slate-500); font-size: 12px; }
+    .top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .profile-box { display: flex; align-items: center; gap: 10px; padding: 5px 8px 5px 5px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
+    .avatar { flex: 0 0 auto; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: #233012; background: var(--lime-500); font-size: 12px; font-weight: 800; }
+    .profile-box select { max-width: 190px; border: 0; outline: 0; color: var(--navy-800); background: white; font-weight: 650; }
+    .icon-button { position: relative; width: 40px; height: 40px; border: 1px solid var(--slate-200); border-radius: 10px; color: var(--navy-700); background: white; }
+    .badge-count { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; display: grid; place-items: center; padding: 0 5px; border: 2px solid white; border-radius: 999px; color: white; background: var(--red-600); font-size: 9px; font-weight: 800; }
+
+    .content { max-width: 1600px; margin: 0 auto; padding: 26px 28px 48px; }
+    .page { display: none; animation: pageIn .18s ease; }
+    .page.active { display: block; }
+    @keyframes pageIn { from { opacity: 0; transform: translateY(3px); } }
+    .page-toolbar { margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+    .page-toolbar h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -.5px; }
+    .page-toolbar p { margin: 0; color: var(--slate-500); }
+    .toolbar-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+    .button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--slate-300); border-radius: 9px; padding: 8px 13px; color: var(--navy-800); background: white; font-weight: 700; box-shadow: var(--shadow-sm); }
+    .button:hover { background: var(--slate-50); }
+    .button.primary { border-color: var(--navy-900); color: white; background: var(--navy-900); }
+    .button.primary:hover { background: var(--navy-800); }
+    .button.accent { border-color: var(--lime-500); color: #1d290f; background: var(--lime-500); }
+    .button.danger { border-color: #fda29b; color: var(--red-600); background: white; }
+    .button.small { min-height: 31px; padding: 5px 9px; font-size: 12px; box-shadow: none; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; margin-bottom: 18px; }
+    .stat { position: relative; overflow: hidden; min-height: 126px; padding: 18px; border: 1px solid var(--slate-200); border-radius: var(--radius); background: white; box-shadow: var(--shadow-sm); }
+    .stat::after { content: ""; position: absolute; width: 80px; height: 80px; right: -25px; top: -25px; border-radius: 50%; background: var(--stat-color, var(--blue-100)); opacity: .7; }
+    .stat-top { display: flex; justify-content: space-between; align-items: center; color: var(--slate-500); font-weight: 650; }
+    .stat-icon { width: 33px; height: 33px; display: grid; place-items: center; border-radius: 9px; background: var(--stat-color, var(--blue-100)); }
+    .stat strong { display: block; margin: 13px 0 4px; font-size: 27px; letter-spacing: -.8px; }
+    .stat small { color: var(--slate-500); }
+    .stat small b { color: var(--green-600); }
+
+    .grid-two { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .75fr); gap: 18px; }
+    .card { border: 1px solid var(--slate-200); border-radius: var(--radius); background: white; box-shadow: var(--shadow-sm); }
+    .card-head { min-height: 60px; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 17px; border-bottom: 1px solid var(--slate-200); }
+    .card-head h3 { margin: 0; font-size: 15px; }
+    .card-head p { margin: 4px 0 0; color: var(--slate-500); font-size: 12px; }
+    .card-body { padding: 17px; }
+    .pipeline { display: grid; gap: 12px; }
+    .pipeline-row { display: grid; grid-template-columns: 160px minmax(100px, 1fr) 74px; align-items: center; gap: 13px; }
+    .pipeline-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--slate-600); font-size: 12px; }
+    .pipeline-track { height: 9px; overflow: hidden; border-radius: 999px; background: var(--slate-100); }
+    .pipeline-bar { height: 100%; min-width: 5px; border-radius: inherit; background: linear-gradient(90deg, var(--blue-500), #53b1fd); }
+    .pipeline-row b { text-align: right; font-size: 12px; }
+    .activity-list { display: grid; gap: 2px; }
+    .activity { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--slate-100); }
+    .activity:last-child { border-bottom: 0; }
+    .activity-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; color: var(--blue-500); background: var(--blue-100); }
+    .activity p { margin: 0; font-size: 12px; line-height: 1.4; }
+    .activity small { color: var(--slate-400); white-space: nowrap; }
+
+    .list-card { overflow: hidden; border: 1px solid var(--slate-200); border-radius: var(--radius); background: white; box-shadow: var(--shadow-sm); }
+    .list-tools { display: flex; align-items: center; gap: 10px; padding: 13px 15px; border-bottom: 1px solid var(--slate-200); }
+    .search { flex: 1; position: relative; min-width: 180px; }
+    .search span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--slate-400); }
+    .search input, .list-tools select { width: 100%; height: 38px; border: 1px solid var(--slate-300); border-radius: 9px; padding: 8px 11px; outline: 0; background: white; }
+    .search input { padding-left: 36px; }
+    .search input:focus, .list-tools select:focus, .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px rgba(46,144,250,.12); }
+    .list-tools select { width: 210px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th { padding: 11px 15px; color: var(--slate-500); background: var(--slate-50); border-bottom: 1px solid var(--slate-200); font-size: 11px; letter-spacing: .03em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+    td { padding: 13px 15px; border-bottom: 1px solid var(--slate-100); color: var(--slate-600); vertical-align: middle; }
+    tbody tr:hover { background: #fcfcfd; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .entity { display: flex; align-items: center; gap: 10px; min-width: 165px; }
+    .entity-avatar { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; color: #1849a9; background: var(--blue-100); font-size: 11px; font-weight: 800; }
+    .entity strong { display: block; color: var(--navy-800); font-size: 13px; }
+    .entity small { display: block; margin-top: 2px; color: var(--slate-500); }
+    .tag { display: inline-flex; align-items: center; gap: 5px; max-width: 190px; padding: 4px 8px; border-radius: 999px; color: #175cd3; background: var(--blue-100); font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .tag.green { color: #027a48; background: var(--green-100); }
+    .tag.amber { color: #b54708; background: var(--amber-100); }
+    .tag.red { color: #b42318; background: var(--red-100); }
+    .tag.purple { color: #6941c6; background: var(--purple-100); }
+    .row-actions { display: flex; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+    .row-action { width: 31px; height: 31px; border: 1px solid transparent; border-radius: 8px; color: var(--slate-500); background: transparent; }
+    .row-action:hover { border-color: var(--slate-200); color: var(--navy-900); background: white; }
+    .stage-select { min-width: 174px; height: 32px; border: 1px solid var(--slate-300); border-radius: 8px; color: var(--navy-700); background: white; font-size: 12px; }
+    .empty { padding: 58px 20px; color: var(--slate-500); text-align: center; }
+    .empty-icon { width: 48px; height: 48px; display: grid; place-items: center; margin: 0 auto 12px; border-radius: 13px; color: var(--slate-500); background: var(--slate-100); font-size: 20px; }
+    .table-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 15px; border-top: 1px solid var(--slate-200); color: var(--slate-500); font-size: 12px; }
+
+    .notice-list { display: grid; gap: 10px; }
+    .notice { display: grid; grid-template-columns: 40px 1fr auto; gap: 13px; align-items: start; padding: 15px; border: 1px solid var(--slate-200); border-radius: 11px; background: white; }
+    .notice.unread { border-color: #b2ddff; background: #f5fbff; box-shadow: inset 3px 0 var(--blue-500); }
+    .notice-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: #175cd3; background: var(--blue-100); }
+    .notice p { margin: 2px 0 6px; color: var(--navy-800); font-weight: 650; }
+    .notice small { color: var(--slate-500); }
+
+    dialog { width: min(620px, calc(100% - 28px)); max-height: calc(100vh - 40px); padding: 0; border: 0; border-radius: 14px; color: var(--navy-900); box-shadow: 0 25px 60px rgba(16,24,40,.25); }
+    dialog::backdrop { background: rgba(10,16,32,.58); backdrop-filter: blur(2px); }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 17px 20px; border-bottom: 1px solid var(--slate-200); }
+    .modal-head h3 { margin: 0; font-size: 17px; }
+    .close-button { width: 34px; height: 34px; border: 0; border-radius: 8px; color: var(--slate-500); background: transparent; font-size: 18px; }
+    .close-button:hover { background: var(--slate-100); }
+    .modal-body { max-height: calc(100vh - 180px); overflow: auto; padding: 19px 20px; }
+    .modal-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--slate-200); background: var(--slate-50); }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+    .field { display: grid; gap: 6px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { color: var(--navy-700); font-size: 12px; font-weight: 700; }
+    .field input, .field select, .field textarea { width: 100%; min-height: 40px; border: 1px solid var(--slate-300); border-radius: 9px; padding: 9px 11px; outline: 0; background: white; }
+    .field textarea { min-height: 82px; resize: vertical; }
+    .hint { color: var(--slate-500); font-size: 11px; line-height: 1.4; }
+    .quote-total { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 15px; border-radius: 10px; color: white; background: var(--navy-900); }
+    .quote-total strong { font-size: 21px; }
+
+    .toast-region { position: fixed; z-index: 100; right: 20px; bottom: 20px; display: grid; gap: 9px; }
+    .toast { min-width: 280px; max-width: 390px; display: flex; gap: 10px; align-items: flex-start; padding: 13px 14px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; box-shadow: var(--shadow-md); animation: toastIn .2s ease; }
+    .toast b { color: var(--green-600); }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } }
+    .sidebar-overlay { display: none; }
+
+    @media (max-width: 1050px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .grid-two { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 780px) {
+      .app { display: block; }
+      .sidebar { position: fixed; left: -280px; width: 256px; transition: left .2s ease; }
+      .sidebar.open { left: 0; }
+      .sidebar-overlay { position: fixed; inset: 0; z-index: 25; display: none; background: rgba(10,16,32,.48); }
+      .sidebar-overlay.open { display: block; }
+      .mobile-menu { display: inline-grid; place-items: center; }
+      .topbar { height: 64px; padding: 0 15px; }
+      .profile-box { padding-right: 5px; }
+      .profile-box .avatar { display: none; }
+      .profile-box select { max-width: 135px; font-size: 12px; }
+      .content { padding: 20px 14px 36px; }
+      .page-toolbar { align-items: stretch; flex-direction: column; }
+      .toolbar-actions .button { flex: 1; }
+      .list-tools { align-items: stretch; flex-direction: column; }
+      .list-tools select { width: 100%; }
+    }
+    @media (max-width: 560px) {
+      .demo-banner { font-size: 11px; }
+      .page-heading p { display: none; }
+      .stats { grid-template-columns: 1fr; }
+      .stat { min-height: 108px; }
+      .pipeline-row { grid-template-columns: 112px minmax(80px, 1fr) 65px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .field.full { grid-column: auto; }
+      .notice { grid-template-columns: 34px 1fr; }
+      .notice .button { grid-column: 2; justify-self: start; }
+      .top-actions .icon-button { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <div><strong>Smart CRM</strong><small>Operação comercial</small></div>
+      </div>
+      <div class="nav-label">Workspace</div>
+      <nav class="nav" aria-label="Navegação principal">
+        <button class="active" data-view="dashboard"><span class="nav-icon">⌂</span>Visão geral</button>
+        <button data-view="leads"><span class="nav-icon">◎</span>Leads <span class="nav-count" id="leadNavCount">0</span></button>
+        <button data-view="contacts"><span class="nav-icon">♙</span>Contatos</button>
+        <button data-view="companies"><span class="nav-icon">▦</span>Empresas</button>
+        <button data-view="deals"><span class="nav-icon">◇</span>Negócios <span class="nav-count" id="dealNavCount">0</span></button>
+        <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
+      </nav>
+      <div class="sidebar-note"><strong>Protótipo local</strong><br>As alterações ficam apenas neste navegador e podem ser restauradas.</div>
+    </aside>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <main class="main">
+      <div class="demo-banner"><span class="demo-dot"></span>Ambiente de demonstração — dados fictícios, sem banco de dados e sem integração com o Bitrix24</div>
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Abrir menu">☰</button>
+        <div class="page-heading"><h1 id="topTitle">Visão geral</h1><p id="topSubtitle">Acompanhe os principais indicadores comerciais</p></div>
+        <div class="top-actions">
+          <div class="profile-box" title="Alterne o usuário para simular as permissões">
+            <div class="avatar" id="profileAvatar">AM</div>
+            <label class="sr-only" for="profileSelect">Perfil demonstrativo</label>
+            <select id="profileSelect"></select>
+          </div>
+          <button class="icon-button" data-view="notifications" aria-label="Notificações">♢<span class="badge-count" id="topNoticeCount">0</span></button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="page active" id="page-dashboard"></section>
+        <section class="page" id="page-leads"></section>
+        <section class="page" id="page-contacts"></section>
+        <section class="page" id="page-companies"></section>
+        <section class="page" id="page-deals"></section>
+        <section class="page" id="page-notifications"></section>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="entityDialog">
+    <form id="entityForm">
+      <div class="modal-head"><h3 id="entityDialogTitle">Novo registro</h3><button type="button" class="close-button" data-close="entityDialog" aria-label="Fechar">×</button></div>
+      <div class="modal-body"><div class="form-grid" id="entityFields"></div></div>
+      <div class="modal-foot"><button type="button" class="button" data-close="entityDialog">Cancelar</button><button type="submit" class="button primary">Salvar registro</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="quoteDialog">
+    <form id="quoteForm">
+      <div class="modal-head"><h3>Novo orçamento</h3><button type="button" class="close-button" data-close="quoteDialog" aria-label="Fechar">×</button></div>
+      <div class="modal-body">
+        <input type="hidden" name="dealId" id="quoteDealId">
+        <div class="form-grid">
+          <div class="field full"><label for="quoteDescription">Item / serviço *</label><input id="quoteDescription" name="description" required placeholder="Ex.: Implantação Smart CRM"></div>
+          <div class="field"><label for="quoteQuantity">Quantidade *</label><input id="quoteQuantity" name="quantity" type="number" min="1" step="1" value="1" required></div>
+          <div class="field"><label for="quoteUnit">Valor unitário (R$) *</label><input id="quoteUnit" name="unitPrice" type="number" min="0" step="0.01" value="0" required></div>
+          <div class="field"><label for="quoteDiscount">Desconto (R$)</label><input id="quoteDiscount" name="discount" type="number" min="0" step="0.01" value="0"></div>
+          <div class="field"><label for="quoteValidity">Validade</label><input id="quoteValidity" name="validity" type="date"></div>
+          <div class="field full"><label for="quotePdf">Anexar PDF (opcional)</label><input id="quotePdf" name="pdf" type="file" accept="application/pdf"><div class="hint">Neste protótipo apenas o nome do arquivo será guardado localmente.</div></div>
+        </div>
+        <div class="quote-total"><span>Total estimado</span><strong id="quoteTotal">R$ 0,00</strong></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="button" data-close="quoteDialog">Cancelar</button><button type="submit" class="button primary">Adicionar orçamento</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+
+  <script>
+    'use strict';
+
+    const STORAGE_KEY = 'smart-crm-demo-v1';
+    const leadStages = ['Em contato', 'Lead descartado', 'Lead convertido'];
+    const dealStages = [
+      'Em Contato', 'Orçamento Proposta Preço', 'Orçamentos enviados',
+      'Negociação Revisão', 'Pedido aprovado Consultar', 'Faturando',
+      'Ganho', 'Orçamento Não Aprovado', 'Analisar falha'
+    ];
+    const pageMeta = {
+      dashboard: ['Visão geral', 'Acompanhe os principais indicadores comerciais'],
+      leads: ['Leads', 'Captação e qualificação de novas oportunidades'],
+      contacts: ['Contatos', 'Pessoas relacionadas à operação comercial'],
+      companies: ['Empresas', 'Organizações e contas atendidas'],
+      deals: ['Negócios', 'Pipeline Vendas CMS e orçamentos'],
+      notifications: ['Notificações', 'Atualizações relevantes da sua operação']
+    };
+
+    const seedState = () => ({
+      currentUserId: 'u-admin',
+      users: [
+        { id: 'u-admin', name: 'Ana Miranda', role: 'Administrador', team: 'Gestão' },
+        { id: 'u-manager', name: 'Marcelo Martins', role: 'Gestor', team: 'Vendas CMS' },
+        { id: 'u-paula', name: 'Paula Pincetta', role: 'Vendedor', team: 'Vendas CMS' },
+        { id: 'u-vitor', name: 'Vitor Costa', role: 'Vendedor', team: 'Vendas CMS' },
+        { id: 'u-camila', name: 'Camila Rodrigues', role: 'Assistente', team: 'Vendas CMS' },
+        { id: 'u-billing', name: 'Equipe Faturamento', role: 'Faturamento', team: 'Faturamento' }
+      ],
+      leads: [
+        { id: 'L-1048', name: 'Larissa Spinola', company: 'UNAERP', email: 'larissa@unaerp.br', phone: '(16) 3603-7000', segment: 'Educação e Pesquisa', source: 'Site', stage: 'Em contato', responsibleId: 'u-paula', assistants: ['u-camila'], createdAt: 'Hoje, 09:42' },
+        { id: 'L-1047', name: 'Rayana Gomes Ramos', company: 'CT-FIOCRUZ', email: 'rayana@fiocruz.br', phone: '(21) 2598-4242', segment: 'Laboratórios Clínicos', source: 'Site', stage: 'Em contato', responsibleId: 'u-vitor', assistants: [], createdAt: 'Hoje, 09:18' },
+        { id: 'L-1046', name: 'João Vilela', company: 'Biocare Farmacêutica', email: 'joao@biocare.com.br', phone: '(11) 4020-1201', segment: 'Farmacêutico', source: 'Indicação', stage: 'Em contato', responsibleId: 'u-paula', assistants: [], createdAt: 'Ontem, 16:30' },
+        { id: 'L-1045', name: 'Marina Ferreira', company: 'Solvitta', email: 'marina@solvitta.com', phone: '(41) 3322-9800', segment: 'Farmacêutico', source: 'Site', stage: 'Lead convertido', responsibleId: 'u-vitor', assistants: ['u-camila'], createdAt: '15 ago, 14:10' },
+        { id: 'L-1044', name: 'Carlos Nobre', company: 'Nobre Diagnósticos', email: 'carlos@nobrediag.com', phone: '(31) 3090-8877', segment: 'Diagnóstico', source: 'Feira', stage: 'Lead descartado', discardReason: 'Fora do perfil', responsibleId: 'u-vitor', assistants: [], createdAt: '14 ago, 11:08' }
+      ],
+      contacts: [
+        { id: 'C-2281', name: 'Ana Berclay', company: 'Arkos Estética', email: 'ana@arkos.com.br', phone: '(11) 3456-7788', role: 'Compradora' },
+        { id: 'C-2280', name: 'Marina Ferreira', company: 'Solvitta', email: 'marina@solvitta.com', phone: '(41) 3322-9800', role: 'Diretora' },
+        { id: 'C-2279', name: 'Giovani Oliveira', company: 'ALS Pharma', email: 'giovani@alspharma.com', phone: '(19) 3901-2000', role: 'Coordenador' },
+        { id: 'C-2278', name: 'Gisele Bertolini', company: 'Open Analítica', email: 'gisele@openanalitica.com', phone: '(11) 2910-4600', role: 'Pesquisadora' }
+      ],
+      companies: [
+        { id: 'E-802', name: 'Arkos Estética', city: 'São Paulo / SP', segment: 'Médico e Hospitalar', phone: '(11) 3456-7788', ownerId: 'u-paula' },
+        { id: 'E-801', name: 'ALS Pharma', city: 'Campinas / SP', segment: 'Farmacêutico', phone: '(19) 3901-2000', ownerId: 'u-vitor' },
+        { id: 'E-800', name: 'Solvitta', city: 'Curitiba / PR', segment: 'Farmacêutico', phone: '(41) 3322-9800', ownerId: 'u-vitor' },
+        { id: 'E-799', name: 'Open Analítica', city: 'São Paulo / SP', segment: 'Alimentos e Bebidas', phone: '(11) 2910-4600', ownerId: 'u-paula' }
+      ],
+      deals: [
+        { id: 'N-16312', title: 'Implantação Arkos Estética', company: 'Arkos Estética', contact: 'Ana Berclay', amount: 48500, stage: 'Orçamentos enviados', responsibleId: 'u-paula', assistants: ['u-camila'], updatedAt: 'Há 18 min', quotes: [{ id: 'ORC-31', description: 'Implantação completa', quantity: 1, unitPrice: 48500, discount: 0, total: 48500, state: 'Enviado', pdf: 'proposta-arkos.pdf' }] },
+        { id: 'N-16311', title: 'Renovação ALS Pharma', company: 'ALS Pharma', contact: 'Giovani Oliveira', amount: 32700, stage: 'Negociação Revisão', responsibleId: 'u-vitor', assistants: [], updatedAt: 'Há 42 min', quotes: [] },
+        { id: 'N-16310', title: 'Projeto Solvitta 2026', company: 'Solvitta', contact: 'Marina Ferreira', amount: 78200, stage: 'Pedido aprovado Consultar', responsibleId: 'u-vitor', assistants: ['u-camila'], updatedAt: 'Hoje, 08:45', quotes: [] },
+        { id: 'N-16309', title: 'Expansão Open Analítica', company: 'Open Analítica', contact: 'Gisele Bertolini', amount: 21600, stage: 'Em Contato', responsibleId: 'u-paula', assistants: [], updatedAt: 'Ontem, 17:20', quotes: [] },
+        { id: 'N-16308', title: 'Licenças Biocare', company: 'Biocare Farmacêutica', contact: 'João Vilela', amount: 19400, stage: 'Ganho', responsibleId: 'u-paula', assistants: ['u-camila'], updatedAt: '15 ago, 15:12', quotes: [] }
+      ],
+      notifications: [
+        { id: 'NT-3', userId: 'u-admin', text: 'Novo Lead recebido pelo formulário do Site.', detail: 'Larissa Spinola — UNAERP', time: 'Há 9 min', read: false },
+        { id: 'NT-2', userId: 'u-paula', text: 'Você foi adicionada como responsável.', detail: 'Negócio N-16312 — Arkos Estética', time: 'Há 31 min', read: false },
+        { id: 'NT-1', userId: 'u-camila', text: 'Você foi adicionada como Assistente.', detail: 'Negócio N-16310 — Solvitta', time: 'Ontem, 16:02', read: true }
+      ]
+    });
+
+    let state = loadState();
+    let activeView = 'dashboard';
+    const filters = { leads: '', contacts: '', companies: '', deals: '' };
+    const stageFilters = { leads: 'Todos', deals: 'Todos' };
+
+    function loadState() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        if (saved && Array.isArray(saved.leads) && Array.isArray(saved.deals)) return saved;
+      } catch (_) { /* corrupted local state is intentionally replaced */ }
+      const fresh = seedState();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+      return fresh;
+    }
+
+    function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    function currentUser() { return state.users.find(user => user.id === state.currentUserId) || state.users[0]; }
+    function userName(id) { return state.users.find(user => user.id === id)?.name || 'Sem responsável'; }
+    function initials(name) { return String(name || '?').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase(); }
+    function escapeHTML(value) { return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]); }
+    function money(value) { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+    function nextId(prefix, items) { return `${prefix}-${Math.max(0, ...items.map(item => Number(String(item.id).split('-')[1]) || 0)) + 1}`; }
+    function canSee(record) {
+      const user = currentUser();
+      if (user.role === 'Administrador' || user.role === 'Gestor') return true;
+      return record.responsibleId === user.id || (record.assistants || []).includes(user.id);
+    }
+    function visibleLeads() { return state.leads.filter(canSee); }
+    function visibleDeals() { return state.deals.filter(canSee); }
+
+    function notify(text, detail, userId = state.currentUserId) {
+      state.notifications.unshift({ id: nextId('NT', state.notifications), userId, text, detail, time: 'Agora', read: false });
+      saveState();
+    }
+
+    function toast(message) {
+      const element = document.createElement('div');
+      element.className = 'toast';
+      element.innerHTML = `<b>✓</b><span>${escapeHTML(message)}</span>`;
+      document.getElementById('toastRegion').append(element);
+      setTimeout(() => element.remove(), 3500);
+    }
+
+    function stageTag(stage) {
+      const css = stage === 'Ganho' || stage === 'Lead convertido' ? 'green' : stage.includes('descartado') || stage.includes('Não Aprovado') || stage.includes('falha') ? 'red' : stage.includes('Faturando') || stage.includes('Pedido') ? 'amber' : stage.includes('Negociação') ? 'purple' : '';
+      return `<span class="tag ${css}">${escapeHTML(stage)}</span>`;
+    }
+
+    function profileOptions() {
+      const allowed = state.users.filter(user => ['Administrador', 'Gestor', 'Vendedor', 'Assistente'].includes(user.role));
+      document.getElementById('profileSelect').innerHTML = allowed.map(user => `<option value="${user.id}" ${user.id === state.currentUserId ? 'selected' : ''}>${escapeHTML(user.name)} · ${escapeHTML(user.role)}</option>`).join('');
+      document.getElementById('profileAvatar').textContent = initials(currentUser().name);
+    }
+
+    function updateCounts() {
+      const unread = state.notifications.filter(item => item.userId === state.currentUserId && !item.read).length;
+      document.getElementById('leadNavCount').textContent = visibleLeads().filter(item => item.stage === 'Em contato').length;
+      document.getElementById('dealNavCount').textContent = visibleDeals().filter(item => !['Ganho', 'Orçamento Não Aprovado', 'Analisar falha'].includes(item.stage)).length;
+      document.getElementById('noticeNavCount').textContent = unread;
+      document.getElementById('topNoticeCount').textContent = unread;
+      document.getElementById('topNoticeCount').hidden = unread === 0;
+    }
+
+    function dashboardHTML() {
+      const leads = visibleLeads();
+      const deals = visibleDeals();
+      const openDeals = deals.filter(item => !['Ganho', 'Orçamento Não Aprovado', 'Analisar falha'].includes(item.stage));
+      const total = openDeals.reduce((sum, item) => sum + item.amount, 0);
+      const won = deals.filter(item => item.stage === 'Ganho').reduce((sum, item) => sum + item.amount, 0);
+      const maxCount = Math.max(1, ...dealStages.map(stage => deals.filter(item => item.stage === stage).length));
+      const pipeline = dealStages.map(stage => {
+        const records = deals.filter(item => item.stage === stage);
+        const amount = records.reduce((sum, item) => sum + item.amount, 0);
+        return `<div class="pipeline-row"><span title="${escapeHTML(stage)}">${escapeHTML(stage)}</span><div class="pipeline-track"><div class="pipeline-bar" style="width:${Math.max(4, records.length / maxCount * 100)}%"></div></div><b>${money(amount)}</b></div>`;
+      }).join('');
+      return `
+        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b>.</p></div><div class="toolbar-actions"><button class="button" data-action="reset">↻ Restaurar demo</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
+        <div class="stats">
+          <article class="stat" style="--stat-color:var(--blue-100)"><div class="stat-top"><span>Leads em contato</span><span class="stat-icon">◎</span></div><strong>${leads.filter(item => item.stage === 'Em contato').length}</strong><small><b>Dados locais</b> deste perfil</small></article>
+          <article class="stat" style="--stat-color:var(--purple-100)"><div class="stat-top"><span>Negócios abertos</span><span class="stat-icon">◇</span></div><strong>${openDeals.length}</strong><small>${money(total)} em pipeline</small></article>
+          <article class="stat" style="--stat-color:var(--green-100)"><div class="stat-top"><span>Receita ganha</span><span class="stat-icon">↗</span></div><strong>${money(won)}</strong><small>Somente dados demonstrativos</small></article>
+          <article class="stat" style="--stat-color:var(--amber-100)"><div class="stat-top"><span>Conversão</span><span class="stat-icon">%</span></div><strong>${leads.length ? Math.round(leads.filter(item => item.stage === 'Lead convertido').length / leads.length * 100) : 0}%</strong><small>Leads convertidos no conjunto visível</small></article>
+        </div>
+        <div class="grid-two">
+          <article class="card"><div class="card-head"><div><h3>Pipeline Vendas CMS</h3><p>Distribuição dos Negócios por etapa</p></div><button class="button small" data-view="deals">Ver Negócios</button></div><div class="card-body pipeline">${pipeline}</div></article>
+          <article class="card"><div class="card-head"><div><h3>Movimentações recentes</h3><p>Atalhos para os registros</p></div></div><div class="card-body activity-list">${leads.slice(0, 4).map(item => `<div class="activity"><span class="activity-icon">◎</span><p><b>${escapeHTML(item.name)}</b><br>${escapeHTML(item.company)}</p><small>${escapeHTML(item.createdAt)}</small></div>`).join('') || '<div class="empty">Nenhum registro visível.</div>'}</div></article>
+        </div>`;
+    }
+
+    function listShell(entity, title, description, body, count, stageOptions = []) {
+      const plural = { leads: 'Lead', contacts: 'Contato', companies: 'Empresa', deals: 'Negócio' }[entity];
+      const stageFilter = stageOptions.length ? `<select data-stage-filter="${entity}" aria-label="Filtrar por etapa"><option>Todos</option>${stageOptions.map(stage => `<option ${stageFilters[entity] === stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select>` : '';
+      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions"><button class="button primary" data-action="new" data-entity="${entity.slice(0, -1)}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filters[entity])}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}</div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>Dados de demonstração</span></div></div>`;
+    }
+
+    function leadsHTML() {
+      const query = filters.leads.toLowerCase();
+      const records = visibleLeads().filter(item => (!query || `${item.name} ${item.company} ${item.email} ${item.segment}`.toLowerCase().includes(query)) && (stageFilters.leads === 'Todos' || item.stage === stageFilters.leads));
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${stageTag(item.stage)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}<button class="row-action" data-action="edit" data-entity="lead" data-id="${item.id}" title="Editar">✎</button><button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const table = rows ? `<table><thead><tr><th>Lead</th><th>Contato</th><th>Segmento</th><th>Etapa</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Lead encontrado');
+      return listShell('leads', 'Leads', 'Cada nova solicitação comercial pode originar uma oportunidade.', table, records.length, leadStages);
+    }
+
+    function contactsHTML() {
+      const query = filters.contacts.toLowerCase();
+      const records = state.contacts.filter(item => !query || `${item.name} ${item.company} ${item.email} ${item.role}`.toLowerCase().includes(query));
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.company)}</td><td>${escapeHTML(item.role)}</td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td><div class="row-actions"><button class="row-action" data-action="edit" data-entity="contact" data-id="${item.id}" title="Editar">✎</button><button class="row-action" data-action="delete" data-entity="contact" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      return listShell('contacts', 'Contatos', 'Pessoas vinculadas a Empresas e Negócios.', rows ? `<table><thead><tr><th>Contato</th><th>Empresa</th><th>Cargo</th><th>Dados de contato</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Contato encontrado'), records.length);
+    }
+
+    function companiesHTML() {
+      const query = filters.companies.toLowerCase();
+      const records = state.companies.filter(item => !query || `${item.name} ${item.city} ${item.segment}`.toLowerCase().includes(query));
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.segment)}</td><td>${escapeHTML(item.city)}</td><td>${escapeHTML(item.phone)}</td><td>${escapeHTML(userName(item.ownerId))}</td><td><div class="row-actions"><button class="row-action" data-action="edit" data-entity="company" data-id="${item.id}" title="Editar">✎</button><button class="row-action" data-action="delete" data-entity="company" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      return listShell('companies', 'Empresas', 'Contas com histórico e vínculos comerciais.', rows ? `<table><thead><tr><th>Empresa</th><th>Segmento</th><th>Cidade</th><th>Telefone</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhuma Empresa encontrada'), records.length);
+    }
+
+    function dealsHTML() {
+      const query = filters.deals.toLowerCase();
+      const records = visibleDeals().filter(item => (!query || `${item.title} ${item.company} ${item.contact}`.toLowerCase().includes(query)) && (stageFilters.deals === 'Todos' || item.stage === stageFilters.deals));
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td><select class="stage-select" data-deal-stage="${item.id}">${dealStages.map(stage => `<option ${stage === item.stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select></td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="edit" data-entity="deal" data-id="${item.id}" title="Editar">✎</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const table = rows ? `<table><thead><tr><th>Negócio</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
+      return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com automações demonstrativas.', table, records.length, dealStages);
+    }
+
+    function notificationsHTML() {
+      const records = state.notifications.filter(item => item.userId === state.currentUserId);
+      return `<div class="page-toolbar"><div><h2>Notificações</h2><p>Avisos para ${escapeHTML(currentUser().name)}.</p></div><div class="toolbar-actions"><button class="button" data-action="read-all">✓ Marcar todas como lidas</button></div></div><div class="notice-list">${records.map(item => `<article class="notice ${item.read ? '' : 'unread'}"><span class="notice-icon">♢</span><div><p>${escapeHTML(item.text)}</p><small>${escapeHTML(item.detail)} · ${escapeHTML(item.time)}</small></div>${item.read ? '<span class="tag green">Lida</span>' : `<button class="button small" data-action="read" data-id="${item.id}">Marcar como lida</button>`}</article>`).join('') || emptyHTML('Nenhuma notificação para este perfil')}</div>`;
+    }
+
+    function emptyHTML(message) { return `<div class="empty"><div class="empty-icon">⌕</div><b>${escapeHTML(message)}</b><p>Tente ajustar a busca ou restaurar os dados de demonstração.</p></div>`; }
+
+    function render() {
+      profileOptions();
+      updateCounts();
+      document.getElementById('page-dashboard').innerHTML = dashboardHTML();
+      document.getElementById('page-leads').innerHTML = leadsHTML();
+      document.getElementById('page-contacts').innerHTML = contactsHTML();
+      document.getElementById('page-companies').innerHTML = companiesHTML();
+      document.getElementById('page-deals').innerHTML = dealsHTML();
+      document.getElementById('page-notifications').innerHTML = notificationsHTML();
+      showView(activeView, false);
+    }
+
+    function showView(view, closeMobile = true) {
+      activeView = view;
+      document.querySelectorAll('.page').forEach(page => page.classList.toggle('active', page.id === `page-${view}`));
+      document.querySelectorAll('.nav button').forEach(button => button.classList.toggle('active', button.dataset.view === view));
+      const [title, subtitle] = pageMeta[view];
+      document.getElementById('topTitle').textContent = title;
+      document.getElementById('topSubtitle').textContent = subtitle;
+      if (closeMobile) toggleSidebar(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    const formDefinitions = {
+      lead: [
+        ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'text', true],
+        ['email', 'E-mail', 'email', true], ['phone', 'Telefone', 'text', false],
+        ['segment', 'Segmento', 'text', false], ['source', 'Origem', 'text', false],
+        ['responsibleId', 'Responsável', 'user', true], ['assistants', 'Assistente', 'assistant', false]
+      ],
+      contact: [
+        ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'text', true],
+        ['email', 'E-mail', 'email', true], ['phone', 'Telefone', 'text', false], ['role', 'Cargo', 'text', false]
+      ],
+      company: [
+        ['name', 'Razão / nome da Empresa', 'text', true], ['city', 'Cidade / UF', 'text', false],
+        ['segment', 'Segmento', 'text', false], ['phone', 'Telefone', 'text', false], ['ownerId', 'Responsável', 'user', true]
+      ],
+      deal: [
+        ['title', 'Título do Negócio', 'text', true], ['company', 'Empresa', 'text', true],
+        ['contact', 'Contato', 'text', false], ['amount', 'Valor (R$)', 'number', true],
+        ['stage', 'Etapa', 'stage', true], ['responsibleId', 'Responsável', 'user', true],
+        ['assistants', 'Assistente', 'assistant', false]
+      ]
+    };
+
+    function openEntityDialog(entity, id = null) {
+      const collections = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' };
+      const collection = collections[entity];
+      const record = id ? state[collection].find(item => item.id === id) : {};
+      const labels = { lead: 'Lead', contact: 'Contato', company: 'Empresa', deal: 'Negócio' };
+      const dialog = document.getElementById('entityDialog');
+      const form = document.getElementById('entityForm');
+      form.dataset.entity = entity;
+      form.dataset.id = id || '';
+      document.getElementById('entityDialogTitle').textContent = `${id ? 'Editar' : 'Novo'} ${labels[entity]}`;
+      document.getElementById('entityFields').innerHTML = formDefinitions[entity].map(([name, label, type, required]) => fieldHTML(name, label, type, required, record?.[name])).join('');
+      dialog.showModal();
+    }
+
+    function fieldHTML(name, label, type, required, value) {
+      const requiredAttr = required ? 'required' : '';
+      if (type === 'user') {
+        const users = state.users.filter(user => ['Administrador', 'Gestor', 'Vendedor', 'Faturamento'].includes(user.role));
+        return `<div class="field"><label for="field-${name}">${label}${required ? ' *' : ''}</label><select id="field-${name}" name="${name}" ${requiredAttr}>${users.map(user => `<option value="${user.id}" ${user.id === value ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
+      }
+      if (type === 'assistant') {
+        const assistants = state.users.filter(user => user.role === 'Assistente');
+        const selected = Array.isArray(value) ? value[0] : '';
+        return `<div class="field"><label for="field-${name}">${label}</label><select id="field-${name}" name="${name}"><option value="">Nenhum</option>${assistants.map(user => `<option value="${user.id}" ${user.id === selected ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
+      }
+      if (type === 'stage') return `<div class="field"><label for="field-${name}">${label} *</label><select id="field-${name}" name="${name}" required>${dealStages.map(stage => `<option ${stage === value ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select></div>`;
+      return `<div class="field"><label for="field-${name}">${label}${required ? ' *' : ''}</label><input id="field-${name}" name="${name}" type="${type}" ${type === 'number' ? 'min="0" step="0.01"' : ''} value="${escapeHTML(value ?? '')}" ${requiredAttr}></div>`;
+    }
+
+    function saveEntity(form) {
+      const entity = form.dataset.entity;
+      const collection = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' }[entity];
+      const prefixes = { lead: 'L', contact: 'C', company: 'E', deal: 'N' };
+      const data = Object.fromEntries(new FormData(form));
+      const existing = form.dataset.id ? state[collection].find(item => item.id === form.dataset.id) : null;
+      if (data.assistants !== undefined) data.assistants = data.assistants ? [data.assistants] : [];
+      if (data.amount !== undefined) data.amount = Number(data.amount);
+      if (existing) Object.assign(existing, data, { updatedAt: 'Agora' });
+      else {
+        const base = { id: nextId(prefixes[entity], state[collection]) };
+        if (entity === 'lead') Object.assign(base, { stage: 'Em contato', createdAt: 'Agora' });
+        if (entity === 'deal') Object.assign(base, { quotes: [], updatedAt: 'Agora' });
+        state[collection].unshift(Object.assign(base, data));
+      }
+      notify(existing ? `${entityLabel(entity)} atualizado.` : `Novo ${entityLabel(entity)} criado.`, data.name || data.title || data.company || 'Registro demonstrativo');
+      saveState();
+      document.getElementById('entityDialog').close();
+      render();
+      toast(`${entityLabel(entity)} ${existing ? 'atualizado' : 'criado'} com sucesso.`);
+    }
+
+    function entityLabel(entity) { return ({ lead: 'Lead', contact: 'Contato', company: 'Empresa', deal: 'Negócio' })[entity]; }
+    function collectionFor(entity) { return ({ lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' })[entity]; }
+
+    function deleteEntity(entity, id) {
+      if (!confirm(`Excluir este ${entityLabel(entity)} apenas da demonstração?`)) return;
+      const collection = collectionFor(entity);
+      state[collection] = state[collection].filter(item => item.id !== id);
+      saveState(); render(); toast(`${entityLabel(entity)} removido da demonstração.`);
+    }
+
+    function convertLead(id) {
+      const lead = state.leads.find(item => item.id === id);
+      if (!lead || lead.stage !== 'Em contato') return;
+      lead.stage = 'Lead convertido';
+      const deal = {
+        id: nextId('N', state.deals), title: `Oportunidade ${lead.company}`, company: lead.company,
+        contact: lead.name, amount: 0, stage: 'Em Contato', responsibleId: lead.responsibleId,
+        assistants: [...(lead.assistants || [])], updatedAt: 'Agora', quotes: []
+      };
+      state.deals.unshift(deal);
+      notify('Lead convertido em Negócio.', `${lead.name} → ${deal.id}`, lead.responsibleId);
+      saveState(); render(); toast(`Lead convertido. O Negócio ${deal.id} foi criado em Em Contato.`);
+    }
+
+    function discardLead(id) {
+      const lead = state.leads.find(item => item.id === id);
+      const reason = prompt('Informe o motivo do descarte:');
+      if (!lead || !reason?.trim()) { toast('O descarte exige um motivo.'); return; }
+      lead.stage = 'Lead descartado'; lead.discardReason = reason.trim();
+      saveState(); render(); toast('Lead descartado com o motivo informado.');
+    }
+
+    function changeDealStage(id, stage) {
+      const deal = state.deals.find(item => item.id === id);
+      if (!deal) return;
+      deal.stage = stage; deal.updatedAt = 'Agora';
+      let message = `Negócio movido para ${stage}.`;
+      if (stage === 'Faturando') {
+        deal.responsibleId = 'u-billing';
+        notify('Responsabilidade alterada automaticamente.', `${deal.id} agora está com Equipe Faturamento`, 'u-billing');
+        if (state.currentUserId !== 'u-billing') {
+          notify('Automação de Faturamento executada.', `${deal.id} foi atribuído à Equipe Faturamento`);
+        }
+        message += ' Responsável alterado para Equipe Faturamento.';
+      } else {
+        notify('Etapa do Negócio alterada.', `${deal.id} → ${stage}`, deal.responsibleId);
+      }
+      saveState(); render(); toast(message);
+    }
+
+    function openQuote(id) {
+      const deal = state.deals.find(item => item.id === id);
+      if (!deal) return;
+      document.getElementById('quoteForm').reset();
+      document.getElementById('quoteDealId').value = id;
+      document.getElementById('quoteQuantity').value = 1;
+      updateQuoteTotal();
+      document.getElementById('quoteDialog').showModal();
+    }
+
+    function updateQuoteTotal() {
+      const quantity = Number(document.getElementById('quoteQuantity').value || 0);
+      const unit = Number(document.getElementById('quoteUnit').value || 0);
+      const discount = Number(document.getElementById('quoteDiscount').value || 0);
+      document.getElementById('quoteTotal').textContent = money(Math.max(0, quantity * unit - discount));
+    }
+
+    function saveQuote(form) {
+      const data = new FormData(form);
+      const deal = state.deals.find(item => item.id === data.get('dealId'));
+      if (!deal) return;
+      const file = document.getElementById('quotePdf').files[0];
+      if (file && file.type !== 'application/pdf') { toast('Selecione um arquivo PDF válido.'); return; }
+      const quantity = Number(data.get('quantity'));
+      const unitPrice = Number(data.get('unitPrice'));
+      const discount = Number(data.get('discount') || 0);
+      const total = Math.max(0, quantity * unitPrice - discount);
+      deal.quotes.push({ id: nextId('ORC', deal.quotes), description: data.get('description'), quantity, unitPrice, discount, total, validity: data.get('validity'), state: 'Rascunho', pdf: file?.name || '' });
+      deal.amount = total; deal.updatedAt = 'Agora';
+      notify('Orçamento adicionado ao Negócio.', `${deal.id} · ${money(total)}`, deal.responsibleId);
+      saveState(); document.getElementById('quoteDialog').close(); render(); toast(`Orçamento de ${money(total)} adicionado${file ? ` com ${file.name}` : ' sem anexo'}.`);
+    }
+
+    function markRead(id) { const item = state.notifications.find(note => note.id === id); if (item) item.read = true; saveState(); render(); }
+    function markAllRead() { state.notifications.filter(item => item.userId === state.currentUserId).forEach(item => item.read = true); saveState(); render(); toast('Notificações marcadas como lidas.'); }
+
+    function resetDemo() {
+      if (!confirm('Restaurar todos os dados fictícios e descartar suas alterações locais?')) return;
+      state = seedState(); saveState(); activeView = 'dashboard'; render(); toast('Dados de demonstração restaurados.');
+    }
+
+    function toggleSidebar(open) {
+      document.getElementById('sidebar').classList.toggle('open', open);
+      document.getElementById('sidebarOverlay').classList.toggle('open', open);
+    }
+
+    document.addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      if (button.dataset.view) { showView(button.dataset.view); return; }
+      const action = button.dataset.action;
+      if (action === 'new') openEntityDialog(button.dataset.entity);
+      if (action === 'edit') openEntityDialog(button.dataset.entity, button.dataset.id);
+      if (action === 'delete') deleteEntity(button.dataset.entity, button.dataset.id);
+      if (action === 'convert') convertLead(button.dataset.id);
+      if (action === 'discard') discardLead(button.dataset.id);
+      if (action === 'quote') openQuote(button.dataset.id);
+      if (action === 'read') markRead(button.dataset.id);
+      if (action === 'read-all') markAllRead();
+      if (action === 'reset') resetDemo();
+      if (button.dataset.close) document.getElementById(button.dataset.close).close();
+    });
+
+    document.addEventListener('input', event => {
+      if (event.target.dataset.search) { filters[event.target.dataset.search] = event.target.value; render(); const input = document.querySelector(`[data-search="${event.target.dataset.search}"]`); input?.focus(); input?.setSelectionRange(input.value.length, input.value.length); }
+      if (['quoteQuantity', 'quoteUnit', 'quoteDiscount'].includes(event.target.id)) updateQuoteTotal();
+    });
+
+    document.addEventListener('change', event => {
+      if (event.target.dataset.stageFilter) { stageFilters[event.target.dataset.stageFilter] = event.target.value; render(); }
+      if (event.target.dataset.dealStage) changeDealStage(event.target.dataset.dealStage, event.target.value);
+    });
+
+    document.getElementById('profileSelect').addEventListener('change', event => {
+      state.currentUserId = event.target.value; saveState(); render(); toast(`Perfil alterado para ${currentUser().name} · ${currentUser().role}.`);
+    });
+    document.getElementById('entityForm').addEventListener('submit', event => { event.preventDefault(); saveEntity(event.currentTarget); });
+    document.getElementById('quoteForm').addEventListener('submit', event => { event.preventDefault(); saveQuote(event.currentTarget); });
+    document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));
+    document.getElementById('sidebarOverlay').addEventListener('click', () => toggleSidebar(false));
+
+    render();
+  </script>
+</body>
+</html>

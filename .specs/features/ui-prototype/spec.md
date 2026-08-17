@@ -91,20 +91,20 @@ O cliente precisa visualizar rapidamente como o Smart CRM poderá funcionar ante
 | --- | --- | --- |
 | DEMO-01 | T4, T5 | Pending |
 | DEMO-02 | T1, T3, T4 | In Progress (T1 complete) |
-| DEMO-03 | T2 | Pending |
-| DEMO-04 | T2 | Pending |
-| DEMO-05 | T2 | Pending |
-| DEMO-06 | T2 | Pending |
-| DEMO-07 | T2 | Pending |
-| DEMO-08 | T2 | Pending |
-| DEMO-09 | T2 | Pending |
-| DEMO-10 | T2 | Pending |
-| DEMO-11 | T2 | Pending |
-| DEMO-12 | T2 | Pending |
-| DEMO-13 | T2 | Pending |
-| DEMO-14 | T2 | Pending |
-| DEMO-15 | T2, T5 | Pending |
-| DEMO-16 | T2 | Pending |
+| DEMO-03 | T2 | Complete |
+| DEMO-04 | T2 | Complete |
+| DEMO-05 | T2 | Complete |
+| DEMO-06 | T2 | Complete |
+| DEMO-07 | T2 | Complete |
+| DEMO-08 | T2 | Complete |
+| DEMO-09 | T2 | Complete |
+| DEMO-10 | T2 | Complete |
+| DEMO-11 | T2 | Complete |
+| DEMO-12 | T2 | Complete |
+| DEMO-13 | T2 | Complete |
+| DEMO-14 | T2 | Complete |
+| DEMO-15 | T2, T5 | In Progress (T2 complete) |
+| DEMO-16 | T2 | Complete |
 
 ## Success Criteria
 
