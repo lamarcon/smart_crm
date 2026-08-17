@@ -49,7 +49,9 @@ T4 → T5
 
 ## Task Breakdown
 
-### T1: Criar servidor local sem dependências
+### T1: Criar servidor local sem dependências ✅
+
+**Status**: Complete — self-test e compilação Python aprovados em 2026-08-17.
 
 **What**: Implementar o servidor HTTP, a rota de saúde, a entrega segura de arquivos e seu autoteste.
 **Where**: `app/server.py`
@@ -64,10 +66,10 @@ T4 → T5
 
 **Done when**:
 
-- [ ] `/health` retorna JSON saudável.
-- [ ] `/` resolve o documento do protótipo.
-- [ ] Caminhos fora do diretório estático são rejeitados.
-- [ ] O gate Quick termina com código zero.
+- [x] `/health` retorna JSON saudável.
+- [x] `/` resolve o documento do protótipo.
+- [x] Caminhos fora do diretório estático são rejeitados.
+- [x] O gate Quick termina com código zero.
 
 **Tests**: self-test
 **Gate**: quick

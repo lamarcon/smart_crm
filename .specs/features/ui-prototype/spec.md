@@ -90,7 +90,7 @@ O cliente precisa visualizar rapidamente como o Smart CRM poderá funcionar ante
 | Requirement | Task | Status |
 | --- | --- | --- |
 | DEMO-01 | T4, T5 | Pending |
-| DEMO-02 | T1, T3, T4 | Pending |
+| DEMO-02 | T1, T3, T4 | In Progress (T1 complete) |
 | DEMO-03 | T2 | Pending |
 | DEMO-04 | T2 | Pending |
 | DEMO-05 | T2 | Pending |
