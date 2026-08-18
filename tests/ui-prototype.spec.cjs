@@ -333,6 +333,12 @@ async function createLead(page, name) {
       assert.equal(await page.locator('#page-deals tbody tr').count(), count, `operador monetário ${operator}`);
       await page.getByRole('button', { name: /Filtros/ }).click();
     }
+    await row.locator('select[name="filter-operator"]').selectOption('between');
+    await row.locator('input[name="filter-value"]').fill('40000');
+    await row.locator('input[name="filter-value-to"]').fill('20000');
+    await panel.getByRole('button', { name: 'Pesquisar' }).click();
+    assert.equal(await page.getByText('Revise o intervalo: o valor inicial deve ser menor que o final.').isVisible(), true);
+    assert.equal(await panel.isVisible(), true);
   });
 
   await run('filtros rejeitam nome vazio e intervalo invertido e atualizam preset homônimo', async page => {
@@ -458,6 +464,10 @@ async function createLead(page, name) {
     assert.deepEqual(await page.locator('#page-leads .kanban-count').allTextContents(), ['3', '1', '1']);
     const contactColumn = page.locator('[data-kanban-stage="Em contato"]');
     assert.match(await contactColumn.locator('.kanban-column-head').innerText(), /3/);
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    assert.deepEqual(await page.locator('#page-deals .kanban-column-head > span:first-child').allTextContents(), DEAL_STAGES);
+    assert.deepEqual(await page.locator('#page-deals .kanban-count').allTextContents(), ['1', '0', '1', '1', '1', '1', '1', '0', '0']);
   });
 
   await run('BOARD-04 e BOARD-05 mudam etapa comum e desfazem atomicamente', async page => {
@@ -571,6 +581,7 @@ async function createLead(page, name) {
     await scopes.filter({ hasText: 'Negócios' }).click();
     assert.deepEqual(await panel.locator('[data-filter-field]').evaluateAll(rows => rows.map(row => row.dataset.filterField)), ['title', 'stage', 'responsibleId', 'createdAt']);
     const dealFields = (await panel.locator('#addFilterField option').allTextContents()).join(' ');
+    assert.match(dealFields, /Empresa/);
     assert.match(dealFields, /Contato/);
     assert.match(dealFields, /Valor/);
     assert.match(dealFields, /Data da mudança de etapa/);
