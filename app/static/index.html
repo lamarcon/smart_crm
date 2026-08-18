@@ -160,6 +160,27 @@
     .empty { padding: 58px 20px; color: var(--slate-500); text-align: center; }
     .empty-icon { width: 48px; height: 48px; display: grid; place-items: center; margin: 0 auto 12px; border-radius: 13px; color: var(--slate-500); background: var(--slate-100); font-size: 20px; }
     .table-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 15px; border-top: 1px solid var(--slate-200); color: var(--slate-500); font-size: 12px; }
+    .view-switch { display: inline-flex; padding: 3px; border: 1px solid var(--slate-300); border-radius: 10px; background: var(--slate-50); }
+    .view-switch button { min-height: 31px; border: 0; border-radius: 7px; padding: 5px 10px; color: var(--slate-500); background: transparent; font-weight: 750; }
+    .view-switch button.active { color: var(--navy-900); background: white; box-shadow: var(--shadow-sm); }
+    .stage-progress { min-width: 255px; display: grid; gap: 5px; }
+    .stage-segments { display: flex; gap: 2px; }
+    .stage-segment { flex: 1; height: 8px; min-width: 15px; overflow: hidden; border: 0; border-radius: 2px; padding: 0; background: var(--slate-200); text-indent: -999px; }
+    .stage-segment.complete { background: #84caff; }
+    .stage-segment.current { background: var(--blue-500); box-shadow: 0 0 0 2px rgba(46,144,250,.15); }
+    .stage-progress-label { overflow: hidden; color: var(--slate-500); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .stage-progress-label b { color: var(--navy-700); }
+    .kanban-board { width: 100%; display: flex; gap: 12px; overflow-x: auto; padding: 15px; background: var(--slate-50); scrollbar-gutter: stable; }
+    .kanban-column { flex: 0 0 272px; min-height: 350px; overflow: hidden; border: 1px solid var(--slate-200); border-radius: 11px; background: #eef2f6; }
+    .kanban-column-head { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 12px; border-top: 4px solid var(--blue-500); color: var(--navy-700); background: white; font-size: 12px; font-weight: 800; }
+    .kanban-count { min-width: 23px; height: 23px; display: grid; place-items: center; border-radius: 999px; color: #175cd3; background: var(--blue-100); font-size: 10px; }
+    .kanban-cards { display: grid; gap: 9px; padding: 9px; }
+    .kanban-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; box-shadow: var(--shadow-sm); }
+    .kanban-card .entity-link { font-size: 13px; }
+    .kanban-card small { color: var(--slate-500); line-height: 1.4; }
+    .kanban-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--slate-500); font-size: 11px; }
+    .kanban-card select { width: 100%; min-height: 36px; border: 1px solid var(--slate-300); border-radius: 8px; padding: 6px 8px; color: var(--navy-700); background: white; font-size: 11px; }
+    .kanban-actions { display: flex; gap: 6px; }
 
     .notice-list { display: grid; gap: 10px; }
     .notice { display: grid; grid-template-columns: 40px 1fr auto; gap: 13px; align-items: start; padding: 15px; border: 1px solid var(--slate-200); border-radius: 11px; background: white; }
@@ -207,11 +228,13 @@
     .saved-filter .row-action { width: 30px; height: 30px; }
     .filter-main { min-width: 0; display: flex; flex-direction: column; }
     .filter-fields { display: grid; gap: 13px; }
-    .filter-row { display: grid; grid-template-columns: minmax(150px, .75fr) minmax(150px, .75fr) minmax(180px, 1fr) 34px; gap: 9px; align-items: end; padding: 12px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
-    .filter-row .filter-label { align-self: center; color: var(--navy-700); font-size: 12px; font-weight: 750; }
-    .filter-control { display: flex; gap: 8px; min-width: 0; }
-    .filter-control input, .filter-control select { width: 100%; min-width: 0; min-height: 39px; border: 1px solid var(--slate-300); border-radius: 8px; padding: 8px 10px; background: white; }
-    .filter-control select[multiple] { min-height: 82px; }
+    .filter-row { display: grid; gap: 9px; padding: 12px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
+    .filter-row-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .filter-row-head label { color: var(--navy-700); font-size: 12px; font-weight: 750; }
+    .filter-controls { display: grid; grid-template-columns: minmax(150px, .55fr) minmax(180px, 1fr); gap: 8px; min-width: 0; }
+    .filter-controls input, .filter-controls select { width: 100%; min-width: 0; min-height: 39px; border: 1px solid var(--slate-300); border-radius: 8px; padding: 8px 10px; background: white; }
+    .filter-controls select[multiple] { min-height: 82px; }
+    .filter-value-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     .filter-add { display: flex; gap: 9px; margin-top: 14px; }
     .filter-add select { min-width: 220px; min-height: 38px; border: 1px solid var(--slate-300); border-radius: 9px; padding: 7px 10px; background: white; }
     .filter-summary { display: inline-flex; align-items: center; gap: 6px; color: var(--slate-500); font-size: 12px; }
@@ -246,8 +269,8 @@
       dialog.filter-dialog { width: calc(100% - 16px); max-height: calc(100vh - 16px); }
       .filter-layout { min-height: calc(100vh - 16px); grid-template-columns: 1fr; }
       .filter-sidebar { max-height: 180px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--slate-200); }
-      .filter-row { grid-template-columns: 1fr; }
-      .filter-row .row-action { justify-self: end; }
+      .filter-controls { grid-template-columns: 1fr; }
+      .kanban-board { min-height: 480px; }
     }
     @media (max-width: 560px) {
       .demo-banner { font-size: 11px; }
@@ -843,10 +866,10 @@
       saveState();
     }
 
-    function toast(message) {
+    function toast(message, action = null) {
       const element = document.createElement('div');
       element.className = 'toast';
-      element.innerHTML = `<b>✓</b><span>${escapeHTML(message)}</span>`;
+      element.innerHTML = `<b>✓</b><span>${escapeHTML(message)}</span>${action ? `<button class="button small" data-action="${action.action}">${escapeHTML(action.label)}</button>` : ''}`;
       document.getElementById('toastRegion').append(element);
       setTimeout(() => element.remove(), 3500);
     }
@@ -897,6 +920,41 @@
         </div>`;
     }
 
+    function getViewMode(scope) {
+      const modes = state.ui.viewModesByUser[state.currentUserId] ||= { leads: 'list', deals: 'list' };
+      if (!['list', 'kanban'].includes(modes[scope])) modes[scope] = 'list';
+      return modes[scope] || 'list';
+    }
+
+    function setViewMode(scope, mode) {
+      if (!['leads', 'deals'].includes(scope) || !['list', 'kanban'].includes(mode)) return;
+      state.ui.viewModesByUser[state.currentUserId][scope] = mode;
+      saveState();
+      render();
+    }
+
+    function renderStageProgress(stages, current, entity, id) {
+      const currentIndex = Math.max(0, stages.indexOf(current));
+      const segments = stages.map((stage, index) => `<button type="button" class="stage-segment ${index < currentIndex ? 'complete' : ''} ${stage === current ? 'current' : ''}" data-action="request-stage" data-entity="${entity}" data-id="${id}" data-stage-segment="${escapeHTML(stage)}" aria-label="Mover para ${escapeHTML(stage)}">${escapeHTML(stage)}</button>`).join('');
+      return `<div class="stage-progress"><div class="stage-segments">${segments}</div><div class="stage-progress-label"><b>${escapeHTML(current)}</b> · etapa ${currentIndex + 1} de ${stages.length}</div></div>`;
+    }
+
+    function renderKanban(scope, records) {
+      const isLead = scope === 'leads';
+      const stages = isLead ? leadStages : dealStages;
+      const entity = isLead ? 'lead' : 'deal';
+      return `<div class="kanban-board" aria-label="Kanban de ${isLead ? 'Leads' : 'Negócios'}">${stages.map(stage => {
+        const stageRecords = records.filter(record => record.stage === stage);
+        const cards = stageRecords.map(record => {
+          const title = isLead ? record.name : record.title;
+          const subtitle = isLead ? `${record.id} · ${record.company}` : `${record.id} · ${record.company} · ${money(record.amount)}`;
+          const options = stages.map(option => `<option ${option === record.stage ? 'selected' : ''}>${escapeHTML(option)}</option>`).join('');
+          return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small><div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}">${options}</select>${!isLead ? `<div class="kanban-actions"><button class="button small" data-action="quote" data-id="${record.id}">Orçamento</button></div>` : ''}</article>`;
+        }).join('');
+        return `<section class="kanban-column" data-kanban-stage="${escapeHTML(stage)}"><div class="kanban-column-head"><span>${escapeHTML(stage)}</span><span class="kanban-count">${stageRecords.length}</span></div><div class="kanban-cards">${cards || '<p class="hint">Nenhum registro nesta etapa.</p>'}</div></section>`;
+      }).join('')}</div>`;
+    }
+
     function listShell(entity, title, description, body, count, stageOptions = []) {
       const plural = { leads: 'Lead', contacts: 'Contato', companies: 'Empresa', deals: 'Negócio' }[entity];
       const filter = getFilterState(entity);
@@ -904,12 +962,15 @@
       const quickStage = selectedStages.length === 1 ? selectedStages[0] : 'Todos';
       const stageFilter = stageOptions.length ? `<select data-stage-filter="${entity}" aria-label="Filtrar por etapa"><option>Todos</option>${stageOptions.map(stage => `<option ${quickStage === stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select>` : '';
       const countBadge = activeFilterCount(entity);
-      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions"><button class="button primary" data-action="new" data-entity="${entity.slice(0, -1)}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>Dados de demonstração</span></div></div>`;
+      const mode = stageOptions.length ? getViewMode(entity) : 'list';
+      const viewSwitch = stageOptions.length ? `<div class="view-switch" aria-label="Modo de visualização"><button type="button" aria-label="Lista" class="${mode === 'list' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="list">☷ Lista</button><button type="button" aria-label="Kanban" class="${mode === 'kanban' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="kanban">▦ Kanban</button></div>` : '';
+      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}<button class="button primary" data-action="new" data-entity="${entity.slice(0, -1)}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados de demonstração</span></div></div>`;
     }
 
     function leadsHTML() {
       const records = applyRecordFilters('leads', visibleLeads());
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="lead" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${stageTag(item.stage)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}<button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      if (getViewMode('leads') === 'kanban') return listShell('leads', 'Leads', 'Cada nova solicitação comercial pode originar uma oportunidade.', renderKanban('leads', records), records.length, leadStages);
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="lead" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${renderStageProgress(leadStages, item.stage, 'lead', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}<button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Lead</th><th>Contato</th><th>Segmento</th><th>Etapa</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Lead encontrado');
       return listShell('leads', 'Leads', 'Cada nova solicitação comercial pode originar uma oportunidade.', table, records.length, leadStages);
     }
@@ -928,7 +989,8 @@
 
     function dealsHTML() {
       const records = applyRecordFilters('deals', visibleDeals());
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td><select class="stage-select" data-deal-stage="${item.id}">${dealStages.map(stage => `<option ${stage === item.stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select></td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com automações demonstrativas.', renderKanban('deals', records), records.length, dealStages);
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(dealStages, item.stage, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Negócio</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
       return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com automações demonstrativas.', table, records.length, dealStages);
     }
@@ -1087,46 +1149,93 @@
       saveState(); render(); toast(`${entityLabel(entity)} removido da demonstração.`);
     }
 
+    let undoSnapshot = null;
+
     function convertLead(id) {
       const lead = state.leads.find(item => item.id === id);
       if (!lead || lead.stage !== 'Em contato') return;
+      const now = new Date().toISOString();
       lead.stage = 'Lead convertido';
+      lead.updatedAt = now;
       const deal = {
         id: nextId('N', state.deals), title: `Oportunidade ${lead.company}`, company: lead.company,
         contact: lead.name, amount: 0, stage: 'Em Contato', responsibleId: lead.responsibleId,
         team: lead.team || state.users.find(user => user.id === lead.responsibleId)?.team,
-        assistants: [...(lead.assistants || [])], updatedAt: 'Agora', quotes: []
+        assistants: [...(lead.assistants || [])], createdAt: now, updatedAt: now,
+        stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [], quotes: []
       };
       state.deals.unshift(deal);
       notify('Lead convertido em Negócio.', `${lead.name} → ${deal.id}`, lead.responsibleId);
       saveState(); render(); toast(`Lead convertido. O Negócio ${deal.id} foi criado em Em Contato.`);
     }
 
-    function discardLead(id) {
+    function discardLead(id, reasonOverride = '') {
       const lead = state.leads.find(item => item.id === id);
-      const reason = prompt('Informe o motivo do descarte:');
+      const reason = reasonOverride || prompt('Informe o motivo do descarte:');
       if (!lead || !reason?.trim()) { toast('O descarte exige um motivo.'); return; }
-      lead.stage = 'Lead descartado'; lead.discardReason = reason.trim();
+      lead.stage = 'Lead descartado'; lead.discardReason = reason.trim(); lead.updatedAt = new Date().toISOString();
       saveState(); render(); toast('Lead descartado com o motivo informado.');
     }
 
-    function changeDealStage(id, stage) {
-      const deal = state.deals.find(item => item.id === id);
-      if (!deal) return;
-      deal.stage = stage; deal.updatedAt = 'Agora';
-      let message = `Negócio movido para ${stage}.`;
-      if (stage === 'Faturando') {
-        deal.responsibleId = 'u-billing';
-        deal.team = 'Faturamento';
-        notify('Responsabilidade alterada automaticamente.', `${deal.id} agora está com Equipe Faturamento`, 'u-billing');
+    function commitStageChange(entity, record, targetStage) {
+      const before = clone(state);
+      const previousStage = record.stage;
+      const now = new Date().toISOString();
+      record.stage = targetStage;
+      record.updatedAt = now;
+      record.stageChangedAt = now;
+      record.stageChangedById = state.currentUserId;
+      record.stageHistory ||= [];
+      record.stageHistory.push({ from: previousStage, to: targetStage, changedAt: now, changedById: state.currentUserId });
+      let message = `${entity === 'deal' ? 'Negócio' : 'Lead'} movido para ${targetStage}.`;
+      if (entity === 'deal' && targetStage === 'Faturando') {
+        record.responsibleId = 'u-billing';
+        record.team = 'Faturamento';
+        notify('Responsabilidade alterada automaticamente.', `${record.id} agora está com Equipe Faturamento`, 'u-billing');
         if (state.currentUserId !== 'u-billing') {
-          notify('Automação de Faturamento executada.', `${deal.id} foi atribuído à Equipe Faturamento`);
+          notify('Automação de Faturamento executada.', `${record.id} foi atribuído à Equipe Faturamento`);
         }
         message += ' Responsável alterado para Equipe Faturamento.';
       } else {
-        notify('Etapa do Negócio alterada.', `${deal.id} → ${stage}`, deal.responsibleId);
+        notify(`Etapa do ${entity === 'deal' ? 'Negócio' : 'Lead'} alterada.`, `${record.id} → ${targetStage}`, record.responsibleId);
       }
-      saveState(); render(); toast(message);
+      undoSnapshot = { state: before, entity, id: record.id, from: previousStage, to: targetStage };
+      saveState(); render(); toast(message, { label: 'Desfazer', action: 'undo-stage' });
+    }
+
+    function requestStageChange(entity, id, targetStage) {
+      const collection = entity === 'lead' ? state.leads : state.deals;
+      const record = collection.find(item => item.id === id);
+      if (!record || record.stage === targetStage) { render(); return; }
+      if (entity === 'lead' && targetStage === 'Lead descartado') {
+        const reason = prompt('Informe o motivo do descarte:');
+        if (!reason?.trim()) { toast('O descarte exige um motivo.'); render(); return; }
+        commitStageChange(entity, record, targetStage);
+        record.discardReason = reason.trim();
+        saveState();
+        return;
+      }
+      if (entity === 'lead' && targetStage === 'Lead convertido') {
+        if (!confirm(`Converter ${record.name} e criar um Negócio em Em Contato?`)) { render(); return; }
+        convertLead(id);
+        return;
+      }
+      const protectedDealStages = ['Faturando', 'Ganho', 'Orçamento Não Aprovado', 'Analisar falha'];
+      if (entity === 'deal' && protectedDealStages.includes(targetStage) && !confirm(`Confirmar a mudança do Negócio para ${targetStage}?`)) { render(); return; }
+      commitStageChange(entity, record, targetStage);
+    }
+
+    function undoLastStageChange() {
+      if (!undoSnapshot) { toast('Não há mudança de etapa para desfazer.'); return; }
+      state = normalizeState(clone(undoSnapshot.state));
+      undoSnapshot = null;
+      saveState();
+      render();
+      toast('A última mudança de etapa foi desfeita.');
+    }
+
+    function changeDealStage(id, stage) {
+      requestStageChange('deal', id, stage);
     }
 
     function openQuote(id) {
@@ -1182,6 +1291,9 @@
       const action = button.dataset.action;
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
+      if (action === 'set-view-mode') setViewMode(button.dataset.scope, button.dataset.mode);
+      if (action === 'request-stage') requestStageChange(button.dataset.entity, button.dataset.id, button.dataset.stageSegment);
+      if (action === 'undo-stage') undoLastStageChange();
       if (action === 'open-filters') openFilterPanel(button.dataset.scope);
       if (action === 'add-filter-field') addFilterField();
       if (action === 'remove-filter-field') removeFilterField(button.dataset.field);
@@ -1191,8 +1303,8 @@
       if (action === 'reset-filters') resetFilterPanel();
       if (action === 'cancel-drawer') closeEntityDrawer();
       if (action === 'delete') deleteEntity(button.dataset.entity, button.dataset.id);
-      if (action === 'convert') convertLead(button.dataset.id);
-      if (action === 'discard') discardLead(button.dataset.id);
+      if (action === 'convert') requestStageChange('lead', button.dataset.id, 'Lead convertido');
+      if (action === 'discard') requestStageChange('lead', button.dataset.id, 'Lead descartado');
       if (action === 'quote') openQuote(button.dataset.id);
       if (action === 'read') markRead(button.dataset.id);
       if (action === 'read-all') markAllRead();
@@ -1208,6 +1320,7 @@
     document.addEventListener('change', event => {
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }
       if (event.target.name === 'filter-operator' && event.target.closest('#filterDialog')) { syncFilterDraftFromPanel(); renderFilterPanel(); }
+      if (event.target.dataset.stageControl) requestStageChange(event.target.dataset.entity, event.target.dataset.stageControl, event.target.value);
       if (event.target.dataset.dealStage) changeDealStage(event.target.dataset.dealStage, event.target.value);
     });
 

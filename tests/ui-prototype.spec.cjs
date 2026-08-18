@@ -313,6 +313,88 @@ async function createLead(page, name) {
     assert.ok((await stateFrom(page)).leads.length >= 5);
   });
 
+  await run('BOARD-01 e BOARD-09 alternam Lista/Kanban preservando filtro e preferência', async page => {
+    await goTo(page, 'Negócios');
+    await page.getByPlaceholder('Buscar em negócios...').fill('Arkos');
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    assert.equal(await page.locator('#page-deals .kanban-card').count(), 1);
+    assert.match(await page.locator('#page-deals .kanban-card').innerText(), /Implantação Arkos Estética/);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await goTo(page, 'Negócios');
+    assert.equal(await page.locator('#page-deals .kanban-board').isVisible(), true);
+    assert.equal((await stateFrom(page)).ui.viewModesByUser['u-admin'].deals, 'kanban');
+    assert.equal(await page.locator('#page-deals .kanban-card').count(), 1);
+  });
+
+  await run('BOARD-02 representa a etapa em barra segmentada na Lista', async page => {
+    await goTo(page, 'Negócios');
+    const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' });
+    const progress = row.locator('.stage-progress');
+    assert.equal(await progress.locator('[data-stage-segment]').count(), 9);
+    assert.match(await progress.innerText(), /Orçamentos enviados/);
+    assert.equal(await progress.locator('[data-stage-segment].current').count(), 1);
+  });
+
+  await run('BOARD-03 agrupa os registros e mostra contagens no Kanban', async page => {
+    await goTo(page, 'Leads');
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    assert.equal(await page.locator('#page-leads .kanban-column').count(), 3);
+    assert.equal(await page.locator('#page-leads .kanban-card').count(), 5);
+    const contactColumn = page.locator('[data-kanban-stage="Em contato"]');
+    assert.match(await contactColumn.locator('.kanban-column-head').innerText(), /3/);
+  });
+
+  await run('BOARD-04 e BOARD-05 mudam etapa comum e desfazem atomicamente', async page => {
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    const mover = page.getByLabel('Mover Implantação Arkos Estética');
+    await mover.selectOption('Negociação Revisão');
+    let state = await stateFrom(page);
+    assert.equal(state.deals.find(deal => deal.id === 'N-16312').stage, 'Negociação Revisão');
+    await page.getByRole('button', { name: 'Desfazer' }).click();
+    state = await stateFrom(page);
+    assert.equal(state.deals.find(deal => deal.id === 'N-16312').stage, 'Orçamentos enviados');
+  });
+
+  await run('BOARD-06 protege Faturando e o Desfazer restaura responsável', async page => {
+    await goTo(page, 'Negócios');
+    const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
+    const target = row.locator('[data-stage-segment="Faturando"]');
+    page.once('dialog', dialog => dialog.dismiss());
+    await target.click();
+    let state = await stateFrom(page);
+    assert.equal(state.deals.find(deal => deal.id === 'N-16309').stage, 'Em Contato');
+    page.once('dialog', dialog => dialog.accept());
+    await target.click();
+    state = await stateFrom(page);
+    assert.equal(state.deals.find(deal => deal.id === 'N-16309').responsibleId, 'u-billing');
+    await page.getByRole('button', { name: 'Desfazer' }).click();
+    state = await stateFrom(page);
+    assert.equal(state.deals.find(deal => deal.id === 'N-16309').stage, 'Em Contato');
+    assert.equal(state.deals.find(deal => deal.id === 'N-16309').responsibleId, 'u-paula');
+  });
+
+  await run('BOARD-07, BOARD-08 e BOARD-10 protegem Lead e mantêm Kanban móvel operável', async page => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: 'Abrir menu' }).click();
+    await goTo(page, 'Leads');
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    const board = page.locator('#page-leads .kanban-board');
+    assert.ok((await board.evaluate(element => element.scrollWidth)) > (await board.evaluate(element => element.clientWidth)));
+    const larissa = page.getByLabel('Mover Larissa Spinola');
+    page.once('dialog', dialog => dialog.accept('Sem aderência'));
+    await larissa.selectOption('Lead descartado');
+    let state = await stateFrom(page);
+    assert.equal(state.leads.find(lead => lead.id === 'L-1048').discardReason, 'Sem aderência');
+
+    const rayana = page.getByLabel('Mover Rayana Gomes Ramos');
+    page.once('dialog', dialog => dialog.accept());
+    await rayana.selectOption('Lead convertido');
+    state = await stateFrom(page);
+    assert.equal(state.leads.find(lead => lead.id === 'L-1047').stage, 'Lead convertido');
+    assert.ok(state.deals.some(deal => deal.contact === 'Rayana Gomes Ramos' && deal.stage === 'Em Contato'));
+  });
+
   await run('DEMO-07 recarga preserva alterações no navegador', async page => {
     await createLead(page, 'Lead Persistente');
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -343,6 +425,7 @@ async function createLead(page, name) {
     await goTo(page, 'Leads');
     const before = await stateFrom(page);
     const source = before.leads.find(lead => lead.name === 'Larissa Spinola');
+    page.once('dialog', dialog => dialog.accept());
     await page.locator('#page-leads tbody tr').filter({ hasText: 'Larissa Spinola' }).getByRole('button', { name: 'Converter' }).click();
     const after = await stateFrom(page);
     const converted = after.leads.find(lead => lead.id === source.id);
@@ -367,7 +450,8 @@ async function createLead(page, name) {
     const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
     const idText = await row.innerText();
     const dealId = idText.match(/N-\d+/)[0];
-    await row.locator('select').selectOption('Faturando');
+    page.once('dialog', dialog => dialog.accept());
+    await row.locator('[data-stage-segment="Faturando"]').click();
     const state = await stateFrom(page);
     const deal = state.deals.find(item => item.id === dealId);
     assert.equal(deal.stage, 'Faturando');
@@ -380,7 +464,7 @@ async function createLead(page, name) {
   await run('DEMO-13 calcula orçamento e aceita PDF opcional', async page => {
     await goTo(page, 'Negócios');
     let row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
-    await row.getByRole('button', { name: 'Orçamento' }).click();
+    await row.getByRole('button', { name: 'Orçamento', exact: true }).click();
     await page.getByLabel('Item / serviço *').fill('Serviço sem PDF');
     await page.getByLabel('Quantidade *').fill('2');
     await page.getByLabel('Valor unitário (R$) *').fill('1500');
@@ -393,7 +477,7 @@ async function createLead(page, name) {
     assert.equal(deal.quotes.at(-1).pdf, '');
 
     row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
-    await row.getByRole('button', { name: 'Orçamento' }).click();
+    await row.getByRole('button', { name: 'Orçamento', exact: true }).click();
     await page.getByLabel('Item / serviço *').fill('Serviço com PDF');
     await page.getByLabel('Quantidade *').fill('1');
     await page.getByLabel('Valor unitário (R$) *').fill('100');

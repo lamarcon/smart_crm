@@ -156,6 +156,8 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 ### T5: Adicionar Pipeline visual e Kanban
 
+**Status**: Complete — 31 testes de navegador e self-test aprovados em 2026-08-18.
+
 **What**: Criar barra segmentada, Lista/Kanban e controlador transacional de etapas para Leads e Negócios.
 **Where**: `app/static/index.html`
 **Depends on**: T4
@@ -169,13 +171,13 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 **Done when**:
 
-- [ ] Lista e Kanban preservam filtros e a última escolha do módulo.
-- [ ] A barra segmentada expõe exatamente as etapas aprovadas.
-- [ ] O Kanban agrupa cards e permite mudança de etapa por drag-and-drop ou controle acessível.
-- [ ] Transições comuns oferecem `Desfazer` atômico.
-- [ ] Faturando, encerramentos, descarte e conversão exigem a guarda especificada.
-- [ ] O Kanban mantém rolagem e ações em 390×844.
-- [ ] O gate Full passa com pelo menos 29 casos de navegador.
+- [x] Lista e Kanban preservam filtros e a última escolha do módulo.
+- [x] A barra segmentada expõe exatamente as etapas aprovadas.
+- [x] O Kanban agrupa cards e permite mudança de etapa por drag-and-drop ou controle acessível.
+- [x] Transições comuns oferecem `Desfazer` atômico.
+- [x] Faturando, encerramentos, descarte e conversão exigem a guarda especificada.
+- [x] O Kanban mantém rolagem e ações em 390×844.
+- [x] O gate Full passa com pelo menos 29 casos de navegador.
 
 **Tests**: e2e
 **Gate**: full
