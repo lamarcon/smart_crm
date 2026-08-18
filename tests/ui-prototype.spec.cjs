@@ -395,6 +395,59 @@ async function createLead(page, name) {
     assert.ok(state.deals.some(deal => deal.contact === 'Rayana Gomes Ramos' && deal.stage === 'Em Contato'));
   });
 
+  await run('DASH-01, DASH-03 e DASH-04 oferecem escopos e campos aplicáveis', async page => {
+    await goTo(page, 'Visão geral');
+    await page.getByRole('button', { name: /Filtrar painel/ }).click();
+    const panel = page.locator('#filterDialog');
+    const scopes = panel.locator('[data-dashboard-filter-scope]');
+    assert.deepEqual(await scopes.allTextContents(), ['Todos', 'Leads', 'Negócios']);
+    await scopes.filter({ hasText: 'Leads' }).click();
+    assert.match((await panel.locator('#addFilterField option').allTextContents()).join(' '), /Origem/);
+    assert.match((await panel.locator('#addFilterField option').allTextContents()).join(' '), /Segmento/);
+    await scopes.filter({ hasText: 'Negócios' }).click();
+    const dealFields = (await panel.locator('#addFilterField option').allTextContents()).join(' ');
+    assert.match(dealFields, /Contato/);
+    assert.match(dealFields, /Valor/);
+    assert.match(dealFields, /Data da mudança de etapa/);
+    assert.match(dealFields, /Data de ganho/);
+  });
+
+  await run('DASH-05 e DASH-06 recalculam indicadores Pipeline e movimentações pelo recorte', async page => {
+    await goTo(page, 'Visão geral');
+    await page.getByRole('button', { name: /Filtrar painel/ }).click();
+    const panel = page.locator('#filterDialog');
+    await panel.locator('[data-dashboard-filter-scope="deals"]').click();
+    await panel.locator('[data-filter-field="responsibleId"] select[name="filter-value"]').selectOption(['u-paula']);
+    await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption(['Ganho']);
+    const date = panel.locator('[data-filter-field="createdAt"]');
+    await date.locator('select[name="filter-operator"]').selectOption('between');
+    await date.locator('input[name="filter-value"]').fill('2026-08-12');
+    await date.locator('input[name="filter-value-to"]').fill('2026-08-12');
+    await panel.getByRole('button', { name: 'Pesquisar' }).click();
+    const dashboard = page.locator('#page-dashboard');
+    assert.match(await dashboard.innerText(), /R\$\s*19\.400,00/);
+    assert.match(await dashboard.locator('.pipeline').innerText(), /Ganho/);
+    assert.match(await dashboard.locator('.activity-list').innerText(), /Licenças Biocare/);
+    assert.doesNotMatch(await dashboard.locator('.activity-list').innerText(), /Larissa Spinola/);
+  });
+
+  await run('DASH-02, DASH-07 e DASH-08 limitam Gestor e redefinem o conjunto', async page => {
+    await selectProfile(page, 'u-manager');
+    await goTo(page, 'Visão geral');
+    const initialOpenDeals = await page.locator('#page-dashboard .stat').nth(1).locator('strong').innerText();
+    await page.getByRole('button', { name: /Filtrar painel/ }).click();
+    const panel = page.locator('#filterDialog');
+    const users = await panel.locator('[data-filter-field="responsibleId"] select[name="filter-value"] option').allTextContents();
+    assert.deepEqual(users, ['Marcelo Martins', 'Paula Pincetta', 'Vitor Costa']);
+    await panel.locator('[data-filter-field="responsibleId"] select[name="filter-value"]').selectOption(['u-paula']);
+    await panel.getByRole('button', { name: 'Pesquisar' }).click();
+    assert.notEqual(await page.locator('#page-dashboard .stat').nth(1).locator('strong').innerText(), initialOpenDeals);
+    await page.getByRole('button', { name: /Redefinir painel/ }).click();
+    assert.equal(await page.locator('#page-dashboard .stat').nth(1).locator('strong').innerText(), initialOpenDeals);
+    const state = await stateFrom(page);
+    assert.equal(state.ui.dashboardScopeByUser['u-manager'], 'all');
+  });
+
   await run('DEMO-07 recarga preserva alterações no navegador', async page => {
     await createLead(page, 'Lead Persistente');
     await page.reload({ waitUntil: 'domcontentloaded' });

@@ -185,6 +185,8 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 ### T6: Filtrar o Dashboard comercial
 
+**Status**: Complete — 34 testes de navegador e self-test aprovados em 2026-08-18.
+
 **What**: Reutilizar o motor de filtros no Dashboard com escopos Todos, Leads e Negócios e indicadores recalculados.
 **Where**: `app/static/index.html`
 **Depends on**: T5
@@ -198,11 +200,11 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 **Done when**:
 
-- [ ] Os três escopos expõem somente campos aplicáveis.
-- [ ] Responsável, equipe, período e etapa recalculam cards, Pipeline e movimentações.
-- [ ] Gestor vê somente membros e resultados da própria equipe.
-- [ ] Redefinir restaura o conjunto permitido ao perfil atual.
-- [ ] O gate Full passa com pelo menos 32 casos de navegador.
+- [x] Os três escopos expõem somente campos aplicáveis.
+- [x] Responsável, equipe, período e etapa recalculam cards, Pipeline e movimentações.
+- [x] Gestor vê somente membros e resultados da própria equipe.
+- [x] Redefinir restaura o conjunto permitido ao perfil atual.
+- [x] O gate Full passa com pelo menos 32 casos de navegador.
 
 **Tests**: e2e
 **Gate**: full

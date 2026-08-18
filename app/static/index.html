@@ -227,6 +227,10 @@
     .saved-filter > button:first-child:hover { color: #175cd3; background: white; }
     .saved-filter .row-action { width: 30px; height: 30px; }
     .filter-main { min-width: 0; display: flex; flex-direction: column; }
+    .dashboard-filter-scopes { display: flex; gap: 7px; padding: 12px 20px; border-bottom: 1px solid var(--slate-200); background: var(--slate-50); }
+    .dashboard-filter-scopes[hidden] { display: none; }
+    .dashboard-filter-scopes button { min-height: 33px; border: 1px solid var(--slate-300); border-radius: 999px; padding: 6px 12px; color: var(--slate-600); background: white; font-weight: 750; }
+    .dashboard-filter-scopes button.active { border-color: var(--blue-500); color: #175cd3; background: var(--blue-100); }
     .filter-fields { display: grid; gap: 13px; }
     .filter-row { display: grid; gap: 9px; padding: 12px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
     .filter-row-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -374,6 +378,7 @@
         <aside class="filter-sidebar"><h4>Filtros salvos</h4><div class="saved-filter-list" id="savedFilterList"></div><button type="button" class="button small" data-action="save-filter">＋ Salvar filtro</button></aside>
         <div class="filter-main">
           <div class="modal-head"><div><h3 id="filterDialogTitle">Filtrar registros</h3><p class="hint">Combine os campos para refinar a busca.</p></div><button type="button" class="close-button" data-close="filterDialog" aria-label="Fechar">×</button></div>
+          <div class="dashboard-filter-scopes" id="dashboardFilterScopes" hidden></div>
           <div class="modal-body"><div class="filter-fields" id="filterFields"></div><div class="filter-add"><select id="addFilterField" aria-label="Campo para adicionar"></select><button type="button" class="button small" data-action="add-filter-field">Adicionar campo</button></div></div>
           <div class="modal-foot"><button type="button" class="button" data-action="reset-filters">Redefinir</button><button type="submit" class="button primary">⌕ Pesquisar</button></div>
         </div>
@@ -466,6 +471,15 @@
           { name: 'wonAt', label: 'Data de ganho', type: 'date', searchable: true }
         ]
       }
+    };
+    const dashboardAllConfig = {
+      label: 'Visão geral',
+      titleField: 'id',
+      fields: [
+        { name: 'responsibleId', label: 'Responsável', type: 'multiselect', searchable: true, defaultFilter: true },
+        { name: 'team', label: 'Equipe', type: 'multiselect', searchable: true, defaultFilter: true },
+        { name: 'createdAt', label: 'Período de criação', type: 'date', searchable: true, defaultFilter: true }
+      ]
     };
 
     const seedState = () => ({
@@ -594,8 +608,23 @@
 
     let filterPanelScope = null;
     let filterDraft = null;
+    let filterPanelContext = 'records';
 
     function clone(value) { return JSON.parse(JSON.stringify(value)); }
+
+    function filterConfig(scope) {
+      if (scope === 'dashboard_all') return dashboardAllConfig;
+      if (scope === 'dashboard_leads') return entityConfigs.leads;
+      if (scope === 'dashboard_deals') return entityConfigs.deals;
+      return entityConfigs[scope];
+    }
+
+    function filterRecords(scope) {
+      if (scope === 'dashboard_all') return [...visibleLeads(), ...visibleDeals()];
+      if (scope === 'dashboard_leads') return visibleLeads();
+      if (scope === 'dashboard_deals') return visibleDeals();
+      return state[scope] || [];
+    }
 
     function defaultCriterion(type) {
       if (['select', 'multiselect'].includes(type)) return { operator: 'in', value: [] };
@@ -605,7 +634,7 @@
     }
 
     function defaultFilterState(scope) {
-      const fields = entityConfigs[scope]?.fields || [];
+      const fields = filterConfig(scope)?.fields || [];
       const visibleFields = fields.filter(field => field.defaultFilter).map(field => field.name);
       return {
         query: '',
@@ -618,7 +647,7 @@
     }
 
     function sanitizeFilterState(scope, value) {
-      const allowed = new Set((entityConfigs[scope]?.fields || []).map(field => field.name));
+      const allowed = new Set((filterConfig(scope)?.fields || []).map(field => field.name));
       const source = value && typeof value === 'object' ? clone(value) : defaultFilterState(scope);
       const originalFields = Array.isArray(source.visibleFields) ? source.visibleFields : [];
       const visibleFields = originalFields.filter(name => allowed.has(name));
@@ -641,6 +670,7 @@
     }
 
     function rawFieldValue(record, name) {
+      if (name === 'team') return record?.team || state.users.find(user => user.id === record?.responsibleId)?.team || '';
       return record?.[name];
     }
 
@@ -691,7 +721,7 @@
     }
 
     function applyRecordFilters(scope, records) {
-      const config = entityConfigs[scope];
+      const config = filterConfig(scope);
       const filter = getFilterState(scope);
       const query = filter.query.trim().toLocaleLowerCase('pt-BR');
       return records.filter(record => {
@@ -709,7 +739,7 @@
     function activeFilterCount(scope) {
       const filter = getFilterState(scope);
       const count = Object.entries(filter.criteria).filter(([name, criterion]) => {
-        const definition = entityConfigs[scope].fields.find(field => field.name === name);
+        const definition = filterConfig(scope).fields.find(field => field.name === name);
         if (!definition) return false;
         if (['select', 'multiselect'].includes(definition.type)) return (criterion.value || []).length > 0;
         if (definition.type === 'date') return criterion.operator !== 'any' && Boolean(criterion.value);
@@ -726,10 +756,14 @@
     }
 
     function filterOptions(scope, definition) {
-      if (definition.name === 'stage') return (scope === 'leads' ? leadStages : dealStages).map(value => ({ value, label: value }));
+      if (definition.name === 'stage') return (scope.endsWith('leads') || scope === 'leads' ? leadStages : dealStages).map(value => ({ value, label: value }));
       if (['responsibleId', 'ownerId'].includes(definition.name)) return filterableUsers().map(user => ({ value: user.id, label: user.name }));
       if (definition.name === 'assistants') return state.users.filter(user => user.role === 'Assistente').map(user => ({ value: user.id, label: user.name }));
-      const values = [...new Set((state[scope] || []).flatMap(record => Array.isArray(record[definition.name]) ? record[definition.name] : [record[definition.name]]).filter(value => value !== '' && value != null).map(String))];
+      if (definition.name === 'team') return [...new Set(filterableUsers().map(user => user.team))].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(value => ({ value, label: value }));
+      const values = [...new Set(filterRecords(scope).flatMap(record => {
+        const value = rawFieldValue(record, definition.name);
+        return Array.isArray(value) ? value : [value];
+      }).filter(value => value !== '' && value != null).map(String))];
       return values.sort((a, b) => a.localeCompare(b, 'pt-BR')).map(value => ({ value, label: value }));
     }
 
@@ -755,8 +789,11 @@
 
     function renderFilterPanel() {
       if (!filterPanelScope || !filterDraft) return;
-      const config = entityConfigs[filterPanelScope];
-      document.getElementById('filterDialogTitle').textContent = `Filtrar ${config.label.toLowerCase()}`;
+      const config = filterConfig(filterPanelScope);
+      document.getElementById('filterDialogTitle').textContent = filterPanelContext === 'dashboard' ? 'Filtrar painel geral' : `Filtrar ${config.label.toLowerCase()}`;
+      const scopeTabs = document.getElementById('dashboardFilterScopes');
+      scopeTabs.hidden = filterPanelContext !== 'dashboard';
+      scopeTabs.innerHTML = filterPanelContext === 'dashboard' ? [['all', 'Todos'], ['leads', 'Leads'], ['deals', 'Negócios']].map(([scope, label]) => `<button type="button" class="${filterPanelScope === `dashboard_${scope}` ? 'active' : ''}" data-action="dashboard-filter-scope" data-dashboard-filter-scope="${scope}">${label}</button>`).join('') : '';
       const saved = state.ui.savedFilters.filter(item => item.userId === state.currentUserId && item.scope === filterPanelScope);
       document.getElementById('savedFilterList').innerHTML = saved.length ? saved.map(item => `<div class="saved-filter"><button type="button" data-action="load-saved-filter" data-id="${item.id}">${escapeHTML(item.name)}</button><button type="button" class="saved-filter-delete" data-action="delete-saved-filter" data-id="${item.id}" aria-label="Excluir ${escapeHTML(item.name)}">×</button></div>`).join('') : '<p class="hint">Nenhum filtro salvo.</p>';
       document.getElementById('filterFields').innerHTML = filterDraft.visibleFields.map(name => {
@@ -777,7 +814,7 @@
       if (!filterDraft) return;
       document.querySelectorAll('#filterFields [data-filter-field]').forEach(row => {
         const name = row.dataset.filterField;
-        const definition = entityConfigs[filterPanelScope].fields.find(field => field.name === name);
+        const definition = filterConfig(filterPanelScope).fields.find(field => field.name === name);
         if (!definition) return;
         const operator = row.querySelector('[name="filter-operator"]')?.value || defaultCriterion(definition.type).operator;
         const valueControl = row.querySelector('[name="filter-value"]');
@@ -789,7 +826,8 @@
       });
     }
 
-    function openFilterPanel(scope) {
+    function openFilterPanel(scope, context = 'records') {
+      filterPanelContext = context;
       filterPanelScope = scope;
       filterDraft = clone(getFilterState(scope));
       renderFilterPanel();
@@ -799,7 +837,7 @@
     function addFilterField() {
       syncFilterDraftFromPanel();
       const name = document.getElementById('addFilterField').value;
-      const definition = entityConfigs[filterPanelScope]?.fields.find(field => field.name === name);
+      const definition = filterConfig(filterPanelScope)?.fields.find(field => field.name === name);
       if (!definition || filterDraft.visibleFields.includes(name)) return;
       filterDraft.visibleFields.push(name);
       filterDraft.criteria[name] = defaultCriterion(definition.type);
@@ -894,9 +932,48 @@
       document.getElementById('topNoticeCount').hidden = unread === 0;
     }
 
+    function dashboardScope() {
+      const value = state.ui.dashboardScopeByUser[state.currentUserId];
+      return ['all', 'leads', 'deals'].includes(value) ? value : 'all';
+    }
+
+    function dashboardRecords() {
+      const scope = dashboardScope();
+      if (scope === 'leads') return { scope, leads: applyRecordFilters('dashboard_leads', visibleLeads()), deals: [] };
+      if (scope === 'deals') return { scope, leads: [], deals: applyRecordFilters('dashboard_deals', visibleDeals()) };
+      return {
+        scope,
+        leads: applyRecordFilters('dashboard_all', visibleLeads()),
+        deals: applyRecordFilters('dashboard_all', visibleDeals())
+      };
+    }
+
+    function openDashboardFilters() {
+      const scope = dashboardScope();
+      openFilterPanel(`dashboard_${scope}`, 'dashboard');
+    }
+
+    function setDashboardFilterScope(scope) {
+      if (!['all', 'leads', 'deals'].includes(scope)) return;
+      state.ui.dashboardScopeByUser[state.currentUserId] = scope;
+      saveState();
+      filterPanelScope = `dashboard_${scope}`;
+      filterDraft = clone(getFilterState(filterPanelScope));
+      renderFilterPanel();
+    }
+
+    function resetDashboardFilters() {
+      const filters = state.ui.filtersByUser[state.currentUserId];
+      ['dashboard_all', 'dashboard_leads', 'dashboard_deals'].forEach(scope => delete filters[scope]);
+      state.ui.dashboardScopeByUser[state.currentUserId] = 'all';
+      saveState();
+      render();
+      toast('Filtros do painel redefinidos.');
+    }
+
     function dashboardHTML() {
-      const leads = visibleLeads();
-      const deals = visibleDeals();
+      const dashboard = dashboardRecords();
+      const { leads, deals } = dashboard;
       const openDeals = deals.filter(item => !['Ganho', 'Orçamento Não Aprovado', 'Analisar falha'].includes(item.stage));
       const total = openDeals.reduce((sum, item) => sum + item.amount, 0);
       const won = deals.filter(item => item.stage === 'Ganho').reduce((sum, item) => sum + item.amount, 0);
@@ -906,8 +983,14 @@
         const amount = records.reduce((sum, item) => sum + item.amount, 0);
         return `<div class="pipeline-row"><span title="${escapeHTML(stage)}">${escapeHTML(stage)}</span><div class="pipeline-track"><div class="pipeline-bar" style="width:${Math.max(4, records.length / maxCount * 100)}%"></div></div><b>${money(amount)}</b></div>`;
       }).join('');
+      const recent = [
+        ...leads.map(item => ({ type: 'Lead', title: item.name, subtitle: item.company, createdAt: item.createdAt })),
+        ...deals.map(item => ({ type: 'Negócio', title: item.title, subtitle: `${item.company} · ${money(item.amount)}`, createdAt: item.createdAt }))
+      ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 5);
+      const dashboardFilterCount = activeFilterCount(`dashboard_${dashboard.scope}`);
+      const scopeLabel = ({ all: 'Todos', leads: 'Leads', deals: 'Negócios' })[dashboard.scope];
       return `
-        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b>.</p></div><div class="toolbar-actions"><button class="button" data-action="reset">↻ Restaurar demo</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
+        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions"><button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar demo</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
         <div class="stats">
           <article class="stat" style="--stat-color:var(--blue-100)"><div class="stat-top"><span>Leads em contato</span><span class="stat-icon">◎</span></div><strong>${leads.filter(item => item.stage === 'Em contato').length}</strong><small><b>Dados locais</b> deste perfil</small></article>
           <article class="stat" style="--stat-color:var(--purple-100)"><div class="stat-top"><span>Negócios abertos</span><span class="stat-icon">◇</span></div><strong>${openDeals.length}</strong><small>${money(total)} em pipeline</small></article>
@@ -916,7 +999,7 @@
         </div>
         <div class="grid-two">
           <article class="card"><div class="card-head"><div><h3>Pipeline Vendas CMS</h3><p>Distribuição dos Negócios por etapa</p></div><button class="button small" data-view="deals">Ver Negócios</button></div><div class="card-body pipeline">${pipeline}</div></article>
-          <article class="card"><div class="card-head"><div><h3>Movimentações recentes</h3><p>Atalhos para os registros</p></div></div><div class="card-body activity-list">${leads.slice(0, 4).map(item => `<div class="activity"><span class="activity-icon">◎</span><p><b>${escapeHTML(item.name)}</b><br>${escapeHTML(item.company)}</p><small>${escapeHTML(item.createdAt)}</small></div>`).join('') || '<div class="empty">Nenhum registro visível.</div>'}</div></article>
+          <article class="card"><div class="card-head"><div><h3>Movimentações recentes</h3><p>Registros dentro do recorte atual</p></div></div><div class="card-body activity-list">${recent.map(item => `<div class="activity"><span class="activity-icon">${item.type === 'Lead' ? '◎' : '◇'}</span><p><b>${escapeHTML(item.title)}</b><br>${escapeHTML(item.subtitle)}</p><small>${escapeHTML(new Date(item.createdAt).toLocaleDateString('pt-BR'))}</small></div>`).join('') || '<div class="empty">Nenhum registro visível.</div>'}</div></article>
         </div>`;
     }
 
@@ -1291,6 +1374,9 @@
       const action = button.dataset.action;
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
+      if (action === 'open-dashboard-filters') openDashboardFilters();
+      if (action === 'dashboard-filter-scope') setDashboardFilterScope(button.dataset.dashboardFilterScope);
+      if (action === 'reset-dashboard-filters') resetDashboardFilters();
       if (action === 'set-view-mode') setViewMode(button.dataset.scope, button.dataset.mode);
       if (action === 'request-stage') requestStageChange(button.dataset.entity, button.dataset.id, button.dataset.stageSegment);
       if (action === 'undo-stage') undoLastStageChange();
