@@ -151,42 +151,42 @@ O protótipo atual exige botões pequenos para editar registros, oferece busca l
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| DRAWER-01 | P1: Painel lateral | T3 | In Tasks |
-| DRAWER-02 | P1: Painel lateral | T3 | In Tasks |
-| DRAWER-03 | P1: Painel lateral | T3 | In Tasks |
-| DRAWER-04 | P1: Painel lateral | T3 | In Tasks |
-| DRAWER-05 | P1: Painel lateral | T3 | In Tasks |
-| DRAWER-06 | P1: Painel lateral | T3 | In Tasks |
-| FILTER-01 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-02 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-03 | P1: Filtros configuráveis | T2, T4 | In Tasks |
-| FILTER-04 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-05 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-06 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-07 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-08 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-09 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-10 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-11 | P1: Filtros configuráveis | T4 | In Tasks |
-| FILTER-12 | P1: Filtros configuráveis | T2, T4 | In Tasks |
-| BOARD-01 | P1: Lista e Kanban | T5 | In Tasks |
-| BOARD-02 | P1: Lista e Kanban | T5 | In Tasks |
-| BOARD-03 | P1: Lista e Kanban | T5 | In Tasks |
-| BOARD-04 | P1: Lista e Kanban | T5 | In Tasks |
-| BOARD-05 | P1: Lista e Kanban | T2, T5 | In Tasks |
-| BOARD-06 | P1: Lista e Kanban | T5 | In Tasks |
-| BOARD-07 | P1: Lista e Kanban | T5 | In Tasks |
-| BOARD-08 | P1: Lista e Kanban | T5 | In Tasks |
-| BOARD-09 | P1: Lista e Kanban | T5 | In Tasks |
-| BOARD-10 | P1: Lista e Kanban | T5 | In Tasks |
-| DASH-01 | P1: Dashboard filtrável | T6 | In Tasks |
-| DASH-02 | P1: Dashboard filtrável | T6 | In Tasks |
-| DASH-03 | P1: Dashboard filtrável | T6 | In Tasks |
-| DASH-04 | P1: Dashboard filtrável | T2, T6 | In Tasks |
-| DASH-05 | P1: Dashboard filtrável | T6 | In Tasks |
-| DASH-06 | P1: Dashboard filtrável | T6 | In Tasks |
-| DASH-07 | P1: Dashboard filtrável | T6 | In Tasks |
-| DASH-08 | P1: Dashboard filtrável | T6 | In Tasks |
+| DRAWER-01 | P1: Painel lateral | T3 | ✅ Verified |
+| DRAWER-02 | P1: Painel lateral | T3 | ✅ Verified |
+| DRAWER-03 | P1: Painel lateral | T3 | ✅ Verified |
+| DRAWER-04 | P1: Painel lateral | T3 | ✅ Verified |
+| DRAWER-05 | P1: Painel lateral | T3 | ✅ Verified |
+| DRAWER-06 | P1: Painel lateral | T3 | ✅ Verified |
+| FILTER-01 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-02 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-03 | P1: Filtros configuráveis | T2, T4 | ✅ Verified |
+| FILTER-04 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-05 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-06 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-07 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-08 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-09 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-10 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-11 | P1: Filtros configuráveis | T4 | ✅ Verified |
+| FILTER-12 | P1: Filtros configuráveis | T2, T4 | ✅ Verified |
+| BOARD-01 | P1: Lista e Kanban | T5 | ✅ Verified |
+| BOARD-02 | P1: Lista e Kanban | T5 | ✅ Verified |
+| BOARD-03 | P1: Lista e Kanban | T5 | ✅ Verified |
+| BOARD-04 | P1: Lista e Kanban | T5 | ✅ Verified |
+| BOARD-05 | P1: Lista e Kanban | T2, T5 | ✅ Verified |
+| BOARD-06 | P1: Lista e Kanban | T5 | ✅ Verified |
+| BOARD-07 | P1: Lista e Kanban | T5 | ✅ Verified |
+| BOARD-08 | P1: Lista e Kanban | T5 | ✅ Verified |
+| BOARD-09 | P1: Lista e Kanban | T5 | ✅ Verified |
+| BOARD-10 | P1: Lista e Kanban | T5 | ✅ Verified |
+| DASH-01 | P1: Dashboard filtrável | T6 | ✅ Verified |
+| DASH-02 | P1: Dashboard filtrável | T6 | ✅ Verified |
+| DASH-03 | P1: Dashboard filtrável | T6 | ✅ Verified |
+| DASH-04 | P1: Dashboard filtrável | T2, T6 | ✅ Verified |
+| DASH-05 | P1: Dashboard filtrável | T6 | ✅ Verified |
+| DASH-06 | P1: Dashboard filtrável | T6 | ✅ Verified |
+| DASH-07 | P1: Dashboard filtrável | T6 | ✅ Verified |
+| DASH-08 | P1: Dashboard filtrável | T6 | ✅ Verified |
 
 **Coverage:** 36 requirements, 36 mapped to tasks, 0 unmapped.
 
