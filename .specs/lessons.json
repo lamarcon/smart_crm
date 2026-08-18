@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 4,
+  "next_id": 7,
   "lessons": [
     {
       "id": "L-001",
@@ -58,6 +58,60 @@
       ],
       "created": "2026-08-17T20:30:29Z",
       "last_seen": "2026-08-17T20:30:29Z"
+    },
+    {
+      "id": "L-004",
+      "key": "ac_gap::assert every required conjunct with its own observable outcome before marking an acceptance criterion covered",
+      "text": "Assert every required conjunct with its own observable outcome before marking an acceptance criterion covered",
+      "signal": "ac_gap",
+      "scope": "browser-e2e",
+      "status": "candidate",
+      "features": [
+        "ui-crm-workspace"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/ui-crm-workspace/validation.md:33 (browser-e2e)"
+      ],
+      "created": "2026-08-18T21:03:27Z",
+      "last_seen": "2026-08-18T21:03:27Z"
+    },
+    {
+      "id": "L-005",
+      "key": "ac_gap::assert the complete allowed set and exercise every required behavior branch for configurable operators and fields",
+      "text": "Assert the complete allowed set and exercise every required behavior branch for configurable operators and fields",
+      "signal": "ac_gap",
+      "scope": "filters",
+      "status": "candidate",
+      "features": [
+        "ui-crm-workspace"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/ui-crm-workspace/validation.md:49 (filters)"
+      ],
+      "created": "2026-08-18T21:03:28Z",
+      "last_seen": "2026-08-18T21:03:28Z"
+    },
+    {
+      "id": "L-006",
+      "key": "ac_gap::assert every spec defined persisted payload field by exact name and value against the approved data model",
+      "text": "Assert every spec-defined persisted payload field by exact name and value against the approved data model",
+      "signal": "ac_gap",
+      "scope": "state-payloads",
+      "status": "candidate",
+      "features": [
+        "ui-crm-workspace"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/ui-crm-workspace/validation.md:106 (state-payloads)"
+      ],
+      "created": "2026-08-18T21:03:29Z",
+      "last_seen": "2026-08-18T21:03:29Z"
     }
   ]
 }

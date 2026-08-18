@@ -558,13 +558,21 @@
         deal.updatedAt = ensureIso(deal.updatedAt, fallbackAt(index));
         deal.stageChangedAt = ensureIso(deal.stageChangedAt, deal.updatedAt);
         deal.stageChangedById ||= deal.responsibleId || normalized.currentUserId;
-        deal.stageHistory = Array.isArray(deal.stageHistory) ? deal.stageHistory : [];
+        deal.stageHistory = (Array.isArray(deal.stageHistory) ? deal.stageHistory : []).map(entry => ({
+          from: entry.from,
+          to: entry.to,
+          at: ensureIso(entry.at || entry.changedAt, deal.stageChangedAt),
+          byId: entry.byId || entry.changedById || deal.stageChangedById
+        }));
         if (deal.stage === 'Ganho') deal.wonAt = ensureIso(deal.wonAt, deal.stageChangedAt);
       });
       const defaults = defaultUiState(normalized.users || []);
       normalized.ui ||= defaults;
       normalized.ui.filtersByUser ||= {};
-      normalized.ui.savedFilters = Array.isArray(normalized.ui.savedFilters) ? normalized.ui.savedFilters : [];
+      normalized.ui.savedFilters = (Array.isArray(normalized.ui.savedFilters) ? normalized.ui.savedFilters : []).map((saved, index) => ({
+        ...saved,
+        updatedAt: ensureIso(saved.updatedAt, fallbackAt(index))
+      }));
       normalized.ui.viewModesByUser ||= {};
       normalized.ui.dashboardScopeByUser ||= {};
       (normalized.users || []).forEach(user => {
@@ -854,10 +862,11 @@
     function saveNamedFilter() {
       syncFilterDraftFromPanel();
       const name = prompt('Nome do filtro:')?.trim();
-      if (!name) return;
+      if (!name) { toast('Informe um nome para salvar o filtro.'); return; }
       const existing = state.ui.savedFilters.find(item => item.userId === state.currentUserId && item.scope === filterPanelScope && item.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR'));
-      if (existing) existing.filter = clone(filterDraft);
-      else state.ui.savedFilters.push({ id: `SF-${Date.now()}`, name, userId: state.currentUserId, scope: filterPanelScope, filter: clone(filterDraft) });
+      const updatedAt = new Date().toISOString();
+      if (existing) Object.assign(existing, { filter: clone(filterDraft), updatedAt });
+      else state.ui.savedFilters.push({ id: `SF-${Date.now()}`, name, userId: state.currentUserId, scope: filterPanelScope, filter: clone(filterDraft), updatedAt });
       saveState();
       renderFilterPanel();
       toast(existing ? 'Filtro salvo atualizado.' : 'Filtro salvo.');
@@ -1252,14 +1261,6 @@
       saveState(); render(); toast(`Lead convertido. O Negócio ${deal.id} foi criado em Em Contato.`);
     }
 
-    function discardLead(id, reasonOverride = '') {
-      const lead = state.leads.find(item => item.id === id);
-      const reason = reasonOverride || prompt('Informe o motivo do descarte:');
-      if (!lead || !reason?.trim()) { toast('O descarte exige um motivo.'); return; }
-      lead.stage = 'Lead descartado'; lead.discardReason = reason.trim(); lead.updatedAt = new Date().toISOString();
-      saveState(); render(); toast('Lead descartado com o motivo informado.');
-    }
-
     function commitStageChange(entity, record, targetStage) {
       const before = clone(state);
       const previousStage = record.stage;
@@ -1269,7 +1270,8 @@
       record.stageChangedAt = now;
       record.stageChangedById = state.currentUserId;
       record.stageHistory ||= [];
-      record.stageHistory.push({ from: previousStage, to: targetStage, changedAt: now, changedById: state.currentUserId });
+      record.stageHistory.push({ from: previousStage, to: targetStage, at: now, byId: state.currentUserId });
+      if (entity === 'deal' && targetStage === 'Ganho') record.wonAt = now;
       let message = `${entity === 'deal' ? 'Negócio' : 'Lead'} movido para ${targetStage}.`;
       if (entity === 'deal' && targetStage === 'Faturando') {
         record.responsibleId = 'u-billing';
@@ -1315,10 +1317,6 @@
       saveState();
       render();
       toast('A última mudança de etapa foi desfeita.');
-    }
-
-    function changeDealStage(id, stage) {
-      requestStageChange('deal', id, stage);
     }
 
     function openQuote(id) {
@@ -1379,7 +1377,7 @@
       if (action === 'reset-dashboard-filters') resetDashboardFilters();
       if (action === 'set-view-mode') setViewMode(button.dataset.scope, button.dataset.mode);
       if (action === 'request-stage') requestStageChange(button.dataset.entity, button.dataset.id, button.dataset.stageSegment);
-      if (action === 'undo-stage') undoLastStageChange();
+      if (action === 'undo-stage') { button.closest('.toast')?.remove(); undoLastStageChange(); }
       if (action === 'open-filters') openFilterPanel(button.dataset.scope);
       if (action === 'add-filter-field') addFilterField();
       if (action === 'remove-filter-field') removeFilterField(button.dataset.field);
@@ -1407,7 +1405,6 @@
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }
       if (event.target.name === 'filter-operator' && event.target.closest('#filterDialog')) { syncFilterDraftFromPanel(); renderFilterPanel(); }
       if (event.target.dataset.stageControl) requestStageChange(event.target.dataset.entity, event.target.dataset.stageControl, event.target.value);
-      if (event.target.dataset.dealStage) changeDealStage(event.target.dataset.dealStage, event.target.value);
     });
 
     document.getElementById('profileSelect').addEventListener('change', event => {

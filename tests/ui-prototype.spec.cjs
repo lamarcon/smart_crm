@@ -149,6 +149,7 @@ async function createLead(page, name) {
     await page.locator('#entityDrawer').getByLabel('Nome completo *').fill('Lead CRUD Editado');
     await page.getByRole('button', { name: 'Salvar registro' }).click();
     assert.equal(await page.locator('#page-leads .entity-link').filter({ hasText: 'Lead CRUD Editado' }).count(), 1);
+    assert.doesNotMatch(await page.locator('#entityDrawer').getAttribute('class'), /open/);
 
     page.once('dialog', dialog => dialog.accept());
     row = page.locator('#page-leads tbody tr').filter({ hasText: 'Lead CRUD Editado' });
@@ -159,21 +160,30 @@ async function createLead(page, name) {
 
   await run('DRAWER-01 abre os quatro cadastros pelo nome sem lápis', async page => {
     const records = [
-      ['Leads', 'Larissa Spinola', 'Editar Lead'],
-      ['Contatos', 'Ana Berclay', 'Editar Contato'],
-      ['Empresas', 'Arkos Estética', 'Editar Empresa'],
-      ['Negócios', 'Implantação Arkos Estética', 'Editar Negócio']
+      ['Leads', 'Larissa Spinola', 'Editar Lead', 'Nome completo *', 'Larissa Spinola', 'L-1048'],
+      ['Contatos', 'Ana Berclay', 'Editar Contato', 'Nome completo *', 'Ana Berclay', 'C-2281'],
+      ['Empresas', 'Arkos Estética', 'Editar Empresa', 'Razão / nome da Empresa *', 'Arkos Estética', 'E-802'],
+      ['Negócios', 'Implantação Arkos Estética', 'Editar Negócio', 'Título do Negócio *', 'Implantação Arkos Estética', 'N-16312']
     ];
-    for (const [view, name, title] of records) {
+    const before = await stateFrom(page);
+    for (const [view, name, title, fieldLabel, fieldValue, id] of records) {
       await goTo(page, view);
       await page.locator(`#page-${{ Leads: 'leads', Contatos: 'contacts', Empresas: 'companies', Negócios: 'deals' }[view]}`).getByRole('button', { name, exact: true }).click();
       const drawer = page.locator('#entityDrawer');
       assert.match(await drawer.getAttribute('class'), /open/);
       assert.equal(await drawer.getByRole('heading').innerText(), title);
+      assert.equal(await drawer.getByLabel(fieldLabel).inputValue(), fieldValue);
+      assert.match(await page.locator('#entityDrawerSubtitle').innerText(), new RegExp(id));
+      await page.waitForTimeout(250);
+      const box = await drawer.boundingBox();
+      const viewportWidth = await page.evaluate(() => window.innerWidth);
+      assert.ok(box.x > viewportWidth / 2 && Math.abs(box.x + box.width - viewportWidth) <= 20);
       assert.equal(await page.locator(`#page-${{ Leads: 'leads', Contatos: 'contacts', Empresas: 'companies', Negócios: 'deals' }[view]}`).isVisible(), true);
       assert.equal(await page.getByTitle('Editar').count(), 0);
       await drawer.getByRole('button', { name: 'Cancelar' }).click();
+      assert.doesNotMatch(await drawer.getAttribute('class'), /open/);
     }
+    assert.deepEqual(await stateFrom(page), before);
   });
 
   await run('DRAWER-04 e DRAWER-05 protegem cancelamento e alterações pendentes', async page => {
@@ -214,6 +224,10 @@ async function createLead(page, name) {
     await search.fill('L-1047');
     assert.equal(await page.locator('#page-leads tbody tr').count(), 1);
     assert.match(await page.locator('#page-leads tbody').innerText(), /Rayana Gomes Ramos/);
+    await goTo(page, 'Negócios');
+    await page.getByPlaceholder('Buscar em negócios...').fill('Ana Berclay');
+    assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
+    assert.match(await page.locator('#page-deals tbody').innerText(), /Implantação Arkos Estética/);
   });
 
   await run('FILTER-01 e FILTER-02 adicionam e removem campos sem alterar registros', async page => {
@@ -223,6 +237,7 @@ async function createLead(page, name) {
     const panel = page.locator('#filterDialog');
     assert.equal(await panel.getByText('Filtros salvos').isVisible(), true);
     assert.equal(await panel.getByRole('button', { name: 'Adicionar campo' }).isVisible(), true);
+    assert.deepEqual(await panel.locator('[data-filter-field]').evaluateAll(rows => rows.map(row => row.dataset.filterField)), ['name', 'stage', 'responsibleId', 'createdAt']);
     await panel.locator('#addFilterField').selectOption('phone');
     await panel.getByRole('button', { name: 'Adicionar campo' }).click();
     assert.equal(await panel.locator('[data-filter-field="phone"]').count(), 1);
@@ -233,6 +248,7 @@ async function createLead(page, name) {
 
   await run('FILTER-04, FILTER-06 e FILTER-08 combinam responsável período e etapa por E', async page => {
     await goTo(page, 'Leads');
+    const originalUrl = page.url();
     await page.getByRole('button', { name: /Filtros/ }).click();
     const panel = page.locator('#filterDialog');
     await panel.locator('[data-filter-field="responsibleId"] select[name="filter-value"]').selectOption(['u-paula']);
@@ -245,11 +261,17 @@ async function createLead(page, name) {
     assert.equal(await page.locator('#page-leads tbody tr').count(), 1);
     assert.match(await page.locator('#page-leads tbody').innerText(), /Larissa Spinola/);
     assert.doesNotMatch(await page.locator('#page-leads tbody').innerText(), /João Vilela/);
+    assert.match(await page.locator('#page-leads .table-footer').innerText(), /1 registro\(s\) visível\(is\)/);
+    assert.equal(page.url(), originalUrl);
 
     await page.getByRole('button', { name: /Filtros/ }).click();
     await panel.locator('[data-filter-field="name"] input[name="filter-value"]').fill('registro impossível');
     await panel.getByRole('button', { name: 'Pesquisar' }).click();
     assert.equal(await page.getByText('Nenhum Lead encontrado').isVisible(), true);
+    assert.match(await page.locator('#page-leads .table-footer').innerText(), /0 registro\(s\) visível\(is\)/);
+    await page.getByRole('button', { name: /Filtros/ }).click();
+    assert.equal(await panel.locator('[data-filter-field="name"] input[name="filter-value"]').inputValue(), 'registro impossível');
+    assert.equal(await panel.locator('[data-filter-field="name"] input[name="filter-value"]').isEditable(), true);
   });
 
   await run('FILTER-05 e FILTER-07 aplicam OU no campo e operadores monetários', async page => {
@@ -268,6 +290,81 @@ async function createLead(page, name) {
     assert.match(await page.locator('#page-deals tbody').innerText(), /Renovação ALS Pharma/);
   });
 
+  await run('FILTER-06 oferece e executa todos os operadores de data', async page => {
+    await goTo(page, 'Leads');
+    await page.getByRole('button', { name: /Filtros/ }).click();
+    const panel = page.locator('#filterDialog');
+    const row = panel.locator('[data-filter-field="createdAt"]');
+    assert.deepEqual(await row.locator('select[name="filter-operator"] option').evaluateAll(options => options.map(option => option.value)), ['any', 'exact', 'before', 'after', 'between']);
+    const cases = [
+      ['exact', '2026-08-17', 1],
+      ['before', '2026-08-16', 3],
+      ['after', '2026-08-16', 1],
+      ['any', '', 5]
+    ];
+    for (const [operator, value, count] of cases) {
+      await row.locator('select[name="filter-operator"]').selectOption(operator);
+      if (value) await row.locator('input[name="filter-value"]').fill(value);
+      await panel.getByRole('button', { name: 'Pesquisar' }).click();
+      assert.equal(await page.locator('#page-leads tbody tr').count(), count, `operador de data ${operator}`);
+      await page.getByRole('button', { name: /Filtros/ }).click();
+    }
+  });
+
+  await run('FILTER-07 oferece e executa todos os operadores monetários', async page => {
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: /Filtros/ }).click();
+    const panel = page.locator('#filterDialog');
+    await panel.locator('#addFilterField').selectOption('amount');
+    await panel.getByRole('button', { name: 'Adicionar campo' }).click();
+    const row = panel.locator('[data-filter-field="amount"]');
+    assert.deepEqual(await row.locator('select[name="filter-operator"] option').evaluateAll(options => options.map(option => option.value)), ['exact', 'gt', 'lt', 'between']);
+    const cases = [
+      ['exact', '48500', '', 1],
+      ['gt', '50000', '', 1],
+      ['lt', '20000', '', 2],
+      ['between', '20000', '40000', 2]
+    ];
+    for (const [operator, value, valueTo, count] of cases) {
+      await row.locator('select[name="filter-operator"]').selectOption(operator);
+      await row.locator('input[name="filter-value"]').fill(value);
+      if (valueTo) await row.locator('input[name="filter-value-to"]').fill(valueTo);
+      await panel.getByRole('button', { name: 'Pesquisar' }).click();
+      assert.equal(await page.locator('#page-deals tbody tr').count(), count, `operador monetário ${operator}`);
+      await page.getByRole('button', { name: /Filtros/ }).click();
+    }
+  });
+
+  await run('filtros rejeitam nome vazio e intervalo invertido e atualizam preset homônimo', async page => {
+    await goTo(page, 'Leads');
+    await page.getByRole('button', { name: /Filtros/ }).click();
+    const panel = page.locator('#filterDialog');
+    page.once('dialog', dialog => dialog.accept(''));
+    await panel.getByRole('button', { name: 'Salvar filtro' }).click();
+    assert.equal(await page.getByText('Informe um nome para salvar o filtro.').isVisible(), true);
+    assert.equal((await stateFrom(page)).ui.savedFilters.length, 0);
+
+    const date = panel.locator('[data-filter-field="createdAt"]');
+    await date.locator('select[name="filter-operator"]').selectOption('between');
+    await date.locator('input[name="filter-value"]').fill('2026-08-18');
+    await date.locator('input[name="filter-value-to"]').fill('2026-08-16');
+    await panel.getByRole('button', { name: 'Pesquisar' }).click();
+    assert.equal(await page.getByText('Revise o intervalo: o valor inicial deve ser menor que o final.').isVisible(), true);
+    assert.equal(await panel.isVisible(), true);
+
+    await panel.getByRole('button', { name: 'Redefinir' }).click();
+    await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption(['Lead convertido']);
+    page.once('dialog', dialog => dialog.accept('Meu filtro'));
+    await panel.getByRole('button', { name: 'Salvar filtro' }).click();
+    await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption(['Em contato']);
+    page.once('dialog', dialog => dialog.accept('Meu filtro'));
+    await panel.getByRole('button', { name: 'Salvar filtro' }).click();
+    const saved = (await stateFrom(page)).ui.savedFilters;
+    assert.equal(saved.length, 1);
+    assert.deepEqual(saved[0].filter.criteria.stage.value, ['Em contato']);
+    assert.equal(Number.isNaN(Date.parse(saved[0].updatedAt)), false);
+  });
+
   await run('FILTER-09, FILTER-10 e FILTER-11 persistem carregam excluem e redefinem presets', async page => {
     await goTo(page, 'Leads');
     await page.getByRole('button', { name: /Filtros/ }).click();
@@ -280,8 +377,14 @@ async function createLead(page, name) {
     assert.equal(state.ui.savedFilters[0].name, 'Leads convertidos');
     assert.equal(state.ui.savedFilters[0].userId, 'u-admin');
     assert.equal(state.ui.savedFilters[0].scope, 'leads');
+    assert.deepEqual(state.ui.savedFilters[0].filter.criteria.stage.value, ['Lead convertido']);
+    assert.ok(state.ui.savedFilters[0].filter.visibleFields.includes('stage'));
+    assert.equal(Number.isNaN(Date.parse(state.ui.savedFilters[0].updatedAt)), false);
 
     await panel.getByRole('button', { name: 'Redefinir' }).click();
+    assert.deepEqual(await panel.locator('[data-filter-field]').evaluateAll(rows => rows.map(row => row.dataset.filterField)), ['name', 'stage', 'responsibleId', 'createdAt']);
+    assert.deepEqual(await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').evaluate(select => [...select.selectedOptions].map(option => option.value)), []);
+    assert.equal(await panel.locator('[data-filter-field="name"] input[name="filter-value"]').inputValue(), '');
     await panel.getByRole('button', { name: 'Leads convertidos', exact: true }).click();
     await panel.getByRole('button', { name: 'Pesquisar' }).click();
     assert.equal(await page.locator('#page-leads tbody tr').count(), 1);
@@ -313,6 +416,17 @@ async function createLead(page, name) {
     assert.ok((await stateFrom(page)).leads.length >= 5);
   });
 
+  await run('FILTER-12 aplica autorização antes do filtro sem apagar o registro', async page => {
+    await selectProfile(page, 'u-vitor');
+    await goTo(page, 'Negócios');
+    await page.getByPlaceholder('Buscar em negócios...').fill('Arkos Estética');
+    assert.equal(await page.locator('#page-deals tbody tr').count(), 0);
+    assert.match(await page.locator('#page-deals .table-footer').innerText(), /0 registro\(s\) visível\(is\)/);
+    const state = await stateFrom(page);
+    assert.ok(state.deals.some(deal => deal.id === 'N-16312' && deal.responsibleId === 'u-paula'));
+    assert.equal(state.ui.filtersByUser['u-vitor'].deals.query, 'Arkos Estética');
+  });
+
   await run('BOARD-01 e BOARD-09 alternam Lista/Kanban preservando filtro e preferência', async page => {
     await goTo(page, 'Negócios');
     await page.getByPlaceholder('Buscar em negócios...').fill('Arkos');
@@ -340,6 +454,8 @@ async function createLead(page, name) {
     await page.getByRole('button', { name: 'Kanban', exact: true }).click();
     assert.equal(await page.locator('#page-leads .kanban-column').count(), 3);
     assert.equal(await page.locator('#page-leads .kanban-card').count(), 5);
+    assert.deepEqual(await page.locator('#page-leads .kanban-column-head > span:first-child').allTextContents(), LEAD_STAGES);
+    assert.deepEqual(await page.locator('#page-leads .kanban-count').allTextContents(), ['3', '1', '1']);
     const contactColumn = page.locator('[data-kanban-stage="Em contato"]');
     assert.match(await contactColumn.locator('.kanban-column-head').innerText(), /3/);
   });
@@ -350,7 +466,13 @@ async function createLead(page, name) {
     const mover = page.getByLabel('Mover Implantação Arkos Estética');
     await mover.selectOption('Negociação Revisão');
     let state = await stateFrom(page);
-    assert.equal(state.deals.find(deal => deal.id === 'N-16312').stage, 'Negociação Revisão');
+    const changed = state.deals.find(deal => deal.id === 'N-16312');
+    assert.equal(changed.stage, 'Negociação Revisão');
+    assert.deepEqual(Object.keys(changed.stageHistory.at(-1)).sort(), ['at', 'byId', 'from', 'to']);
+    assert.equal(changed.stageHistory.at(-1).from, 'Orçamentos enviados');
+    assert.equal(changed.stageHistory.at(-1).to, 'Negociação Revisão');
+    assert.equal(changed.stageHistory.at(-1).byId, 'u-admin');
+    assert.equal(Number.isNaN(Date.parse(changed.stageHistory.at(-1).at)), false);
     await page.getByRole('button', { name: 'Desfazer' }).click();
     state = await stateFrom(page);
     assert.equal(state.deals.find(deal => deal.id === 'N-16312').stage, 'Orçamentos enviados');
@@ -358,6 +480,7 @@ async function createLead(page, name) {
 
   await run('BOARD-06 protege Faturando e o Desfazer restaura responsável', async page => {
     await goTo(page, 'Negócios');
+    const notificationsBefore = (await stateFrom(page)).notifications;
     const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
     const target = row.locator('[data-stage-segment="Faturando"]');
     page.once('dialog', dialog => dialog.dismiss());
@@ -372,6 +495,26 @@ async function createLead(page, name) {
     state = await stateFrom(page);
     assert.equal(state.deals.find(deal => deal.id === 'N-16309').stage, 'Em Contato');
     assert.equal(state.deals.find(deal => deal.id === 'N-16309').responsibleId, 'u-paula');
+    assert.deepEqual(state.notifications, notificationsBefore);
+    assert.equal(await page.getByRole('button', { name: 'Desfazer' }).count(), 0);
+  });
+
+  await run('BOARD-06 protege todas as etapas de encerramento', async page => {
+    await goTo(page, 'Negócios');
+    const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
+    for (const stage of ['Ganho', 'Orçamento Não Aprovado', 'Analisar falha']) {
+      const target = row.locator(`[data-stage-segment="${stage}"]`);
+      page.once('dialog', dialog => dialog.dismiss());
+      await target.click();
+      assert.equal((await stateFrom(page)).deals.find(deal => deal.id === 'N-16309').stage, 'Em Contato');
+      page.once('dialog', dialog => dialog.accept());
+      await target.click();
+      const transitioned = (await stateFrom(page)).deals.find(deal => deal.id === 'N-16309');
+      assert.equal(transitioned.stage, stage);
+      if (stage === 'Ganho') assert.equal(Number.isNaN(Date.parse(transitioned.wonAt)), false);
+      await page.getByRole('button', { name: 'Desfazer' }).click();
+      assert.equal((await stateFrom(page)).deals.find(deal => deal.id === 'N-16309').stage, 'Em Contato');
+    }
   });
 
   await run('BOARD-07, BOARD-08 e BOARD-10 protegem Lead e mantêm Kanban móvel operável', async page => {
@@ -382,9 +525,14 @@ async function createLead(page, name) {
     const board = page.locator('#page-leads .kanban-board');
     assert.ok((await board.evaluate(element => element.scrollWidth)) > (await board.evaluate(element => element.clientWidth)));
     const larissa = page.getByLabel('Mover Larissa Spinola');
-    page.once('dialog', dialog => dialog.accept('Sem aderência'));
+    page.once('dialog', dialog => dialog.accept(''));
     await larissa.selectOption('Lead descartado');
     let state = await stateFrom(page);
+    assert.equal(state.leads.find(lead => lead.id === 'L-1048').stage, 'Em contato');
+    assert.equal(state.leads.find(lead => lead.id === 'L-1048').discardReason, undefined);
+    page.once('dialog', dialog => dialog.accept('Sem aderência'));
+    await larissa.selectOption('Lead descartado');
+    state = await stateFrom(page);
     assert.equal(state.leads.find(lead => lead.id === 'L-1048').discardReason, 'Sem aderência');
 
     const rayana = page.getByLabel('Mover Rayana Gomes Ramos');
@@ -395,16 +543,33 @@ async function createLead(page, name) {
     assert.ok(state.deals.some(deal => deal.contact === 'Rayana Gomes Ramos' && deal.stage === 'Em Contato'));
   });
 
+  await run('BOARD-09 preserva filtro e Kanban também em Leads', async page => {
+    await goTo(page, 'Leads');
+    await page.getByPlaceholder('Buscar em leads...').fill('Larissa');
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    assert.equal(await page.locator('#page-leads .kanban-card').count(), 1);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await goTo(page, 'Leads');
+    assert.equal(await page.locator('#page-leads .kanban-board').isVisible(), true);
+    assert.equal(await page.locator('#page-leads .kanban-card').count(), 1);
+    const state = await stateFrom(page);
+    assert.equal(state.ui.viewModesByUser['u-admin'].leads, 'kanban');
+    assert.equal(state.ui.filtersByUser['u-admin'].leads.query, 'Larissa');
+  });
+
   await run('DASH-01, DASH-03 e DASH-04 oferecem escopos e campos aplicáveis', async page => {
     await goTo(page, 'Visão geral');
     await page.getByRole('button', { name: /Filtrar painel/ }).click();
     const panel = page.locator('#filterDialog');
     const scopes = panel.locator('[data-dashboard-filter-scope]');
     assert.deepEqual(await scopes.allTextContents(), ['Todos', 'Leads', 'Negócios']);
+    assert.deepEqual(await panel.locator('[data-filter-field]').evaluateAll(rows => rows.map(row => row.dataset.filterField)), ['responsibleId', 'team', 'createdAt']);
     await scopes.filter({ hasText: 'Leads' }).click();
+    assert.deepEqual(await panel.locator('[data-filter-field]').evaluateAll(rows => rows.map(row => row.dataset.filterField)), ['name', 'stage', 'responsibleId', 'createdAt']);
     assert.match((await panel.locator('#addFilterField option').allTextContents()).join(' '), /Origem/);
     assert.match((await panel.locator('#addFilterField option').allTextContents()).join(' '), /Segmento/);
     await scopes.filter({ hasText: 'Negócios' }).click();
+    assert.deepEqual(await panel.locator('[data-filter-field]').evaluateAll(rows => rows.map(row => row.dataset.filterField)), ['title', 'stage', 'responsibleId', 'createdAt']);
     const dealFields = (await panel.locator('#addFilterField option').allTextContents()).join(' ');
     assert.match(dealFields, /Contato/);
     assert.match(dealFields, /Valor/);
@@ -429,16 +594,26 @@ async function createLead(page, name) {
     assert.match(await dashboard.locator('.pipeline').innerText(), /Ganho/);
     assert.match(await dashboard.locator('.activity-list').innerText(), /Licenças Biocare/);
     assert.doesNotMatch(await dashboard.locator('.activity-list').innerText(), /Larissa Spinola/);
+    await page.getByRole('button', { name: /Filtrar painel/ }).click();
+    assert.match(await panel.locator('[data-dashboard-filter-scope="deals"]').getAttribute('class'), /active/);
+    assert.deepEqual(await panel.locator('[data-filter-field="responsibleId"] select[name="filter-value"]').evaluate(select => [...select.selectedOptions].map(option => option.value)), ['u-paula']);
+    assert.deepEqual(await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').evaluate(select => [...select.selectedOptions].map(option => option.value)), ['Ganho']);
+    assert.equal(await panel.locator('[data-filter-field="createdAt"] input[name="filter-value"]').inputValue(), '2026-08-12');
+    assert.equal(await panel.locator('[data-filter-field="createdAt"] input[name="filter-value-to"]').inputValue(), '2026-08-12');
   });
 
   await run('DASH-02, DASH-07 e DASH-08 limitam Gestor e redefinem o conjunto', async page => {
     await selectProfile(page, 'u-manager');
     await goTo(page, 'Visão geral');
     const initialOpenDeals = await page.locator('#page-dashboard .stat').nth(1).locator('strong').innerText();
+    assert.equal(initialOpenDeals, '4');
+    assert.equal(await page.locator('#page-dashboard .stat').first().locator('strong').innerText(), '3');
     await page.getByRole('button', { name: /Filtrar painel/ }).click();
     const panel = page.locator('#filterDialog');
     const users = await panel.locator('[data-filter-field="responsibleId"] select[name="filter-value"] option').allTextContents();
     assert.deepEqual(users, ['Marcelo Martins', 'Paula Pincetta', 'Vitor Costa']);
+    assert.equal(await panel.locator('[data-filter-field="team"] select[name="filter-value"]').isVisible(), true);
+    assert.equal(await panel.locator('[data-filter-field="createdAt"] select[name="filter-operator"]').isVisible(), true);
     await panel.locator('[data-filter-field="responsibleId"] select[name="filter-value"]').selectOption(['u-paula']);
     await panel.getByRole('button', { name: 'Pesquisar' }).click();
     assert.notEqual(await page.locator('#page-dashboard .stat').nth(1).locator('strong').innerText(), initialOpenDeals);
@@ -446,6 +621,24 @@ async function createLead(page, name) {
     assert.equal(await page.locator('#page-dashboard .stat').nth(1).locator('strong').innerText(), initialOpenDeals);
     const state = await stateFrom(page);
     assert.equal(state.ui.dashboardScopeByUser['u-manager'], 'all');
+  });
+
+  await run('troca de perfil remove registro da Lista Kanban e indicadores sem apagá-lo', async page => {
+    await goTo(page, 'Visão geral');
+    assert.equal(await page.locator('#page-dashboard .stat').nth(1).locator('strong').innerText(), '5');
+    await goTo(page, 'Negócios');
+    await page.getByPlaceholder('Buscar em negócios...').fill('Conferência fiscal interna');
+    assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    assert.equal(await page.locator('#page-deals .kanban-card').count(), 1);
+
+    await selectProfile(page, 'u-manager');
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    assert.doesNotMatch(await page.locator('#page-deals').innerText(), /Conferência fiscal interna/);
+    await goTo(page, 'Visão geral');
+    assert.equal(await page.locator('#page-dashboard .stat').nth(1).locator('strong').innerText(), '4');
+    const state = await stateFrom(page);
+    assert.ok(state.deals.some(deal => deal.id === 'N-16307' && deal.team === 'Faturamento'));
   });
 
   await run('DEMO-07 recarga preserva alterações no navegador', async page => {

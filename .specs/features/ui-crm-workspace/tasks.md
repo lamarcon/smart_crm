@@ -39,7 +39,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ### Phase 1: Workspace evolution
 
 ```text
-T1 → T2 → T3 → T4 → T5 → T6 → T7
+T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8
 ```
 
 ## Task Breakdown
@@ -237,10 +237,37 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 **Gate**: build
 **Commit**: `docs: explain enhanced CRM workspace`
 
+### T8: Fechar lacunas da validação independente
+
+**Status**: Complete — 41 testes de navegador e 7 checks Compose aprovados após a correção em 2026-08-18.
+
+**What**: Alinhar payloads ao design, remover caminhos mortos e adicionar asserções específicas para todos os resultados compostos e casos de erro apontados pelo Verifier.
+**Where**: `app/static/index.html`
+**Depends on**: T7
+**Reuses**: suíte de navegador, motor de filtros, controlador de etapas e relatório independente
+**Requirement**: DRAWER-01–DASH-08
+
+**Tools**:
+
+- MCP: NONE
+- Skill: `tlc-spec-driven`
+
+**Done when**:
+
+- [x] `SavedFilter.updatedAt` e `stageHistory.{from,to,at,byId}` correspondem ao design e têm asserções exatas.
+- [x] Cada um dos 36 requisitos possui evidência completa para todos os seus resultados compostos.
+- [x] Casos de intervalo invertido, nome vazio, atualização homônima, descarte rejeitado, fechamento protegido, Undo único e troca de perfil são verificados.
+- [x] Caminhos mortos apontados no relatório são removidos.
+- [x] O gate Build passa com 41 testes de navegador e 7 checks de integração.
+
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(demo): close CRM workspace validation gaps`
+
 ## Phase Execution Map
 
 ```text
-Phase 1: T1 → T2 → T3 → T4 → T5 → T6 → T7
+Phase 1: T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8
 ```
 
 ## Task Granularity Check
@@ -254,6 +281,7 @@ Phase 1: T1 → T2 → T3 → T4 → T5 → T6 → T7
 | T5 | um componente de Pipeline com controlador de transição | ✅ Coeso |
 | T6 | uma integração do motor existente ao Dashboard | ✅ Granular |
 | T7 | um documento de uso com gate de entrega | ✅ Granular |
+| T8 | uma correção coesa das lacunas da validação independente | ✅ Coeso |
 
 ## Diagram-Definition Cross-Check
 
@@ -266,6 +294,7 @@ Phase 1: T1 → T2 → T3 → T4 → T5 → T6 → T7
 | T5 | T4 | T4 → T5 | ✅ Match |
 | T6 | T5 | T5 → T6 | ✅ Match |
 | T7 | T6 | T6 → T7 | ✅ Match |
+| T8 | T7 | T7 → T8 | ✅ Match |
 
 ## Test Co-location Validation
 
@@ -278,3 +307,4 @@ Phase 1: T1 → T2 → T3 → T4 → T5 → T6 → T7
 | T5 | browser UI/domain | e2e | e2e | ✅ OK |
 | T6 | browser UI/domain | e2e | e2e | ✅ OK |
 | T7 | docs/runtime | integration | integration | ✅ OK |
+| T8 | browser UI/domain + validation | e2e | e2e | ✅ OK |

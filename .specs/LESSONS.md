@@ -32,6 +32,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: DEMO-14 (permissions)
 - last seen: 2026-08-17T20:30:29Z
 
+### L-004 - Assert every required conjunct with its own observable outcome before marking an acceptance criterion covered
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `browser-e2e` · harmful: 0
+- features: ui-crm-workspace
+- evidence: .specs/features/ui-crm-workspace/validation.md:33 (browser-e2e)
+- last seen: 2026-08-18T21:03:27Z
+
+### L-005 - Assert the complete allowed set and exercise every required behavior branch for configurable operators and fields
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `filters` · harmful: 0
+- features: ui-crm-workspace
+- evidence: .specs/features/ui-crm-workspace/validation.md:49 (filters)
+- last seen: 2026-08-18T21:03:28Z
+
+### L-006 - Assert every spec-defined persisted payload field by exact name and value against the approved data model
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `state-payloads` · harmful: 0
+- features: ui-crm-workspace
+- evidence: .specs/features/ui-crm-workspace/validation.md:106 (state-payloads)
+- last seen: 2026-08-18T21:03:29Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
