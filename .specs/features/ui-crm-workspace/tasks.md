@@ -99,6 +99,8 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 ### T3: Editar registros no painel lateral
 
+**Status**: Complete — 19 testes de navegador e self-test aprovados em 2026-08-18.
+
 **What**: Substituir a edição pelo lápis por um painel lateral acionado pelo nome nos quatro módulos.
 **Where**: `app/static/index.html`
 **Depends on**: T2
@@ -112,12 +114,12 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 **Done when**:
 
-- [ ] Nomes de Leads, Contatos, Empresas e Negócios abrem o drawer correto.
-- [ ] Salvar atualiza a visualização ativa e Cancelar não altera o registro.
-- [ ] Fechar dados alterados exige confirmação.
-- [ ] O drawer ocupa a tela inteira em 390×844.
-- [ ] O caso CRUD antigo usa o nome clicável e preserva suas asserções de resultado.
-- [ ] O gate Full passa com pelo menos 19 casos de navegador.
+- [x] Nomes de Leads, Contatos, Empresas e Negócios abrem o drawer correto.
+- [x] Salvar atualiza a visualização ativa e Cancelar não altera o registro.
+- [x] Fechar dados alterados exige confirmação.
+- [x] O drawer ocupa a tela inteira em 390×844.
+- [x] O caso CRUD antigo usa o nome clicável e preserva suas asserções de resultado.
+- [x] O gate Full passa com pelo menos 19 casos de navegador.
 
 **Tests**: e2e
 **Gate**: full

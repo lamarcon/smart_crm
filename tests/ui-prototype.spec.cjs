@@ -64,7 +64,7 @@ async function createLead(page, name) {
   await dialog.getByLabel('Responsável *').selectOption('u-paula');
   await dialog.getByLabel('Assistente').selectOption('u-camila');
   await dialog.getByRole('button', { name: 'Salvar registro' }).click();
-  await page.locator('#page-leads strong').filter({ hasText: name }).waitFor();
+  await page.locator('#page-leads .entity-link').filter({ hasText: name }).waitFor();
 }
 
 (async () => {
@@ -145,10 +145,10 @@ async function createLead(page, name) {
     assert.equal(Number(await page.locator('#leadNavCount').innerText()), initialCount + 1);
 
     let row = page.locator('#page-leads tbody tr').filter({ hasText: 'Lead CRUD Automático' });
-    await row.getByTitle('Editar').click();
-    await page.locator('#entityDialog').getByLabel('Nome completo *').fill('Lead CRUD Editado');
+    await row.getByRole('button', { name: 'Lead CRUD Automático' }).click();
+    await page.locator('#entityDrawer').getByLabel('Nome completo *').fill('Lead CRUD Editado');
     await page.getByRole('button', { name: 'Salvar registro' }).click();
-    assert.equal(await page.locator('#page-leads strong').filter({ hasText: 'Lead CRUD Editado' }).count(), 1);
+    assert.equal(await page.locator('#page-leads .entity-link').filter({ hasText: 'Lead CRUD Editado' }).count(), 1);
 
     page.once('dialog', dialog => dialog.accept());
     row = page.locator('#page-leads tbody tr').filter({ hasText: 'Lead CRUD Editado' });
@@ -157,11 +157,58 @@ async function createLead(page, name) {
     assert.equal(Number(await page.locator('#leadNavCount').innerText()), initialCount);
   });
 
+  await run('DRAWER-01 abre os quatro cadastros pelo nome sem lápis', async page => {
+    const records = [
+      ['Leads', 'Larissa Spinola', 'Editar Lead'],
+      ['Contatos', 'Ana Berclay', 'Editar Contato'],
+      ['Empresas', 'Arkos Estética', 'Editar Empresa'],
+      ['Negócios', 'Implantação Arkos Estética', 'Editar Negócio']
+    ];
+    for (const [view, name, title] of records) {
+      await goTo(page, view);
+      await page.locator(`#page-${{ Leads: 'leads', Contatos: 'contacts', Empresas: 'companies', Negócios: 'deals' }[view]}`).getByRole('button', { name, exact: true }).click();
+      const drawer = page.locator('#entityDrawer');
+      assert.match(await drawer.getAttribute('class'), /open/);
+      assert.equal(await drawer.getByRole('heading').innerText(), title);
+      assert.equal(await page.locator(`#page-${{ Leads: 'leads', Contatos: 'contacts', Empresas: 'companies', Negócios: 'deals' }[view]}`).isVisible(), true);
+      assert.equal(await page.getByTitle('Editar').count(), 0);
+      await drawer.getByRole('button', { name: 'Cancelar' }).click();
+    }
+  });
+
+  await run('DRAWER-04 e DRAWER-05 protegem cancelamento e alterações pendentes', async page => {
+    await goTo(page, 'Leads');
+    await page.getByRole('button', { name: 'Larissa Spinola', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByLabel('Nome completo *').fill('Nome ainda não salvo');
+
+    page.once('dialog', dialog => dialog.dismiss());
+    await drawer.getByRole('button', { name: 'Cancelar' }).click();
+    assert.match(await drawer.getAttribute('class'), /open/);
+
+    page.once('dialog', dialog => dialog.accept());
+    await drawer.getByRole('button', { name: 'Cancelar' }).click();
+    assert.doesNotMatch(await drawer.getAttribute('class'), /open/);
+    assert.equal((await stateFrom(page)).leads.find(lead => lead.id === 'L-1048').name, 'Larissa Spinola');
+  });
+
+  await run('DRAWER-06 usa a tela inteira em 390x844', async page => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: 'Abrir menu' }).click();
+    await goTo(page, 'Leads');
+    await page.getByRole('button', { name: 'Larissa Spinola', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    const box = await drawer.boundingBox();
+    assert.equal(Math.round(box.width), 390);
+    assert.equal(await drawer.getByRole('button', { name: 'Salvar registro' }).isVisible(), true);
+    assert.equal(await drawer.getByRole('button', { name: 'Cancelar' }).isVisible(), true);
+  });
+
   await run('DEMO-07 recarga preserva alterações no navegador', async page => {
     await createLead(page, 'Lead Persistente');
     await page.reload({ waitUntil: 'domcontentloaded' });
     await goTo(page, 'Leads');
-    assert.equal(await page.locator('#page-leads strong').filter({ hasText: 'Lead Persistente' }).count(), 1);
+    assert.equal(await page.locator('#page-leads .entity-link').filter({ hasText: 'Lead Persistente' }).count(), 1);
     assert.ok((await stateFrom(page)).leads.some(lead => lead.name === 'Lead Persistente'));
   });
 

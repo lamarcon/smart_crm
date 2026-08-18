@@ -146,6 +146,8 @@
     .entity-avatar { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; color: #1849a9; background: var(--blue-100); font-size: 11px; font-weight: 800; }
     .entity strong { display: block; color: var(--navy-800); font-size: 13px; }
     .entity small { display: block; margin-top: 2px; color: var(--slate-500); }
+    .entity-link { display: block; border: 0; padding: 0; color: var(--navy-800); background: transparent; font-weight: 750; text-align: left; }
+    .entity-link:hover { color: #175cd3; text-decoration: underline; }
     .tag { display: inline-flex; align-items: center; gap: 5px; max-width: 190px; padding: 4px 8px; border-radius: 999px; color: #175cd3; background: var(--blue-100); font-size: 11px; font-weight: 700; white-space: nowrap; }
     .tag.green { color: #027a48; background: var(--green-100); }
     .tag.amber { color: #b54708; background: var(--amber-100); }
@@ -168,6 +170,17 @@
 
     dialog { width: min(620px, calc(100% - 28px)); max-height: calc(100vh - 40px); padding: 0; border: 0; border-radius: 14px; color: var(--navy-900); box-shadow: 0 25px 60px rgba(16,24,40,.25); }
     dialog::backdrop { background: rgba(10,16,32,.58); backdrop-filter: blur(2px); }
+    .drawer-overlay { position: fixed; inset: 0; z-index: 80; visibility: hidden; opacity: 0; background: rgba(10,16,32,.32); transition: .2s ease; }
+    .drawer-overlay.open { visibility: visible; opacity: 1; }
+    .entity-drawer { position: fixed; z-index: 81; inset: 0 0 0 auto; width: min(560px, 100vw); display: flex; flex-direction: column; visibility: hidden; transform: translateX(100%); background: white; box-shadow: -24px 0 60px rgba(16,24,40,.2); transition: .22s ease; }
+    .entity-drawer.open { visibility: visible; transform: translateX(0); }
+    .entity-drawer form { min-height: 0; height: 100%; display: flex; flex-direction: column; }
+    .drawer-head { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 21px; border-bottom: 1px solid var(--slate-200); }
+    .drawer-head h3 { margin: 0; font-size: 18px; }
+    .drawer-head p { margin: 4px 0 0; color: var(--slate-500); font-size: 12px; }
+    .drawer-body { flex: 1; overflow: auto; padding: 21px; }
+    .drawer-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 21px; border-top: 1px solid var(--slate-200); background: var(--slate-50); }
+    body.drawer-open { overflow: hidden; }
     .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 17px 20px; border-bottom: 1px solid var(--slate-200); }
     .modal-head h3 { margin: 0; font-size: 17px; }
     .close-button { width: 34px; height: 34px; border: 0; border-radius: 8px; color: var(--slate-500); background: transparent; font-size: 18px; }
@@ -278,6 +291,15 @@
       <div class="modal-foot"><button type="button" class="button" data-close="entityDialog">Cancelar</button><button type="submit" class="button primary">Salvar registro</button></div>
     </form>
   </dialog>
+
+  <div class="drawer-overlay" id="entityDrawerOverlay"></div>
+  <aside class="entity-drawer" id="entityDrawer" role="dialog" aria-modal="true" aria-labelledby="entityDrawerTitle" aria-hidden="true">
+    <form id="drawerForm">
+      <div class="drawer-head"><div><h3 id="entityDrawerTitle">Editar registro</h3><p id="entityDrawerSubtitle">Altere os dados e salve para atualizar a lista.</p></div><button type="button" class="close-button" data-action="cancel-drawer" aria-label="Fechar painel">×</button></div>
+      <div class="drawer-body"><div class="form-grid" id="drawerFields"></div></div>
+      <div class="drawer-foot"><button type="button" class="button" data-action="cancel-drawer">Cancelar</button><button type="submit" class="button primary">Salvar registro</button></div>
+    </form>
+  </aside>
 
   <dialog id="quoteDialog">
     <form id="quoteForm">
@@ -580,7 +602,7 @@
     function leadsHTML() {
       const query = filters.leads.toLowerCase();
       const records = visibleLeads().filter(item => (!query || `${item.name} ${item.company} ${item.email} ${item.segment}`.toLowerCase().includes(query)) && (stageFilters.leads === 'Todos' || item.stage === stageFilters.leads));
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${stageTag(item.stage)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}<button class="row-action" data-action="edit" data-entity="lead" data-id="${item.id}" title="Editar">✎</button><button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="lead" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${stageTag(item.stage)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}<button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Lead</th><th>Contato</th><th>Segmento</th><th>Etapa</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Lead encontrado');
       return listShell('leads', 'Leads', 'Cada nova solicitação comercial pode originar uma oportunidade.', table, records.length, leadStages);
     }
@@ -588,21 +610,21 @@
     function contactsHTML() {
       const query = filters.contacts.toLowerCase();
       const records = state.contacts.filter(item => !query || `${item.name} ${item.company} ${item.email} ${item.role}`.toLowerCase().includes(query));
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.company)}</td><td>${escapeHTML(item.role)}</td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td><div class="row-actions"><button class="row-action" data-action="edit" data-entity="contact" data-id="${item.id}" title="Editar">✎</button><button class="row-action" data-action="delete" data-entity="contact" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="contact" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.company)}</td><td>${escapeHTML(item.role)}</td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="contact" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       return listShell('contacts', 'Contatos', 'Pessoas vinculadas a Empresas e Negócios.', rows ? `<table><thead><tr><th>Contato</th><th>Empresa</th><th>Cargo</th><th>Dados de contato</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Contato encontrado'), records.length);
     }
 
     function companiesHTML() {
       const query = filters.companies.toLowerCase();
       const records = state.companies.filter(item => !query || `${item.name} ${item.city} ${item.segment}`.toLowerCase().includes(query));
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.segment)}</td><td>${escapeHTML(item.city)}</td><td>${escapeHTML(item.phone)}</td><td>${escapeHTML(userName(item.ownerId))}</td><td><div class="row-actions"><button class="row-action" data-action="edit" data-entity="company" data-id="${item.id}" title="Editar">✎</button><button class="row-action" data-action="delete" data-entity="company" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="company" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.segment)}</td><td>${escapeHTML(item.city)}</td><td>${escapeHTML(item.phone)}</td><td>${escapeHTML(userName(item.ownerId))}</td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="company" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       return listShell('companies', 'Empresas', 'Contas com histórico e vínculos comerciais.', rows ? `<table><thead><tr><th>Empresa</th><th>Segmento</th><th>Cidade</th><th>Telefone</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhuma Empresa encontrada'), records.length);
     }
 
     function dealsHTML() {
       const query = filters.deals.toLowerCase();
       const records = visibleDeals().filter(item => (!query || `${item.title} ${item.company} ${item.contact}`.toLowerCase().includes(query)) && (stageFilters.deals === 'Todos' || item.stage === stageFilters.deals));
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td><select class="stage-select" data-deal-stage="${item.id}">${dealStages.map(stage => `<option ${stage === item.stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select></td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="edit" data-entity="deal" data-id="${item.id}" title="Editar">✎</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td><select class="stage-select" data-deal-stage="${item.id}">${dealStages.map(stage => `<option ${stage === item.stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select></td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Negócio</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
       return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com automações demonstrativas.', table, records.length, dealStages);
     }
@@ -659,6 +681,42 @@
         ['assistants', 'Assistente', 'assistant', false]
       ]
     };
+    let drawerInitialValue = '';
+
+    function formSignature(form) {
+      return JSON.stringify(Array.from(new FormData(form).entries()));
+    }
+
+    function openEntityDrawer(entity, id) {
+      const collection = collectionFor(entity);
+      const record = state[collection].find(item => item.id === id);
+      if (!record) return;
+      const drawer = document.getElementById('entityDrawer');
+      const form = document.getElementById('drawerForm');
+      form.dataset.entity = entity;
+      form.dataset.id = id;
+      document.getElementById('entityDrawerTitle').textContent = `Editar ${entityLabel(entity)}`;
+      document.getElementById('entityDrawerSubtitle').textContent = `${id} · As alterações ficam somente neste navegador.`;
+      document.getElementById('drawerFields').innerHTML = formDefinitions[entity].map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
+      drawerInitialValue = formSignature(form);
+      drawer.classList.add('open');
+      drawer.setAttribute('aria-hidden', 'false');
+      document.getElementById('entityDrawerOverlay').classList.add('open');
+      document.body.classList.add('drawer-open');
+      drawer.querySelector('input, select')?.focus();
+    }
+
+    function closeEntityDrawer(force = false) {
+      const drawer = document.getElementById('entityDrawer');
+      if (!drawer.classList.contains('open')) return true;
+      const form = document.getElementById('drawerForm');
+      if (!force && formSignature(form) !== drawerInitialValue && !confirm('Descartar as alterações não salvas?')) return false;
+      drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden', 'true');
+      document.getElementById('entityDrawerOverlay').classList.remove('open');
+      document.body.classList.remove('drawer-open');
+      return true;
+    }
 
     function openEntityDialog(entity, id = null) {
       const collections = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' };
@@ -674,19 +732,19 @@
       dialog.showModal();
     }
 
-    function fieldHTML(name, label, type, required, value) {
+    function fieldHTML(name, label, type, required, value, idPrefix = 'field') {
       const requiredAttr = required ? 'required' : '';
       if (type === 'user') {
         const users = state.users.filter(user => ['Administrador', 'Gestor', 'Vendedor', 'Faturamento'].includes(user.role));
-        return `<div class="field"><label for="field-${name}">${label}${required ? ' *' : ''}</label><select id="field-${name}" name="${name}" ${requiredAttr}>${users.map(user => `<option value="${user.id}" ${user.id === value ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
+        return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><select id="${idPrefix}-${name}" name="${name}" ${requiredAttr}>${users.map(user => `<option value="${user.id}" ${user.id === value ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
       }
       if (type === 'assistant') {
         const assistants = state.users.filter(user => user.role === 'Assistente');
         const selected = Array.isArray(value) ? value[0] : '';
-        return `<div class="field"><label for="field-${name}">${label}</label><select id="field-${name}" name="${name}"><option value="">Nenhum</option>${assistants.map(user => `<option value="${user.id}" ${user.id === selected ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
+        return `<div class="field"><label for="${idPrefix}-${name}">${label}</label><select id="${idPrefix}-${name}" name="${name}"><option value="">Nenhum</option>${assistants.map(user => `<option value="${user.id}" ${user.id === selected ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
       }
-      if (type === 'stage') return `<div class="field"><label for="field-${name}">${label} *</label><select id="field-${name}" name="${name}" required>${dealStages.map(stage => `<option ${stage === value ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select></div>`;
-      return `<div class="field"><label for="field-${name}">${label}${required ? ' *' : ''}</label><input id="field-${name}" name="${name}" type="${type}" ${type === 'number' ? 'min="0" step="0.01"' : ''} value="${escapeHTML(value ?? '')}" ${requiredAttr}></div>`;
+      if (type === 'stage') return `<div class="field"><label for="${idPrefix}-${name}">${label} *</label><select id="${idPrefix}-${name}" name="${name}" required>${dealStages.map(stage => `<option ${stage === value ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select></div>`;
+      return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><input id="${idPrefix}-${name}" name="${name}" type="${type}" ${type === 'number' ? 'min="0" step="0.01"' : ''} value="${escapeHTML(value ?? '')}" ${requiredAttr}></div>`;
     }
 
     function saveEntity(form) {
@@ -698,16 +756,19 @@
       if (data.assistants !== undefined) data.assistants = data.assistants ? [data.assistants] : [];
       if (data.amount !== undefined) data.amount = Number(data.amount);
       if (['lead', 'deal'].includes(entity)) data.team = state.users.find(user => user.id === data.responsibleId)?.team || currentUser().team;
-      if (existing) Object.assign(existing, data, { updatedAt: 'Agora' });
+      if (existing) Object.assign(existing, data, { updatedAt: new Date().toISOString() });
       else {
         const base = { id: nextId(prefixes[entity], state[collection]) };
-        if (entity === 'lead') Object.assign(base, { stage: 'Em contato', createdAt: 'Agora' });
-        if (entity === 'deal') Object.assign(base, { quotes: [], updatedAt: 'Agora' });
+        const now = new Date().toISOString();
+        Object.assign(base, { createdAt: now, updatedAt: now });
+        if (entity === 'lead') Object.assign(base, { stage: 'Em contato' });
+        if (entity === 'deal') Object.assign(base, { quotes: [], stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [] });
         state[collection].unshift(Object.assign(base, data));
       }
       notify(existing ? `${entityLabel(entity)} atualizado.` : `Novo ${entityLabel(entity)} criado.`, data.name || data.title || data.company || 'Registro demonstrativo');
       saveState();
-      document.getElementById('entityDialog').close();
+      if (form.id === 'drawerForm') closeEntityDrawer(true);
+      else document.getElementById('entityDialog').close();
       render();
       toast(`${entityLabel(entity)} ${existing ? 'atualizado' : 'criado'} com sucesso.`);
     }
@@ -816,7 +877,8 @@
       if (button.dataset.view) { showView(button.dataset.view); return; }
       const action = button.dataset.action;
       if (action === 'new') openEntityDialog(button.dataset.entity);
-      if (action === 'edit') openEntityDialog(button.dataset.entity, button.dataset.id);
+      if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
+      if (action === 'cancel-drawer') closeEntityDrawer();
       if (action === 'delete') deleteEntity(button.dataset.entity, button.dataset.id);
       if (action === 'convert') convertLead(button.dataset.id);
       if (action === 'discard') discardLead(button.dataset.id);
@@ -841,9 +903,17 @@
       state.currentUserId = event.target.value; saveState(); render(); toast(`Perfil alterado para ${currentUser().name} · ${currentUser().role}.`);
     });
     document.getElementById('entityForm').addEventListener('submit', event => { event.preventDefault(); saveEntity(event.currentTarget); });
+    document.getElementById('drawerForm').addEventListener('submit', event => { event.preventDefault(); saveEntity(event.currentTarget); });
     document.getElementById('quoteForm').addEventListener('submit', event => { event.preventDefault(); saveQuote(event.currentTarget); });
     document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));
     document.getElementById('sidebarOverlay').addEventListener('click', () => toggleSidebar(false));
+    document.getElementById('entityDrawerOverlay').addEventListener('click', () => closeEntityDrawer());
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && document.getElementById('entityDrawer').classList.contains('open')) {
+        event.preventDefault();
+        closeEntityDrawer();
+      }
+    });
 
     render();
   </script>
