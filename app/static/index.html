@@ -988,7 +988,8 @@
       const { leads, deals } = dashboard;
       const openDeals = deals.filter(item => !['Ganho', 'Orçamento Não Aprovado', 'Analisar falha'].includes(item.stage));
       const total = openDeals.reduce((sum, item) => sum + item.amount, 0);
-      const won = deals.filter(item => item.stage === 'Ganho').reduce((sum, item) => sum + item.amount, 0);
+      const wonDeals = deals.filter(item => item.stage === 'Ganho');
+      const won = wonDeals.reduce((sum, item) => sum + item.amount, 0);
       const maxCount = Math.max(1, ...dealStages.map(stage => deals.filter(item => item.stage === stage).length));
       const pipeline = dealStages.map(stage => {
         const records = deals.filter(item => item.stage === stage);
@@ -1007,7 +1008,7 @@
           <article class="stat" style="--stat-color:var(--blue-100)"><div class="stat-top"><span>Leads em contato</span><span class="stat-icon">◎</span></div><strong>${leads.filter(item => item.stage === 'Em contato').length}</strong><small><b>Dados locais</b> deste perfil</small></article>
           <article class="stat" style="--stat-color:var(--purple-100)"><div class="stat-top"><span>Negócios abertos</span><span class="stat-icon">◇</span></div><strong>${openDeals.length}</strong><small>${money(total)} em pipeline</small></article>
           <article class="stat" style="--stat-color:var(--green-100)"><div class="stat-top"><span>Receita ganha</span><span class="stat-icon">↗</span></div><strong>${money(won)}</strong><small>Somente dados demonstrativos</small></article>
-          <article class="stat" style="--stat-color:var(--amber-100)"><div class="stat-top"><span>Conversão</span><span class="stat-icon">%</span></div><strong>${leads.length ? Math.round(leads.filter(item => item.stage === 'Lead convertido').length / leads.length * 100) : 0}%</strong><small>Leads convertidos no conjunto visível</small></article>
+          <article class="stat" style="--stat-color:var(--amber-100)"><div class="stat-top"><span>Conversão de Deals</span><span class="stat-icon">%</span></div><strong>${deals.length ? Math.round(wonDeals.length / deals.length * 100) : 0}%</strong><small>Negócios ganhos no conjunto visível</small></article>
         </div>
         <div class="grid-two">
           <article class="card"><div class="card-head"><div><h3>Pipeline Vendas CMS</h3><p>Distribuição dos Negócios por etapa</p></div><button class="button small" data-view="deals">Ver Negócios</button></div><div class="card-body pipeline">${pipeline}</div></article>

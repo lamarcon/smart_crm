@@ -582,6 +582,21 @@ async function createLead(page, name) {
     assert.equal(state.ui.filtersByUser['u-admin'].leads.query, 'Larissa');
   });
 
+  await run('Visão geral calcula Conversão de Deals sobre os negócios visíveis', async page => {
+    await goTo(page, 'Visão geral');
+    const conversion = page.locator('#page-dashboard .stat').filter({ hasText: 'Conversão de Deals' });
+    assert.equal(await conversion.locator('.stat-top span').first().innerText(), 'Conversão de Deals');
+    assert.equal(await conversion.locator('strong').innerText(), '17%');
+    assert.equal(await conversion.locator('small').innerText(), 'Negócios ganhos no conjunto visível');
+
+    await page.getByRole('button', { name: /Filtrar painel/ }).click();
+    const panel = page.locator('#filterDialog');
+    await panel.locator('[data-dashboard-filter-scope="deals"]').click();
+    await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption(['Ganho']);
+    await panel.getByRole('button', { name: 'Pesquisar' }).click();
+    assert.equal(await conversion.locator('strong').innerText(), '100%');
+  });
+
   await run('DASH-01, DASH-03 e DASH-04 oferecem escopos e campos aplicáveis', async page => {
     await goTo(page, 'Visão geral');
     await page.getByRole('button', { name: /Filtrar painel/ }).click();
