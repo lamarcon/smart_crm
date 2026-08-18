@@ -455,6 +455,21 @@ async function createLead(page, name) {
     assert.equal(await progress.locator('[data-stage-segment].current').count(), 1);
   });
 
+  await run('hover na etapa de Negócio destaca o segmento e mostra seu nome', async page => {
+    await goTo(page, 'Negócios');
+    const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' });
+    const segment = row.locator('[data-stage-segment="Pedido aprovado Consultar"]');
+    assert.equal(await segment.getAttribute('data-stage-tooltip'), 'Pedido aprovado Consultar');
+    await segment.hover();
+    const visual = await segment.evaluate(element => ({
+      background: getComputedStyle(element).backgroundColor,
+      tooltip: getComputedStyle(element, '::after').content.replace(/^['"]|['"]$/g, ''),
+      opacity: getComputedStyle(element, '::after').opacity
+    }));
+    assert.deepEqual(visual, { background: 'rgb(52, 64, 84)', tooltip: 'Pedido aprovado Consultar', opacity: '1' });
+    assert.equal((await stateFrom(page)).deals.find(deal => deal.id === 'N-16312').stage, 'Orçamentos enviados');
+  });
+
   await run('BOARD-03 agrupa os registros e mostra contagens no Kanban', async page => {
     await goTo(page, 'Leads');
     await page.getByRole('button', { name: 'Kanban', exact: true }).click();
