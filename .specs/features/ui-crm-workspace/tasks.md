@@ -72,6 +72,8 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 ### T2: Preparar o estado e os metadados do workspace
 
+**Status**: Complete — 16 testes de navegador e self-test aprovados em 2026-08-18.
+
 **What**: Adicionar registry de campos, datas ISO, histórico mínimo e preferências normalizadas sem invalidar estados locais existentes.
 **Where**: `app/static/index.html`
 **Depends on**: T1
@@ -85,11 +87,11 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 **Done when**:
 
-- [ ] Estados novos e antigos recebem `state.ui` e datas ISO determinísticas.
-- [ ] O registry descreve os campos pesquisáveis e filtráveis dos quatro módulos.
-- [ ] O carregamento corrompido continua restaurando a massa inicial.
-- [ ] Testes de navegador cobrem normalização e preservação após recarga.
-- [ ] O gate Full passa com pelo menos 16 casos de navegador.
+- [x] Estados novos e antigos recebem `state.ui` e datas ISO determinísticas.
+- [x] O registry descreve os campos pesquisáveis e filtráveis dos quatro módulos.
+- [x] O carregamento corrompido continua restaurando a massa inicial.
+- [x] Testes de navegador cobrem normalização e preservação após recarga.
+- [x] O gate Full passa com pelo menos 16 casos de navegador.
 
 **Tests**: e2e
 **Gate**: full

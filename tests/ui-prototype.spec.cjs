@@ -79,6 +79,41 @@ async function createLead(page, name) {
     assert.ok(state.notifications.length >= 3, 'Notificações fictícias ausentes');
   });
 
+  await run('workspace normaliza estado legado sem perder alterações locais', async page => {
+    const legacy = await stateFrom(page);
+    legacy.leads[0].name = 'Lead legado preservado';
+    delete legacy.ui;
+    legacy.leads.forEach(lead => { lead.createdAt = 'Hoje, 09:42'; delete lead.updatedAt; });
+    legacy.contacts.forEach(contact => { delete contact.createdAt; delete contact.updatedAt; });
+    legacy.companies.forEach(company => { delete company.createdAt; delete company.updatedAt; });
+    legacy.deals.forEach(deal => {
+      deal.updatedAt = 'Há 18 min';
+      delete deal.createdAt;
+      delete deal.stageChangedAt;
+      delete deal.stageChangedById;
+      delete deal.stageHistory;
+      delete deal.wonAt;
+    });
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: legacy });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    const normalized = await stateFrom(page);
+    assert.equal(normalized.leads[0].name, 'Lead legado preservado');
+    assert.deepEqual(normalized.ui.viewModesByUser['u-admin'], { leads: 'list', deals: 'list' });
+    assert.equal(normalized.ui.dashboardScopeByUser['u-admin'], 'all');
+    for (const record of [...normalized.leads, ...normalized.contacts, ...normalized.companies]) {
+      assert.equal(Number.isNaN(Date.parse(record.createdAt)), false, `${record.id} sem createdAt ISO`);
+      assert.equal(Number.isNaN(Date.parse(record.updatedAt)), false, `${record.id} sem updatedAt ISO`);
+    }
+    for (const deal of normalized.deals) {
+      assert.equal(Number.isNaN(Date.parse(deal.createdAt)), false, `${deal.id} sem createdAt ISO`);
+      assert.equal(Number.isNaN(Date.parse(deal.updatedAt)), false, `${deal.id} sem updatedAt ISO`);
+      assert.equal(Number.isNaN(Date.parse(deal.stageChangedAt)), false, `${deal.id} sem stageChangedAt ISO`);
+      assert.equal(Array.isArray(deal.stageHistory), true, `${deal.id} sem histórico de etapa`);
+    }
+    assert.equal(Number.isNaN(Date.parse(normalized.deals.find(deal => deal.stage === 'Ganho').wonAt)), false);
+  });
+
   await run('DEMO-04 navega pelos seis destinos', async page => {
     const destinations = [
       ['Visão geral', 'Visão geral'], ['Leads', 'Leads'], ['Contatos', 'Contatos'],

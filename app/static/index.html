@@ -318,6 +318,72 @@
       deals: ['Negócios', 'Pipeline Vendas CMS e orçamentos'],
       notifications: ['Notificações', 'Atualizações relevantes da sua operação']
     };
+    const entityConfigs = {
+      leads: {
+        label: 'Lead',
+        titleField: 'name',
+        fields: [
+          { name: 'id', label: 'Identificador', type: 'text', searchable: true },
+          { name: 'name', label: 'Nome', type: 'text', searchable: true, defaultFilter: true },
+          { name: 'company', label: 'Empresa', type: 'text', searchable: true },
+          { name: 'email', label: 'E-mail', type: 'text', searchable: true },
+          { name: 'phone', label: 'Telefone', type: 'text', searchable: true },
+          { name: 'segment', label: 'Segmento', type: 'select', searchable: true },
+          { name: 'source', label: 'Origem', type: 'select', searchable: true },
+          { name: 'stage', label: 'Etapa', type: 'multiselect', searchable: true, defaultFilter: true },
+          { name: 'responsibleId', label: 'Responsável', type: 'multiselect', searchable: true, defaultFilter: true },
+          { name: 'assistants', label: 'Assistentes', type: 'multiselect', searchable: true },
+          { name: 'createdAt', label: 'Data de criação', type: 'date', searchable: true, defaultFilter: true },
+          { name: 'updatedAt', label: 'Data de atualização', type: 'date', searchable: true }
+        ]
+      },
+      contacts: {
+        label: 'Contato',
+        titleField: 'name',
+        fields: [
+          { name: 'id', label: 'Identificador', type: 'text', searchable: true },
+          { name: 'name', label: 'Nome', type: 'text', searchable: true, defaultFilter: true },
+          { name: 'company', label: 'Empresa', type: 'text', searchable: true },
+          { name: 'role', label: 'Cargo', type: 'text', searchable: true },
+          { name: 'email', label: 'E-mail', type: 'text', searchable: true },
+          { name: 'phone', label: 'Telefone', type: 'text', searchable: true },
+          { name: 'createdAt', label: 'Data de criação', type: 'date', searchable: true, defaultFilter: true },
+          { name: 'updatedAt', label: 'Data de atualização', type: 'date', searchable: true }
+        ]
+      },
+      companies: {
+        label: 'Empresa',
+        titleField: 'name',
+        fields: [
+          { name: 'id', label: 'Identificador', type: 'text', searchable: true },
+          { name: 'name', label: 'Nome', type: 'text', searchable: true, defaultFilter: true },
+          { name: 'segment', label: 'Segmento', type: 'select', searchable: true },
+          { name: 'city', label: 'Cidade', type: 'text', searchable: true },
+          { name: 'phone', label: 'Telefone', type: 'text', searchable: true },
+          { name: 'ownerId', label: 'Responsável', type: 'multiselect', searchable: true, defaultFilter: true },
+          { name: 'createdAt', label: 'Data de criação', type: 'date', searchable: true, defaultFilter: true },
+          { name: 'updatedAt', label: 'Data de atualização', type: 'date', searchable: true }
+        ]
+      },
+      deals: {
+        label: 'Negócio',
+        titleField: 'title',
+        fields: [
+          { name: 'id', label: 'Identificador', type: 'text', searchable: true },
+          { name: 'title', label: 'Nome', type: 'text', searchable: true, defaultFilter: true },
+          { name: 'company', label: 'Empresa', type: 'text', searchable: true },
+          { name: 'contact', label: 'Contato', type: 'text', searchable: true },
+          { name: 'amount', label: 'Valor', type: 'money', searchable: true },
+          { name: 'stage', label: 'Etapa', type: 'multiselect', searchable: true, defaultFilter: true },
+          { name: 'responsibleId', label: 'Responsável', type: 'multiselect', searchable: true, defaultFilter: true },
+          { name: 'assistants', label: 'Assistentes', type: 'multiselect', searchable: true },
+          { name: 'createdAt', label: 'Data de criação', type: 'date', searchable: true, defaultFilter: true },
+          { name: 'updatedAt', label: 'Data de atualização', type: 'date', searchable: true },
+          { name: 'stageChangedAt', label: 'Data da mudança de etapa', type: 'date', searchable: true },
+          { name: 'wonAt', label: 'Data de ganho', type: 'date', searchable: true }
+        ]
+      }
+    };
 
     const seedState = () => ({
       currentUserId: 'u-admin',
@@ -368,12 +434,63 @@
     const filters = { leads: '', contacts: '', companies: '', deals: '' };
     const stageFilters = { leads: 'Todos', deals: 'Todos' };
 
+    function defaultUiState(users) {
+      const ui = { filtersByUser: {}, savedFilters: [], viewModesByUser: {}, dashboardScopeByUser: {} };
+      users.forEach(user => {
+        ui.filtersByUser[user.id] = {};
+        ui.viewModesByUser[user.id] = { leads: 'list', deals: 'list' };
+        ui.dashboardScopeByUser[user.id] = 'all';
+      });
+      return ui;
+    }
+
+    function ensureIso(value, fallback) {
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? fallback : new Date(parsed).toISOString();
+    }
+
+    function normalizeState(raw) {
+      const normalized = raw;
+      const base = Date.parse('2026-08-18T12:00:00.000Z');
+      const fallbackAt = (index, hourOffset = 0) => new Date(base - index * 86400000 + hourOffset * 3600000).toISOString();
+      ['leads', 'contacts', 'companies'].forEach(collection => {
+        (normalized[collection] || []).forEach((record, index) => {
+          record.createdAt = ensureIso(record.createdAt, fallbackAt(index + 1));
+          record.updatedAt = ensureIso(record.updatedAt, record.createdAt);
+        });
+      });
+      (normalized.deals || []).forEach((deal, index) => {
+        deal.createdAt = ensureIso(deal.createdAt, fallbackAt(index + 2));
+        deal.updatedAt = ensureIso(deal.updatedAt, fallbackAt(index));
+        deal.stageChangedAt = ensureIso(deal.stageChangedAt, deal.updatedAt);
+        deal.stageChangedById ||= deal.responsibleId || normalized.currentUserId;
+        deal.stageHistory = Array.isArray(deal.stageHistory) ? deal.stageHistory : [];
+        if (deal.stage === 'Ganho') deal.wonAt = ensureIso(deal.wonAt, deal.stageChangedAt);
+      });
+      const defaults = defaultUiState(normalized.users || []);
+      normalized.ui ||= defaults;
+      normalized.ui.filtersByUser ||= {};
+      normalized.ui.savedFilters = Array.isArray(normalized.ui.savedFilters) ? normalized.ui.savedFilters : [];
+      normalized.ui.viewModesByUser ||= {};
+      normalized.ui.dashboardScopeByUser ||= {};
+      (normalized.users || []).forEach(user => {
+        normalized.ui.filtersByUser[user.id] ||= {};
+        normalized.ui.viewModesByUser[user.id] ||= { leads: 'list', deals: 'list' };
+        normalized.ui.dashboardScopeByUser[user.id] ||= 'all';
+      });
+      return normalized;
+    }
+
     function loadState() {
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-        if (saved && Array.isArray(saved.leads) && Array.isArray(saved.deals)) return saved;
+        if (saved && Array.isArray(saved.leads) && Array.isArray(saved.deals)) {
+          const normalized = normalizeState(saved);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+          return normalized;
+        }
       } catch (_) { /* corrupted local state is intentionally replaced */ }
-      const fresh = seedState();
+      const fresh = normalizeState(seedState());
       localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
       return fresh;
     }
@@ -685,7 +802,7 @@
 
     function resetDemo() {
       if (!confirm('Restaurar todos os dados fictícios e descartar suas alterações locais?')) return;
-      state = seedState(); saveState(); activeView = 'dashboard'; render(); toast('Dados de demonstração restaurados.');
+      state = normalizeState(seedState()); saveState(); activeView = 'dashboard'; render(); toast('Dados de demonstração restaurados.');
     }
 
     function toggleSidebar(open) {
