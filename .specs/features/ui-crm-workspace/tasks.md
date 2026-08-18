@@ -127,6 +127,8 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 ### T4: Adicionar filtros configuráveis
 
+**Status**: Complete — 25 testes de navegador e self-test aprovados em 2026-08-18.
+
 **What**: Implementar motor tipado, painel configurável, combinações `E`/`OU` e filtros nomeados para os módulos de cadastro.
 **Where**: `app/static/index.html`
 **Depends on**: T3
@@ -140,13 +142,13 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 **Done when**:
 
-- [ ] Busca livre cobre todos os valores textuais definidos no registry.
-- [ ] Campos podem ser adicionados, removidos e redefinidos.
-- [ ] Texto, seleção múltipla, datas e números aplicam os operadores especificados.
-- [ ] Responsável, período e etapa funcionam simultaneamente sem furar permissões.
-- [ ] Filtros nomeados podem ser salvos, reabertos e excluídos por usuário/módulo.
-- [ ] Combinação vazia e filtro incompatível exibem os estados previstos.
-- [ ] O gate Full passa com pelo menos 24 casos de navegador.
+- [x] Busca livre cobre todos os valores textuais definidos no registry.
+- [x] Campos podem ser adicionados, removidos e redefinidos.
+- [x] Texto, seleção múltipla, datas e números aplicam os operadores especificados.
+- [x] Responsável, período e etapa funcionam simultaneamente sem furar permissões.
+- [x] Filtros nomeados podem ser salvos, reabertos e excluídos por usuário/módulo.
+- [x] Combinação vazia e filtro incompatível exibem os estados previstos.
+- [x] O gate Full passa com pelo menos 24 casos de navegador.
 
 **Tests**: e2e
 **Gate**: full

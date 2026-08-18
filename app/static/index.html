@@ -196,6 +196,26 @@
     .hint { color: var(--slate-500); font-size: 11px; line-height: 1.4; }
     .quote-total { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 15px; border-radius: 10px; color: white; background: var(--navy-900); }
     .quote-total strong { font-size: 21px; }
+    dialog.filter-dialog { width: min(940px, calc(100% - 28px)); }
+    .filter-layout { min-height: min(680px, calc(100vh - 50px)); display: grid; grid-template-columns: 245px minmax(0, 1fr); }
+    .filter-sidebar { display: flex; flex-direction: column; gap: 14px; padding: 21px 17px; border-right: 1px solid var(--slate-200); background: var(--slate-50); }
+    .filter-sidebar h4 { margin: 0; font-size: 13px; }
+    .saved-filter-list { display: grid; gap: 6px; }
+    .saved-filter { display: grid; grid-template-columns: 1fr 32px; align-items: center; gap: 4px; }
+    .saved-filter > button:first-child { overflow: hidden; border: 0; border-radius: 8px; padding: 9px 10px; color: var(--navy-700); background: transparent; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+    .saved-filter > button:first-child:hover { color: #175cd3; background: white; }
+    .saved-filter .row-action { width: 30px; height: 30px; }
+    .filter-main { min-width: 0; display: flex; flex-direction: column; }
+    .filter-fields { display: grid; gap: 13px; }
+    .filter-row { display: grid; grid-template-columns: minmax(150px, .75fr) minmax(150px, .75fr) minmax(180px, 1fr) 34px; gap: 9px; align-items: end; padding: 12px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
+    .filter-row .filter-label { align-self: center; color: var(--navy-700); font-size: 12px; font-weight: 750; }
+    .filter-control { display: flex; gap: 8px; min-width: 0; }
+    .filter-control input, .filter-control select { width: 100%; min-width: 0; min-height: 39px; border: 1px solid var(--slate-300); border-radius: 8px; padding: 8px 10px; background: white; }
+    .filter-control select[multiple] { min-height: 82px; }
+    .filter-add { display: flex; gap: 9px; margin-top: 14px; }
+    .filter-add select { min-width: 220px; min-height: 38px; border: 1px solid var(--slate-300); border-radius: 9px; padding: 7px 10px; background: white; }
+    .filter-summary { display: inline-flex; align-items: center; gap: 6px; color: var(--slate-500); font-size: 12px; }
+    .filter-summary b { min-width: 20px; height: 20px; display: inline-grid; place-items: center; border-radius: 999px; color: #175cd3; background: var(--blue-100); font-size: 10px; }
 
     .toast-region { position: fixed; z-index: 100; right: 20px; bottom: 20px; display: grid; gap: 9px; }
     .toast { min-width: 280px; max-width: 390px; display: flex; gap: 10px; align-items: flex-start; padding: 13px 14px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; box-shadow: var(--shadow-md); animation: toastIn .2s ease; }
@@ -223,6 +243,11 @@
       .toolbar-actions .button { flex: 1; }
       .list-tools { align-items: stretch; flex-direction: column; }
       .list-tools select { width: 100%; }
+      dialog.filter-dialog { width: calc(100% - 16px); max-height: calc(100vh - 16px); }
+      .filter-layout { min-height: calc(100vh - 16px); grid-template-columns: 1fr; }
+      .filter-sidebar { max-height: 180px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--slate-200); }
+      .filter-row { grid-template-columns: 1fr; }
+      .filter-row .row-action { justify-self: end; }
     }
     @media (max-width: 560px) {
       .demo-banner { font-size: 11px; }
@@ -317,6 +342,19 @@
         <div class="quote-total"><span>Total estimado</span><strong id="quoteTotal">R$ 0,00</strong></div>
       </div>
       <div class="modal-foot"><button type="button" class="button" data-close="quoteDialog">Cancelar</button><button type="submit" class="button primary">Adicionar orçamento</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="filterDialog" class="filter-dialog">
+    <form id="filterForm">
+      <div class="filter-layout">
+        <aside class="filter-sidebar"><h4>Filtros salvos</h4><div class="saved-filter-list" id="savedFilterList"></div><button type="button" class="button small" data-action="save-filter">＋ Salvar filtro</button></aside>
+        <div class="filter-main">
+          <div class="modal-head"><div><h3 id="filterDialogTitle">Filtrar registros</h3><p class="hint">Combine os campos para refinar a busca.</p></div><button type="button" class="close-button" data-close="filterDialog" aria-label="Fechar">×</button></div>
+          <div class="modal-body"><div class="filter-fields" id="filterFields"></div><div class="filter-add"><select id="addFilterField" aria-label="Campo para adicionar"></select><button type="button" class="button small" data-action="add-filter-field">Adicionar campo</button></div></div>
+          <div class="modal-foot"><button type="button" class="button" data-action="reset-filters">Redefinir</button><button type="submit" class="button primary">⌕ Pesquisar</button></div>
+        </div>
+      </div>
     </form>
   </dialog>
 
@@ -453,9 +491,6 @@
 
     let state = loadState();
     let activeView = 'dashboard';
-    const filters = { leads: '', contacts: '', companies: '', deals: '' };
-    const stageFilters = { leads: 'Todos', deals: 'Todos' };
-
     function defaultUiState(users) {
       const ui = { filtersByUser: {}, savedFilters: [], viewModesByUser: {}, dashboardScopeByUser: {} };
       users.forEach(user => {
@@ -534,6 +569,275 @@
     function visibleLeads() { return state.leads.filter(canSee); }
     function visibleDeals() { return state.deals.filter(canSee); }
 
+    let filterPanelScope = null;
+    let filterDraft = null;
+
+    function clone(value) { return JSON.parse(JSON.stringify(value)); }
+
+    function defaultCriterion(type) {
+      if (['select', 'multiselect'].includes(type)) return { operator: 'in', value: [] };
+      if (type === 'date') return { operator: 'any', value: '', valueTo: '' };
+      if (['number', 'money'].includes(type)) return { operator: 'exact', value: '', valueTo: '' };
+      return { operator: 'contains', value: '' };
+    }
+
+    function defaultFilterState(scope) {
+      const fields = entityConfigs[scope]?.fields || [];
+      const visibleFields = fields.filter(field => field.defaultFilter).map(field => field.name);
+      return {
+        query: '',
+        visibleFields,
+        criteria: Object.fromEntries(visibleFields.map(name => {
+          const definition = fields.find(field => field.name === name);
+          return [name, defaultCriterion(definition.type)];
+        }))
+      };
+    }
+
+    function sanitizeFilterState(scope, value) {
+      const allowed = new Set((entityConfigs[scope]?.fields || []).map(field => field.name));
+      const source = value && typeof value === 'object' ? clone(value) : defaultFilterState(scope);
+      const originalFields = Array.isArray(source.visibleFields) ? source.visibleFields : [];
+      const visibleFields = originalFields.filter(name => allowed.has(name));
+      const criteria = {};
+      Object.entries(source.criteria || {}).forEach(([name, criterion]) => {
+        if (allowed.has(name)) criteria[name] = criterion;
+      });
+      return {
+        filter: { query: String(source.query || ''), visibleFields, criteria },
+        adjusted: visibleFields.length !== originalFields.length || Object.keys(criteria).length !== Object.keys(source.criteria || {}).length
+      };
+    }
+
+    function getFilterState(scope) {
+      const userFilters = state.ui.filtersByUser[state.currentUserId] ||= {};
+      if (!userFilters[scope]) userFilters[scope] = defaultFilterState(scope);
+      const sanitized = sanitizeFilterState(scope, userFilters[scope]).filter;
+      userFilters[scope] = sanitized;
+      return sanitized;
+    }
+
+    function rawFieldValue(record, name) {
+      return record?.[name];
+    }
+
+    function searchableFieldValue(record, name) {
+      const value = rawFieldValue(record, name);
+      if (['responsibleId', 'ownerId'].includes(name)) return `${value || ''} ${userName(value)}`;
+      if (name === 'assistants') return (value || []).map(id => `${id} ${userName(id)}`).join(' ');
+      if (Array.isArray(value)) return value.join(' ');
+      return String(value ?? '');
+    }
+
+    function matchesCriterion(record, definition, criterion) {
+      if (!criterion) return true;
+      const raw = rawFieldValue(record, definition.name);
+      if (['select', 'multiselect'].includes(definition.type)) {
+        const selected = Array.isArray(criterion.value) ? criterion.value : [];
+        if (!selected.length) return true;
+        const recordValues = Array.isArray(raw) ? raw.map(String) : [String(raw ?? '')];
+        return selected.some(value => recordValues.includes(String(value)));
+      }
+      if (definition.type === 'date') {
+        if (criterion.operator === 'any' || !criterion.value) return true;
+        const value = Date.parse(raw);
+        const start = Date.parse(`${criterion.value}T00:00:00.000Z`);
+        const end = Date.parse(`${criterion.valueTo || criterion.value}T23:59:59.999Z`);
+        if (Number.isNaN(value) || Number.isNaN(start)) return false;
+        if (criterion.operator === 'exact') return value >= start && value <= Date.parse(`${criterion.value}T23:59:59.999Z`);
+        if (criterion.operator === 'before') return value < start;
+        if (criterion.operator === 'after') return value > Date.parse(`${criterion.value}T23:59:59.999Z`);
+        if (criterion.operator === 'between') return value >= start && value <= end;
+        return true;
+      }
+      if (['number', 'money'].includes(definition.type)) {
+        if (criterion.value === '' || criterion.value == null) return true;
+        const value = Number(raw);
+        const start = Number(criterion.value);
+        const end = Number(criterion.valueTo);
+        if (criterion.operator === 'exact') return value === start;
+        if (criterion.operator === 'gt') return value > start;
+        if (criterion.operator === 'lt') return value < start;
+        if (criterion.operator === 'between') return value >= start && value <= end;
+        return true;
+      }
+      const value = searchableFieldValue(record, definition.name).toLocaleLowerCase('pt-BR');
+      const expected = String(criterion.value || '').trim().toLocaleLowerCase('pt-BR');
+      if (!expected) return true;
+      return criterion.operator === 'exact' ? value === expected : value.includes(expected);
+    }
+
+    function applyRecordFilters(scope, records) {
+      const config = entityConfigs[scope];
+      const filter = getFilterState(scope);
+      const query = filter.query.trim().toLocaleLowerCase('pt-BR');
+      return records.filter(record => {
+        if (query) {
+          const haystack = config.fields.filter(field => field.searchable).map(field => searchableFieldValue(record, field.name)).join(' ').toLocaleLowerCase('pt-BR');
+          if (!haystack.includes(query)) return false;
+        }
+        return Object.entries(filter.criteria).every(([name, criterion]) => {
+          const definition = config.fields.find(field => field.name === name);
+          return definition ? matchesCriterion(record, definition, criterion) : true;
+        });
+      });
+    }
+
+    function activeFilterCount(scope) {
+      const filter = getFilterState(scope);
+      const count = Object.entries(filter.criteria).filter(([name, criterion]) => {
+        const definition = entityConfigs[scope].fields.find(field => field.name === name);
+        if (!definition) return false;
+        if (['select', 'multiselect'].includes(definition.type)) return (criterion.value || []).length > 0;
+        if (definition.type === 'date') return criterion.operator !== 'any' && Boolean(criterion.value);
+        return criterion.value !== '' && criterion.value != null;
+      }).length;
+      return count + (filter.query.trim() ? 1 : 0);
+    }
+
+    function filterableUsers() {
+      const user = currentUser();
+      const candidates = state.users.filter(candidate => ['Administrador', 'Gestor', 'Vendedor', 'Faturamento'].includes(candidate.role));
+      if (user.role === 'Administrador') return candidates;
+      return candidates.filter(candidate => candidate.team === user.team || candidate.id === user.id);
+    }
+
+    function filterOptions(scope, definition) {
+      if (definition.name === 'stage') return (scope === 'leads' ? leadStages : dealStages).map(value => ({ value, label: value }));
+      if (['responsibleId', 'ownerId'].includes(definition.name)) return filterableUsers().map(user => ({ value: user.id, label: user.name }));
+      if (definition.name === 'assistants') return state.users.filter(user => user.role === 'Assistente').map(user => ({ value: user.id, label: user.name }));
+      const values = [...new Set((state[scope] || []).flatMap(record => Array.isArray(record[definition.name]) ? record[definition.name] : [record[definition.name]]).filter(value => value !== '' && value != null).map(String))];
+      return values.sort((a, b) => a.localeCompare(b, 'pt-BR')).map(value => ({ value, label: value }));
+    }
+
+    function filterOperatorOptions(definition) {
+      if (['select', 'multiselect'].includes(definition.type)) return [['in', 'É um de']];
+      if (definition.type === 'date') return [['any', 'Qualquer data'], ['exact', 'Data exata'], ['before', 'Antes de'], ['after', 'Depois de'], ['between', 'Entre']];
+      if (['number', 'money'].includes(definition.type)) return [['exact', 'Valor exato'], ['gt', 'Maior que'], ['lt', 'Menor que'], ['between', 'Entre']];
+      return [['contains', 'Contém'], ['exact', 'É exatamente']];
+    }
+
+    function filterValueHTML(scope, definition, criterion) {
+      if (['select', 'multiselect'].includes(definition.type)) {
+        const selected = Array.isArray(criterion.value) ? criterion.value.map(String) : [];
+        const options = filterOptions(scope, definition).map(option => `<option value="${escapeHTML(option.value)}" ${selected.includes(String(option.value)) ? 'selected' : ''}>${escapeHTML(option.label)}</option>`).join('');
+        return `<select name="filter-value" multiple aria-label="${escapeHTML(definition.label)}">${options}</select>`;
+      }
+      const inputType = definition.type === 'date' ? 'date' : ['number', 'money'].includes(definition.type) ? 'number' : 'text';
+      const step = ['number', 'money'].includes(definition.type) ? ' step="0.01"' : '';
+      const disabled = definition.type === 'date' && criterion.operator === 'any' ? ' disabled' : '';
+      const end = criterion.operator === 'between' ? `<input name="filter-value-to" type="${inputType}"${step} value="${escapeHTML(criterion.valueTo || '')}" aria-label="${escapeHTML(definition.label)} até">` : '';
+      return `<div class="filter-value-range"><input name="filter-value" type="${inputType}"${step}${disabled} value="${escapeHTML(criterion.value || '')}" aria-label="${escapeHTML(definition.label)}">${end}</div>`;
+    }
+
+    function renderFilterPanel() {
+      if (!filterPanelScope || !filterDraft) return;
+      const config = entityConfigs[filterPanelScope];
+      document.getElementById('filterDialogTitle').textContent = `Filtrar ${config.label.toLowerCase()}`;
+      const saved = state.ui.savedFilters.filter(item => item.userId === state.currentUserId && item.scope === filterPanelScope);
+      document.getElementById('savedFilterList').innerHTML = saved.length ? saved.map(item => `<div class="saved-filter"><button type="button" data-action="load-saved-filter" data-id="${item.id}">${escapeHTML(item.name)}</button><button type="button" class="saved-filter-delete" data-action="delete-saved-filter" data-id="${item.id}" aria-label="Excluir ${escapeHTML(item.name)}">×</button></div>`).join('') : '<p class="hint">Nenhum filtro salvo.</p>';
+      document.getElementById('filterFields').innerHTML = filterDraft.visibleFields.map(name => {
+        const definition = config.fields.find(field => field.name === name);
+        if (!definition) return '';
+        const criterion = filterDraft.criteria[name] ||= defaultCriterion(definition.type);
+        const operators = filterOperatorOptions(definition).map(([value, label]) => `<option value="${value}" ${criterion.operator === value ? 'selected' : ''}>${label}</option>`).join('');
+        return `<div class="filter-row" data-filter-field="${definition.name}"><div class="filter-row-head"><label>${escapeHTML(definition.label)}</label><button type="button" class="row-action" data-action="remove-filter-field" data-field="${definition.name}" aria-label="Remover campo">×</button></div><div class="filter-controls"><select name="filter-operator" aria-label="Operador de ${escapeHTML(definition.label)}">${operators}</select>${filterValueHTML(filterPanelScope, definition, criterion)}</div></div>`;
+      }).join('');
+      const available = config.fields.filter(field => !filterDraft.visibleFields.includes(field.name));
+      const select = document.getElementById('addFilterField');
+      select.innerHTML = available.length ? `<option value="">Selecione um campo...</option>${available.map(field => `<option value="${field.name}">${escapeHTML(field.label)}</option>`).join('')}` : '<option value="">Todos os campos adicionados</option>';
+      select.disabled = !available.length;
+      document.querySelector('[data-action="add-filter-field"]').disabled = !available.length;
+    }
+
+    function syncFilterDraftFromPanel() {
+      if (!filterDraft) return;
+      document.querySelectorAll('#filterFields [data-filter-field]').forEach(row => {
+        const name = row.dataset.filterField;
+        const definition = entityConfigs[filterPanelScope].fields.find(field => field.name === name);
+        if (!definition) return;
+        const operator = row.querySelector('[name="filter-operator"]')?.value || defaultCriterion(definition.type).operator;
+        const valueControl = row.querySelector('[name="filter-value"]');
+        const value = ['select', 'multiselect'].includes(definition.type)
+          ? [...(valueControl?.selectedOptions || [])].map(option => option.value)
+          : valueControl?.value || '';
+        filterDraft.criteria[name] = { operator, value };
+        if (operator === 'between') filterDraft.criteria[name].valueTo = row.querySelector('[name="filter-value-to"]')?.value || '';
+      });
+    }
+
+    function openFilterPanel(scope) {
+      filterPanelScope = scope;
+      filterDraft = clone(getFilterState(scope));
+      renderFilterPanel();
+      document.getElementById('filterDialog').showModal();
+    }
+
+    function addFilterField() {
+      syncFilterDraftFromPanel();
+      const name = document.getElementById('addFilterField').value;
+      const definition = entityConfigs[filterPanelScope]?.fields.find(field => field.name === name);
+      if (!definition || filterDraft.visibleFields.includes(name)) return;
+      filterDraft.visibleFields.push(name);
+      filterDraft.criteria[name] = defaultCriterion(definition.type);
+      renderFilterPanel();
+    }
+
+    function removeFilterField(name) {
+      syncFilterDraftFromPanel();
+      filterDraft.visibleFields = filterDraft.visibleFields.filter(field => field !== name);
+      delete filterDraft.criteria[name];
+      renderFilterPanel();
+    }
+
+    function saveNamedFilter() {
+      syncFilterDraftFromPanel();
+      const name = prompt('Nome do filtro:')?.trim();
+      if (!name) return;
+      const existing = state.ui.savedFilters.find(item => item.userId === state.currentUserId && item.scope === filterPanelScope && item.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR'));
+      if (existing) existing.filter = clone(filterDraft);
+      else state.ui.savedFilters.push({ id: `SF-${Date.now()}`, name, userId: state.currentUserId, scope: filterPanelScope, filter: clone(filterDraft) });
+      saveState();
+      renderFilterPanel();
+      toast(existing ? 'Filtro salvo atualizado.' : 'Filtro salvo.');
+    }
+
+    function loadSavedFilter(id) {
+      const saved = state.ui.savedFilters.find(item => item.id === id && item.userId === state.currentUserId && item.scope === filterPanelScope);
+      if (!saved) return;
+      const sanitized = sanitizeFilterState(filterPanelScope, saved.filter);
+      filterDraft = sanitized.filter;
+      renderFilterPanel();
+      if (sanitized.adjusted) toast('Filtro ajustado: campos incompatíveis foram removidos.');
+    }
+
+    function deleteSavedFilter(id) {
+      state.ui.savedFilters = state.ui.savedFilters.filter(item => !(item.id === id && item.userId === state.currentUserId));
+      saveState();
+      renderFilterPanel();
+      toast('Filtro salvo excluído.');
+    }
+
+    function resetFilterPanel() {
+      filterDraft = defaultFilterState(filterPanelScope);
+      renderFilterPanel();
+    }
+
+    function applyFilterPanel() {
+      syncFilterDraftFromPanel();
+      const invalidRange = Object.values(filterDraft.criteria).some(criterion => {
+        if (criterion.operator !== 'between' || !criterion.value || !criterion.valueTo) return false;
+        const start = Number(criterion.value);
+        const end = Number(criterion.valueTo);
+        return Number.isFinite(start) && Number.isFinite(end) ? start > end : criterion.value > criterion.valueTo;
+      });
+      if (invalidRange) { toast('Revise o intervalo: o valor inicial deve ser menor que o final.'); return; }
+      state.ui.filtersByUser[state.currentUserId][filterPanelScope] = clone(filterDraft);
+      saveState();
+      document.getElementById('filterDialog').close();
+      render();
+    }
+
     function notify(text, detail, userId = state.currentUserId) {
       state.notifications.unshift({ id: nextId('NT', state.notifications), userId, text, detail, time: 'Agora', read: false });
       saveState();
@@ -595,35 +899,35 @@
 
     function listShell(entity, title, description, body, count, stageOptions = []) {
       const plural = { leads: 'Lead', contacts: 'Contato', companies: 'Empresa', deals: 'Negócio' }[entity];
-      const stageFilter = stageOptions.length ? `<select data-stage-filter="${entity}" aria-label="Filtrar por etapa"><option>Todos</option>${stageOptions.map(stage => `<option ${stageFilters[entity] === stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select>` : '';
-      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions"><button class="button primary" data-action="new" data-entity="${entity.slice(0, -1)}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filters[entity])}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}</div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>Dados de demonstração</span></div></div>`;
+      const filter = getFilterState(entity);
+      const selectedStages = filter.criteria.stage?.value || [];
+      const quickStage = selectedStages.length === 1 ? selectedStages[0] : 'Todos';
+      const stageFilter = stageOptions.length ? `<select data-stage-filter="${entity}" aria-label="Filtrar por etapa"><option>Todos</option>${stageOptions.map(stage => `<option ${quickStage === stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select>` : '';
+      const countBadge = activeFilterCount(entity);
+      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions"><button class="button primary" data-action="new" data-entity="${entity.slice(0, -1)}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>Dados de demonstração</span></div></div>`;
     }
 
     function leadsHTML() {
-      const query = filters.leads.toLowerCase();
-      const records = visibleLeads().filter(item => (!query || `${item.name} ${item.company} ${item.email} ${item.segment}`.toLowerCase().includes(query)) && (stageFilters.leads === 'Todos' || item.stage === stageFilters.leads));
+      const records = applyRecordFilters('leads', visibleLeads());
       const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="lead" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${stageTag(item.stage)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}<button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Lead</th><th>Contato</th><th>Segmento</th><th>Etapa</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Lead encontrado');
       return listShell('leads', 'Leads', 'Cada nova solicitação comercial pode originar uma oportunidade.', table, records.length, leadStages);
     }
 
     function contactsHTML() {
-      const query = filters.contacts.toLowerCase();
-      const records = state.contacts.filter(item => !query || `${item.name} ${item.company} ${item.email} ${item.role}`.toLowerCase().includes(query));
+      const records = applyRecordFilters('contacts', state.contacts);
       const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="contact" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.company)}</td><td>${escapeHTML(item.role)}</td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="contact" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       return listShell('contacts', 'Contatos', 'Pessoas vinculadas a Empresas e Negócios.', rows ? `<table><thead><tr><th>Contato</th><th>Empresa</th><th>Cargo</th><th>Dados de contato</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Contato encontrado'), records.length);
     }
 
     function companiesHTML() {
-      const query = filters.companies.toLowerCase();
-      const records = state.companies.filter(item => !query || `${item.name} ${item.city} ${item.segment}`.toLowerCase().includes(query));
+      const records = applyRecordFilters('companies', state.companies);
       const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="company" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.segment)}</td><td>${escapeHTML(item.city)}</td><td>${escapeHTML(item.phone)}</td><td>${escapeHTML(userName(item.ownerId))}</td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="company" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       return listShell('companies', 'Empresas', 'Contas com histórico e vínculos comerciais.', rows ? `<table><thead><tr><th>Empresa</th><th>Segmento</th><th>Cidade</th><th>Telefone</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhuma Empresa encontrada'), records.length);
     }
 
     function dealsHTML() {
-      const query = filters.deals.toLowerCase();
-      const records = visibleDeals().filter(item => (!query || `${item.title} ${item.company} ${item.contact}`.toLowerCase().includes(query)) && (stageFilters.deals === 'Todos' || item.stage === stageFilters.deals));
+      const records = applyRecordFilters('deals', visibleDeals());
       const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td><select class="stage-select" data-deal-stage="${item.id}">${dealStages.map(stage => `<option ${stage === item.stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select></td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Negócio</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
       return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com automações demonstrativas.', table, records.length, dealStages);
@@ -878,6 +1182,13 @@
       const action = button.dataset.action;
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
+      if (action === 'open-filters') openFilterPanel(button.dataset.scope);
+      if (action === 'add-filter-field') addFilterField();
+      if (action === 'remove-filter-field') removeFilterField(button.dataset.field);
+      if (action === 'save-filter') saveNamedFilter();
+      if (action === 'load-saved-filter') loadSavedFilter(button.dataset.id);
+      if (action === 'delete-saved-filter') deleteSavedFilter(button.dataset.id);
+      if (action === 'reset-filters') resetFilterPanel();
       if (action === 'cancel-drawer') closeEntityDrawer();
       if (action === 'delete') deleteEntity(button.dataset.entity, button.dataset.id);
       if (action === 'convert') convertLead(button.dataset.id);
@@ -890,12 +1201,13 @@
     });
 
     document.addEventListener('input', event => {
-      if (event.target.dataset.search) { filters[event.target.dataset.search] = event.target.value; render(); const input = document.querySelector(`[data-search="${event.target.dataset.search}"]`); input?.focus(); input?.setSelectionRange(input.value.length, input.value.length); }
+      if (event.target.dataset.search) { const scope = event.target.dataset.search; getFilterState(scope).query = event.target.value; saveState(); render(); const input = document.querySelector(`[data-search="${scope}"]`); input?.focus(); input?.setSelectionRange(input.value.length, input.value.length); }
       if (['quoteQuantity', 'quoteUnit', 'quoteDiscount'].includes(event.target.id)) updateQuoteTotal();
     });
 
     document.addEventListener('change', event => {
-      if (event.target.dataset.stageFilter) { stageFilters[event.target.dataset.stageFilter] = event.target.value; render(); }
+      if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }
+      if (event.target.name === 'filter-operator' && event.target.closest('#filterDialog')) { syncFilterDraftFromPanel(); renderFilterPanel(); }
       if (event.target.dataset.dealStage) changeDealStage(event.target.dataset.dealStage, event.target.value);
     });
 
@@ -905,6 +1217,7 @@
     document.getElementById('entityForm').addEventListener('submit', event => { event.preventDefault(); saveEntity(event.currentTarget); });
     document.getElementById('drawerForm').addEventListener('submit', event => { event.preventDefault(); saveEntity(event.currentTarget); });
     document.getElementById('quoteForm').addEventListener('submit', event => { event.preventDefault(); saveQuote(event.currentTarget); });
+    document.getElementById('filterForm').addEventListener('submit', event => { event.preventDefault(); applyFilterPanel(); });
     document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));
     document.getElementById('sidebarOverlay').addEventListener('click', () => toggleSidebar(false));
     document.getElementById('entityDrawerOverlay').addEventListener('click', () => closeEntityDrawer());
