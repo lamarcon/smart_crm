@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/ui-crm-workspace/design.md`  
-**Status**: In Progress
+**Status**: Complete
 
 ## Test Coverage Matrix
 
@@ -212,6 +212,8 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 ### T7: Documentar e validar o workspace evoluído
 
+**Status**: Complete — 34 testes de navegador e 7 checks de integração Compose aprovados em 2026-08-18.
+
 **What**: Atualizar a documentação de uso, conferir regressão completa e executar o gate de Compose sobre a versão final.
 **Where**: `README.md`
 **Depends on**: T6
@@ -225,11 +227,11 @@ T1 → T2 → T3 → T4 → T5 → T6 → T7
 
 **Done when**:
 
-- [ ] README descreve drawer, filtros, Lista/Kanban e Dashboard filtrável.
-- [ ] O Compose sobe somente o serviço `crm` e fica saudável.
-- [ ] O payload de `/health` permanece exato.
-- [ ] Todos os casos antigos e novos passam sem skips.
-- [ ] O gate Build passa com pelo menos 32 casos de navegador e 7 checks de integração.
+- [x] README descreve drawer, filtros, Lista/Kanban e Dashboard filtrável.
+- [x] O Compose sobe somente o serviço `crm` e fica saudável.
+- [x] O payload de `/health` permanece exato.
+- [x] Todos os casos antigos e novos passam sem skips.
+- [x] O gate Build passa com pelo menos 32 casos de navegador e 7 checks de integração.
 
 **Tests**: integration
 **Gate**: build

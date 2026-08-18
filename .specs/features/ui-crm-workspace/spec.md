@@ -6,11 +6,11 @@ O protótipo atual exige botões pequenos para editar registros, oferece busca l
 
 ## Goals
 
-- [ ] Abrir e editar os quatro cadastros centrais por um painel lateral acionado pelo nome do registro.
-- [ ] Permitir filtros configuráveis e reutilizáveis que cubram todos os campos demonstrativos compatíveis.
-- [ ] Disponibilizar Lista e Kanban para Leads e Negócios com transições de etapa seguras.
-- [ ] Recalcular o Dashboard por responsável, equipe, período, etapa e outros critérios aplicáveis.
-- [ ] Preservar as permissões simuladas, o estado local e a usabilidade móvel já validados.
+- [x] Abrir e editar os quatro cadastros centrais por um painel lateral acionado pelo nome do registro.
+- [x] Permitir filtros configuráveis e reutilizáveis que cubram todos os campos demonstrativos compatíveis.
+- [x] Disponibilizar Lista e Kanban para Leads e Negócios com transições de etapa seguras.
+- [x] Recalcular o Dashboard por responsável, equipe, período, etapa e outros critérios aplicáveis.
+- [x] Preservar as permissões simuladas, o estado local e a usabilidade móvel já validados.
 
 ## Out of Scope
 
@@ -192,10 +192,10 @@ O protótipo atual exige botões pequenos para editar registros, oferece busca l
 
 ## Success Criteria
 
-- [ ] Um usuário abre e edita qualquer cadastro central pelo nome sem usar o ícone de lápis.
-- [ ] Um usuário combina responsável, período e etapa e obtém somente registros que atendam aos três critérios.
-- [ ] Filtros nomeados permanecem disponíveis após recarregar a página.
-- [ ] Leads e Negócios mantêm filtros ao alternar entre Lista e Kanban.
-- [ ] Transições comuns podem ser desfeitas e transições com efeitos relevantes exigem confirmação.
-- [ ] O Dashboard recalcula contagens e valores para um funcionário e período escolhidos.
-- [ ] As novas interações permanecem utilizáveis em desktop e 390×844.
+- [x] Um usuário abre e edita qualquer cadastro central pelo nome sem usar o ícone de lápis.
+- [x] Um usuário combina responsável, período e etapa e obtém somente registros que atendam aos três critérios.
+- [x] Filtros nomeados permanecem disponíveis após recarregar a página.
+- [x] Leads e Negócios mantêm filtros ao alternar entre Lista e Kanban.
+- [x] Transições comuns podem ser desfeitas e transições com efeitos relevantes exigem confirmação.
+- [x] O Dashboard recalcula contagens e valores para um funcionário e período escolhidos.
+- [x] As novas interações permanecem utilizáveis em desktop e 390×844.
