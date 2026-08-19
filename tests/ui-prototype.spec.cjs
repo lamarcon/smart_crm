@@ -777,6 +777,51 @@ async function createLead(page, name) {
     assert.equal(deal.quotes.at(-1).pdf, 'proposta-teste.pdf');
   });
 
+  await run('QUOTE-01 gerencia orçamentos dentro do painel lateral do Negócio', async page => {
+    await goTo(page, 'Negócios');
+    assert.equal(await page.locator('#page-deals tbody [data-action="quote"]').count(), 6);
+    await page.getByRole('button', { name: 'Kanban' }).click();
+    assert.equal(await page.locator('#page-deals .kanban-card [data-action="quote"]').count(), 6);
+    await page.getByRole('button', { name: 'Lista' }).click();
+
+    await page.getByRole('button', { name: 'Implantação Arkos Estética' }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.waitFor({ state: 'visible' });
+    assert.equal(await drawer.getByRole('tab', { name: 'Informações' }).getAttribute('aria-selected'), 'true');
+    assert.equal(await drawer.getByRole('tab', { name: 'Orçamentos' }).isVisible(), true);
+    await drawer.getByRole('tab', { name: 'Orçamentos' }).click();
+    assert.equal(await drawer.getByRole('tab', { name: 'Orçamentos' }).getAttribute('aria-selected'), 'true');
+    assert.equal(await drawer.locator('[data-drawer-quote]').count(), 1);
+    const existing = drawer.locator('[data-drawer-quote]').first();
+    assert.match(await existing.innerText(), /Implantação completa/);
+    assert.match(await existing.innerText(), /R\$\s*48\.500,00/);
+    assert.match(await existing.innerText(), /Enviado/);
+    assert.match(await existing.innerText(), /proposta-arkos\.pdf/);
+
+    await drawer.getByRole('button', { name: 'Novo orçamento' }).click();
+    const quoteDialog = page.locator('#quoteDialog');
+    assert.equal(await quoteDialog.locator('#quoteDealId').inputValue(), 'N-16312');
+    await quoteDialog.getByLabel('Item / serviço *').fill('Orçamento pelo painel');
+    await quoteDialog.getByLabel('Quantidade *').fill('2');
+    await quoteDialog.getByLabel('Valor unitário (R$) *').fill('500');
+    await quoteDialog.getByLabel('Anexar PDF (opcional)').setInputFiles({ name: 'painel.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n') });
+    await quoteDialog.getByRole('button', { name: 'Adicionar orçamento' }).click();
+    assert.match(await drawer.getAttribute('class'), /open/);
+    assert.equal(await drawer.getByRole('tab', { name: 'Orçamentos' }).getAttribute('aria-selected'), 'true');
+    assert.equal(await drawer.locator('[data-drawer-quote]').count(), 2);
+    const added = drawer.locator('[data-drawer-quote]').last();
+    assert.match(await added.innerText(), /Orçamento pelo painel/);
+    assert.match(await added.innerText(), /R\$\s*1\.000,00/);
+    assert.match(await added.innerText(), /Rascunho/);
+    assert.match(await added.innerText(), /painel\.pdf/);
+
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+    await page.getByRole('button', { name: 'Renovação ALS Pharma' }).click();
+    await drawer.getByRole('tab', { name: 'Orçamentos' }).click();
+    assert.match(await drawer.innerText(), /Nenhum orçamento cadastrado/);
+    assert.equal(await drawer.getByRole('button', { name: 'Novo orçamento' }).isVisible(), true);
+  });
+
   await run('BITRIX-01 importa uma amostra e preserva todos os campos por posição', async page => {
     await page.getByRole('button', { name: 'Importar Bitrix' }).click();
     const dialog = page.locator('#bitrixImportDialog');

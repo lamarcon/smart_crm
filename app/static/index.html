@@ -204,6 +204,17 @@
     .drawer-head p { margin: 4px 0 0; color: var(--slate-500); font-size: 12px; }
     .drawer-body { flex: 1; overflow: auto; padding: 21px; }
     .drawer-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 21px; border-top: 1px solid var(--slate-200); background: var(--slate-50); }
+    .drawer-tabs { display: flex; gap: 4px; margin: -5px 0 20px; padding: 4px; border-radius: 10px; background: var(--slate-100); }
+    .drawer-tabs button { flex: 1; min-height: 36px; border: 0; border-radius: 8px; color: var(--slate-500); background: transparent; font-weight: 750; }
+    .drawer-tabs button[aria-selected="true"] { color: var(--navy-900); background: white; box-shadow: var(--shadow-sm); }
+    .drawer-quote-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .drawer-quote-head h4 { margin: 0; font-size: 15px; }
+    .drawer-quote-list { display: grid; gap: 10px; }
+    .drawer-quote { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; padding: 13px 14px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
+    .drawer-quote h5 { margin: 0 0 5px; color: var(--navy-800); font-size: 13px; }
+    .drawer-quote p { margin: 0; color: var(--slate-500); font-size: 11px; }
+    .drawer-quote strong { color: var(--navy-900); font-size: 13px; }
+    .drawer-quote .tag { align-self: end; justify-self: end; }
     body.drawer-open { overflow: hidden; }
     .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 17px 20px; border-bottom: 1px solid var(--slate-200); }
     .modal-head h3 { margin: 0; font-size: 17px; }
@@ -363,8 +374,12 @@
   <aside class="entity-drawer" id="entityDrawer" role="dialog" aria-modal="true" aria-labelledby="entityDrawerTitle" aria-hidden="true">
     <form id="drawerForm">
       <div class="drawer-head"><div><h3 id="entityDrawerTitle">Editar registro</h3><p id="entityDrawerSubtitle">Altere os dados e salve para atualizar a lista.</p></div><button type="button" class="close-button" data-action="cancel-drawer" aria-label="Fechar painel">×</button></div>
-      <div class="drawer-body"><div class="form-grid" id="drawerFields"></div><section class="bitrix-fields" id="drawerBitrixFields" hidden></section></div>
-      <div class="drawer-foot"><button type="button" class="button" data-action="cancel-drawer">Cancelar</button><button type="submit" class="button primary">Salvar registro</button></div>
+      <div class="drawer-body">
+        <div class="drawer-tabs" id="drawerTabs" role="tablist" aria-label="Seções do Negócio" hidden><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="info" aria-selected="true">Informações</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="quotes" aria-selected="false">Orçamentos</button></div>
+        <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div><section class="bitrix-fields" id="drawerBitrixFields" hidden></section></section>
+        <section id="drawerQuotesPanel" role="tabpanel" hidden></section>
+      </div>
+      <div class="drawer-foot" id="drawerFoot"><button type="button" class="button" data-action="cancel-drawer">Cancelar</button><button type="submit" class="button primary">Salvar registro</button></div>
     </form>
   </aside>
 
@@ -1173,6 +1188,7 @@
       ]
     };
     let drawerInitialValue = '';
+    let drawerActiveTab = 'info';
 
     function formSignature(form) {
       return JSON.stringify(Array.from(new FormData(form).entries()));
@@ -1193,12 +1209,30 @@
       const bitrixFields = Array.isArray(record.bitrixFields) ? record.bitrixFields : [];
       bitrixSection.hidden = !bitrixFields.length;
       bitrixSection.innerHTML = bitrixFields.length ? `<h4>Campos do Bitrix</h4><p>${bitrixFields.length} coluna(s) preservada(s) na ordem original.</p><dl class="bitrix-field-list">${bitrixFields.map((field, index) => `<div data-bitrix-field="${index}"><dt>${escapeHTML(field.name || 'Campo sem nome')}${field.occurrence > 1 ? ` (${field.occurrence})` : ''}</dt><dd>${escapeHTML(field.value)}</dd></div>`).join('')}</dl>` : '';
+      document.getElementById('drawerTabs').hidden = entity !== 'deal';
+      if (entity === 'deal') renderDrawerQuotes(record);
+      setDrawerTab('info');
       drawerInitialValue = formSignature(form);
       drawer.classList.add('open');
       drawer.setAttribute('aria-hidden', 'false');
       document.getElementById('entityDrawerOverlay').classList.add('open');
       document.body.classList.add('drawer-open');
       drawer.querySelector('input, select')?.focus();
+    }
+
+    function renderDrawerQuotes(deal) {
+      const quotes = Array.isArray(deal?.quotes) ? deal.quotes : [];
+      document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div><button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button></div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${money(quote.total)}</strong><span></span><span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
+    }
+
+    function setDrawerTab(tab) {
+      const form = document.getElementById('drawerForm');
+      const quotesActive = form.dataset.entity === 'deal' && tab === 'quotes';
+      drawerActiveTab = quotesActive ? 'quotes' : 'info';
+      document.querySelectorAll('#drawerTabs [role="tab"]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.drawerTab === drawerActiveTab)));
+      document.getElementById('drawerInfoPanel').hidden = quotesActive;
+      document.getElementById('drawerQuotesPanel').hidden = !quotesActive;
+      document.getElementById('drawerFoot').hidden = quotesActive;
     }
 
     function closeEntityDrawer(force = false) {
@@ -1596,7 +1630,14 @@
       deal.quotes.push({ id: nextId('ORC', deal.quotes), description: data.get('description'), quantity, unitPrice, discount, total, validity: data.get('validity'), state: 'Rascunho', pdf: file?.name || '' });
       deal.amount = total; deal.updatedAt = 'Agora';
       notify('Orçamento adicionado ao Negócio.', `${deal.id} · ${money(total)}`, deal.responsibleId);
-      saveState(); document.getElementById('quoteDialog').close(); render(); toast(`Orçamento de ${money(total)} adicionado${file ? ` com ${file.name}` : ' sem anexo'}.`);
+      saveState(); document.getElementById('quoteDialog').close(); render();
+      const drawer = document.getElementById('entityDrawer');
+      const drawerForm = document.getElementById('drawerForm');
+      if (drawer.classList.contains('open') && drawerForm.dataset.entity === 'deal' && drawerForm.dataset.id === deal.id) {
+        renderDrawerQuotes(deal);
+        setDrawerTab(drawerActiveTab);
+      }
+      toast(`Orçamento de ${money(total)} adicionado${file ? ` com ${file.name}` : ' sem anexo'}.`);
     }
 
     function markRead(id) { const item = state.notifications.find(note => note.id === id); if (item) item.read = true; saveState(); render(); }
@@ -1619,6 +1660,7 @@
       const action = button.dataset.action;
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
+      if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
       if (action === 'open-bitrix-import') openBitrixImport();
       if (action === 'open-dashboard-filters') openDashboardFilters();
       if (action === 'dashboard-filter-scope') setDashboardFilterScope(button.dataset.dashboardFilterScope);
