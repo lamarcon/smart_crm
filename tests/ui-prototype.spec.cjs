@@ -209,6 +209,9 @@ async function createLead(page, name) {
       assert.match(await drawer.getAttribute('class'), /open/);
       assert.equal(await drawer.getByRole('heading').innerText(), title);
       assert.equal(await drawer.getByLabel(fieldLabel).inputValue(), fieldValue);
+      if (view === 'Contatos') {
+        assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).count(), 0);
+      }
       assert.match(await page.locator('#entityDrawerSubtitle').innerText(), new RegExp(id));
       await page.waitForTimeout(250);
       const box = await drawer.boundingBox();
@@ -866,11 +869,11 @@ async function createLead(page, name) {
     assert.equal(await dialog.getByLabel('CSV de Leads').isVisible(), true);
     assert.equal(await dialog.getByRole('button', { name: 'Importar amostra' }).isDisabled(), true);
 
-    const csv = '\ufeffID;Nome do negócio;Empresa;Contato;Fase;Total;Responsável;Observação;Cargo;Cargo;;Campo vazio\n'
-      + '9001;Negócio importado;Empresa Bitrix;Maria Silva;Negociação Revisão;1234.50;Paula Pincetta;"valor; preservado\ncom quebra";Comprador;Decisor;campo sem cabeçalho;\n'
-      + '9002;Segundo Negócio;Empresa Dois;Contato Dois;Em Contato;99;Paula Pincetta;Importar;Comprador;Decisor;fim;\n'
-      + '9003;Terceiro Negócio;Empresa Três;Contato Três;Em Contato;199;Vitor Costa;Importar;Comprador;Decisor;fim;\n'
-      + '9004;Quarta linha ignorada;Empresa Quatro;Contato Quatro;Em Contato;299;Vitor Costa;Não importar;Comprador;Decisor;fim;\n';
+    const csv = '\ufeffID;Nome do negócio;Empresa;Contato;Fase;Total;Responsável;Observação;Cargo;Cargo;;;Campo vazio\n'
+      + '9001;Negócio importado;Empresa Bitrix;Maria Silva;Negociação Revisão;1234.50;Paula Pincetta;"valor; preservado\ncom quebra";Comprador;Decisor;campo sem cabeçalho;segundo sem cabeçalho;\n'
+      + '9002;Segundo Negócio;Empresa Dois;Contato Dois;Em Contato;99;Paula Pincetta;Importar;Comprador;Decisor;fim;fim dois;\n'
+      + '9003;Terceiro Negócio;Empresa Três;Contato Três;Em Contato;199;Vitor Costa;Importar;Comprador;Decisor;fim;fim dois;\n'
+      + '9004;Quarta linha ignorada;Empresa Quatro;Contato Quatro;Em Contato;299;Vitor Costa;Não importar;Comprador;Decisor;fim;fim dois;\n';
     await dialog.getByLabel('CSV de Negócios').setInputFiles({
       name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8')
     });
@@ -904,7 +907,7 @@ async function createLead(page, name) {
     assert.equal(deal.stage, 'Negociação Revisão');
     assert.equal(deal.amount, 1234.5);
     assert.equal(deal.responsibleId, 'u-paula');
-    assert.equal(deal.bitrixFields.length, 12);
+    assert.equal(deal.bitrixFields.length, 13);
     assert.deepEqual(deal.bitrixFields.map(field => [field.name, field.occurrence, field.value]), [
       ['ID', 1, '9001'],
       ['Nome do negócio', 1, 'Negócio importado'],
@@ -917,6 +920,7 @@ async function createLead(page, name) {
       ['Cargo', 1, 'Comprador'],
       ['Cargo', 2, 'Decisor'],
       ['', 1, 'campo sem cabeçalho'],
+      ['', 2, 'segundo sem cabeçalho'],
       ['Campo vazio', 1, '']
     ]);
     assert.deepEqual(deal.customFields.map(field => [field.key, field.label, field.value]), [
@@ -924,10 +928,11 @@ async function createLead(page, name) {
       ['bitrix:cargo:1', 'Cargo', 'Comprador'],
       ['bitrix:cargo:2', 'Cargo (2)', 'Decisor'],
       ['bitrix:__blank__:1', 'Campo sem nome', 'campo sem cabeçalho'],
+      ['bitrix:__blank__:2', 'Campo sem nome (2)', 'segundo sem cabeçalho'],
       ['bitrix:campo%20vazio:1', 'Campo vazio', '']
     ]);
     assert.deepEqual(deal.visibleCustomFieldKeys, [
-      'bitrix:observacao:1', 'bitrix:cargo:1', 'bitrix:cargo:2', 'bitrix:__blank__:1'
+      'bitrix:observacao:1', 'bitrix:cargo:1', 'bitrix:cargo:2', 'bitrix:__blank__:1', 'bitrix:__blank__:2'
     ]);
     const contact = state.contacts.find(item => item.bitrixId === '3001');
     assert.equal(state.contacts.filter(item => item.bitrixId).length, 3);
@@ -952,11 +957,12 @@ async function createLead(page, name) {
     assert.doesNotMatch(await drawer.innerText(), /Campos do Bitrix/);
     assert.deepEqual(await drawer.getByRole('tab').allTextContents(), ['Informações', 'Campos adicionais', 'Orçamentos']);
     await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
-    assert.equal(await drawer.locator('[data-custom-field]').count(), 4);
+    assert.equal(await drawer.locator('[data-custom-field]').count(), 5);
     assert.equal(await drawer.getByLabel('Observação').inputValue(), 'valor; preservado\ncom quebra');
     assert.equal(await drawer.getByLabel('Cargo', { exact: true }).inputValue(), 'Comprador');
     assert.equal(await drawer.getByLabel('Cargo (2)').inputValue(), 'Decisor');
-    assert.equal(await drawer.getByLabel('Campo sem nome').inputValue(), 'campo sem cabeçalho');
+    assert.equal(await drawer.getByLabel('Campo sem nome', { exact: true }).inputValue(), 'campo sem cabeçalho');
+    assert.equal(await drawer.getByLabel('Campo sem nome (2)').inputValue(), 'segundo sem cabeçalho');
     assert.equal(await drawer.getByLabel('Campo vazio').count(), 0);
 
     await drawer.getByLabel('Campo adicional para adicionar').selectOption({ label: 'Campo vazio' });
@@ -1064,6 +1070,7 @@ async function createLead(page, name) {
     const panel = page.locator('#filterDialog');
     const availableLabels = await panel.locator('#addFilterField option').allTextContents();
     assert.equal(availableLabels.filter(label => label === 'Código interno').length, 1);
+    assert.equal(availableLabels.filter(label => label === 'Campo futuro').length, 1);
     await panel.locator('#addFilterField').selectOption({ label: 'Código interno' });
     await panel.getByRole('button', { name: 'Adicionar campo' }).click();
     const customRow = panel.locator('[data-filter-field^="custom:"]');
