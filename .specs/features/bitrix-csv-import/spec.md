@@ -6,7 +6,7 @@ O ambiente de teste ainda não demonstra que um registro exportado do Bitrix pod
 
 ## Goals
 
-- [x] Importar uma amostra de um registro por arquivo CSV selecionado.
+- [x] Importar uma amostra de até três registros por arquivo CSV selecionado.
 - [x] Preservar todos os cabeçalhos e valores da linha importada, inclusive cabeçalhos repetidos.
 - [x] Demonstrar uma segunda importação sem criar duplicatas.
 
@@ -26,7 +26,7 @@ O ambiente de teste ainda não demonstra que um registro exportado do Bitrix pod
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
 | Chave de duplicidade | Tipo da entidade + coluna `ID` do Bitrix | O usuário pediu tratamento previsível de duplicatas e o ID externo é estável. | yes |
-| Quantidade importada | Primeira linha de dados de cada arquivo selecionado | Prova o fluxo sem sobrecarregar o ambiente de teste. | yes |
+| Quantidade importada | Até as três primeiras linhas de dados de cada arquivo selecionado | Permite comparar visualmente registros sem sobrecarregar o ambiente de teste. | yes |
 | Campos desconhecidos ou repetidos | Guardar todos como lista ordenada `{nome, ocorrência, valor}` | Um objeto por nome perderia cabeçalhos duplicados. | yes |
 | CSV sem ID | Não importar e informar o arquivo no resultado | Não existe chave segura para demonstrar deduplicação. | yes |
 | Arquivos aceitos | CSV UTF-8 com separador `;` ou `,` | Cobre os exports reais recebidos e um formato comum. | yes |
@@ -47,7 +47,7 @@ O ambiente de teste ainda não demonstra que um registro exportado do Bitrix pod
 **Acceptance Criteria**:
 
 1. WHEN the administrator opens the Bitrix importer THEN the system SHALL offer separate CSV inputs for Deals, Contacts, Companies, and Leads.
-2. WHEN a valid selected CSV contains at least one row with an `ID` THEN the system SHALL import exactly the first data row for that entity type.
+2. WHEN a valid selected CSV contains data rows with an `ID` THEN the system SHALL import at most its first three data rows for that entity type.
 3. WHEN a row is imported THEN the system SHALL persist every header and corresponding value in original column order, including duplicate and blank headers, with a one-based occurrence number.
 4. WHEN a row is imported THEN the system SHALL map these primary fields: Deal (`ID`, title, company, contact, amount, stage, responsible), Contact (`ID`, name, company, email, phone, role), Company (`ID`, name, city/region, segment, phone, owner), and Lead (`ID`, name, company, email, phone, segment, source, stage, responsible).
 5. WHEN an imported record is opened THEN the system SHALL display a `Campos do Bitrix` section containing the persisted raw field list.
@@ -64,8 +64,9 @@ O ambiente de teste ainda não demonstra que um registro exportado do Bitrix pod
 **Acceptance Criteria**:
 
 1. WHEN a row is reimported with the same entity type and Bitrix `ID` THEN the system SHALL update the existing imported record instead of appending another record.
-2. WHEN an unchanged row is reimported THEN the system SHALL report zero created, one updated, and zero rejected for that file.
-3. IF a selected CSV has no data row or its first data row has no Bitrix `ID` THEN the system SHALL reject that file without changing the matching collection.
+2. WHEN an unchanged three-row file is reimported THEN the system SHALL report zero created, three updated, and zero rejected for that file.
+3. IF a selected CSV has no data row THEN the system SHALL reject that file without changing the matching collection.
+4. IF one of the first three data rows has no Bitrix `ID` THEN the system SHALL reject that row and continue processing the other eligible rows.
 
 **Independent Test**: Importar o mesmo arquivo duas vezes e confirmar que a coleção cresce uma única vez e que o segundo resumo informa uma atualização.
 
@@ -79,13 +80,13 @@ O ambiente de teste ainda não demonstra que um registro exportado do Bitrix pod
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| BITRIX-01 | P1: Importar uma amostra completa | Execute | Verified |
-| BITRIX-02 | P1: Reimportar sem duplicar | Execute | Verified |
+| BITRIX-01 | P1: Importar uma amostra completa | Execute | Implementing |
+| BITRIX-02 | P1: Reimportar sem duplicar | Execute | Implementing |
 
 **Coverage:** 2 total, 2 mapped to execution, 0 unmapped.
 
 ## Success Criteria
 
-- [x] Uma amostra realista aparece na coleção correta com todos os campos brutos preservados.
+- [x] Três Negócios, três Contatos e três Empresas aparecem em suas coleções com todos os campos brutos preservados.
 - [x] Repetir a importação mantém uma única cópia por tipo e ID do Bitrix.
 - [x] A suíte completa do protótipo passa sem regressões.

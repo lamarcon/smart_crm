@@ -404,7 +404,7 @@
 
   <dialog id="bitrixImportDialog">
     <form id="bitrixImportForm">
-      <div class="modal-head"><div><h3>Importar amostra do Bitrix</h3><p class="hint">O teste importa somente a primeira linha de cada CSV.</p></div><button type="button" class="close-button" data-close="bitrixImportDialog" aria-label="Fechar">×</button></div>
+      <div class="modal-head"><div><h3>Importar amostra do Bitrix</h3><p class="hint">O teste importa até as três primeiras linhas de cada CSV.</p></div><button type="button" class="close-button" data-close="bitrixImportDialog" aria-label="Fechar">×</button></div>
       <div class="modal-body">
         <div class="import-grid">
           <div class="field"><label for="bitrixDealFile">CSV de Negócios</label><input id="bitrixDealFile" type="file" accept=".csv,text/csv" data-bitrix-entity="deal"></div>
@@ -1569,29 +1569,30 @@
           continue;
         }
         const headers = rows[0];
-        const values = rows[1];
-        const occurrences = new Map();
-        const fields = headers.map((name, index) => {
-          const occurrence = (occurrences.get(name) || 0) + 1;
-          occurrences.set(name, occurrence);
-          return { name, occurrence, value: values[index] ?? '' };
-        });
-        const bitrixId = bitrixFieldValue(fields, 'ID');
-        if (!bitrixId) {
-          result.rejected += 1;
-          result.details.push(`${file.name}: ID do Bitrix ausente`);
-          continue;
-        }
         const entity = input.dataset.bitrixEntity;
         const collection = collections[entity];
-        const existing = state[collection].find(record => record.bitrixId === bitrixId);
-        const record = bitrixCoreRecord(entity, fields, existing);
-        if (existing) {
-          Object.assign(existing, record, { id: existing.id });
-          result.updated += 1;
-        } else {
-          state[collection].unshift(record);
-          result.created += 1;
+        for (const values of rows.slice(1, 4)) {
+          const occurrences = new Map();
+          const fields = headers.map((name, index) => {
+            const occurrence = (occurrences.get(name) || 0) + 1;
+            occurrences.set(name, occurrence);
+            return { name, occurrence, value: values[index] ?? '' };
+          });
+          const bitrixId = bitrixFieldValue(fields, 'ID');
+          if (!bitrixId) {
+            result.rejected += 1;
+            result.details.push(`${file.name}: ID do Bitrix ausente`);
+            continue;
+          }
+          const existing = state[collection].find(record => record.bitrixId === bitrixId);
+          const record = bitrixCoreRecord(entity, fields, existing);
+          if (existing) {
+            Object.assign(existing, record, { id: existing.id });
+            result.updated += 1;
+          } else {
+            state[collection].unshift(record);
+            result.created += 1;
+          }
         }
       }
       saveState();
