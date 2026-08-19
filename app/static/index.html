@@ -1551,6 +1551,9 @@
     async function importBitrixSample(form) {
       const result = { created: 0, updated: 0, rejected: 0, details: [] };
       const collections = { deal: 'deals', contact: 'contacts', company: 'companies', lead: 'leads' };
+      const summary = document.getElementById('bitrixImportSummary');
+      summary.hidden = true;
+      document.getElementById('bitrixImportDetails').innerHTML = '';
       for (const input of form.querySelectorAll('[data-bitrix-entity]')) {
         const file = input.files[0];
         if (!file) continue;
@@ -1593,7 +1596,6 @@
       }
       saveState();
       render();
-      const summary = document.getElementById('bitrixImportSummary');
       summary.textContent = `Criados: ${result.created} · Atualizados: ${result.updated} · Rejeitados: ${result.rejected}`;
       summary.hidden = false;
       document.getElementById('bitrixImportDetails').innerHTML = result.details.map(detail => `<li>${escapeHTML(detail)}</li>`).join('');

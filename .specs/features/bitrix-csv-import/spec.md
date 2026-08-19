@@ -49,7 +49,7 @@ O ambiente de teste ainda não demonstra que um registro exportado do Bitrix pod
 1. WHEN the administrator opens the Bitrix importer THEN the system SHALL offer separate CSV inputs for Deals, Contacts, Companies, and Leads.
 2. WHEN a valid selected CSV contains at least one row with an `ID` THEN the system SHALL import exactly the first data row for that entity type.
 3. WHEN a row is imported THEN the system SHALL persist every header and corresponding value in original column order, including duplicate and blank headers, with a one-based occurrence number.
-4. WHEN a row is imported THEN the system SHALL map its Bitrix `ID`, display name, and available primary business fields into the matching Smart CRM collection.
+4. WHEN a row is imported THEN the system SHALL map these primary fields: Deal (`ID`, title, company, contact, amount, stage, responsible), Contact (`ID`, name, company, email, phone, role), Company (`ID`, name, city/region, segment, phone, owner), and Lead (`ID`, name, company, email, phone, segment, source, stage, responsible).
 5. WHEN an imported record is opened THEN the system SHALL display a `Campos do Bitrix` section containing the persisted raw field list.
 6. WHEN the import finishes THEN the system SHALL display exact created, updated, and rejected counts.
 
