@@ -139,6 +139,15 @@ async function createLead(page, name) {
       ['bitrix:campo%20futuro:1', 'Campo futuro', '']
     ]);
     assert.deepEqual(migrated.visibleCustomFieldKeys, ['bitrix:cargo:2', 'bitrix:observacao:1']);
+
+    await goTo(page, 'Contatos');
+    await page.getByRole('button', { name: 'Ana Berclay' }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.waitFor({ state: 'visible' });
+    assert.deepEqual(await drawer.getByRole('tab').allTextContents(), ['Informações', 'Campos adicionais']);
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Observação').inputValue(), '<b>texto seguro</b>');
+    assert.equal(await drawer.locator('#drawerCustomPanel b').count(), 0);
   });
 
   await run('DEMO-04 navega pelos seis destinos', async page => {
@@ -940,11 +949,30 @@ async function createLead(page, name) {
     await page.getByRole('button', { name: 'Negócio importado' }).click();
     const drawer = page.locator('#entityDrawer');
     await drawer.waitFor({ state: 'visible' });
-    assert.match(await drawer.innerText(), /Campos do Bitrix/);
-    assert.equal(await drawer.locator('[data-bitrix-field]').count(), 12);
-    assert.equal(await drawer.locator('[data-bitrix-field="9"] dt').innerText(), 'Cargo (2)');
-    assert.equal(await drawer.locator('[data-bitrix-field="9"] dd').innerText(), 'Decisor');
-    assert.equal(await drawer.locator('[data-bitrix-field="10"] dt').innerText(), 'Campo sem nome');
+    assert.doesNotMatch(await drawer.innerText(), /Campos do Bitrix/);
+    assert.deepEqual(await drawer.getByRole('tab').allTextContents(), ['Informações', 'Campos adicionais', 'Orçamentos']);
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.locator('[data-custom-field]').count(), 4);
+    assert.equal(await drawer.getByLabel('Observação').inputValue(), 'valor; preservado\ncom quebra');
+    assert.equal(await drawer.getByLabel('Cargo', { exact: true }).inputValue(), 'Comprador');
+    assert.equal(await drawer.getByLabel('Cargo (2)').inputValue(), 'Decisor');
+    assert.equal(await drawer.getByLabel('Campo sem nome').inputValue(), 'campo sem cabeçalho');
+    assert.equal(await drawer.getByLabel('Campo vazio').count(), 0);
+
+    await drawer.getByLabel('Campo adicional para adicionar').selectOption({ label: 'Campo vazio' });
+    await drawer.getByRole('button', { name: 'Adicionar campo' }).click();
+    assert.equal(await drawer.getByLabel('Campo vazio').inputValue(), '');
+    await drawer.getByLabel('Cargo (2)').fill('Decisora final');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+
+    await page.getByRole('button', { name: 'Negócio importado' }).click();
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Cargo (2)').inputValue(), 'Decisora final');
+    assert.equal(await drawer.getByLabel('Campo vazio').inputValue(), '');
+    const edited = (await stateFrom(page)).deals.find(item => item.bitrixId === '9001');
+    assert.equal(edited.customFields.find(field => field.label === 'Cargo (2)').value, 'Decisora final');
+    assert.equal(edited.customFields.find(field => field.label === 'Campo vazio').value, '');
+    assert.equal(edited.visibleCustomFieldKeys.includes('bitrix:campo%20vazio:1'), true);
   });
 
   await run('BITRIX-02 reimporta pelo ID sem criar duplicata', async page => {

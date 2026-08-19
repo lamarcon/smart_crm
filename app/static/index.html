@@ -234,15 +234,9 @@
     .import-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .import-summary { margin-top: 16px; padding: 13px 15px; border: 1px solid var(--slate-200); border-radius: 10px; color: var(--navy-700); background: var(--slate-50); font-weight: 750; }
     .import-details { margin: 8px 0 0; padding-left: 20px; color: var(--red-600); font-size: 12px; line-height: 1.5; }
-    .bitrix-fields { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--slate-200); }
-    .bitrix-fields h4 { margin: 0 0 5px; font-size: 14px; }
-    .bitrix-fields > p { margin: 0 0 12px; color: var(--slate-500); font-size: 11px; }
-    .bitrix-field-list { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(0, 1.2fr); margin: 0; border: 1px solid var(--slate-200); border-radius: 10px; overflow: hidden; }
-    .bitrix-field-list > div { display: contents; }
-    .bitrix-field-list dt, .bitrix-field-list dd { margin: 0; padding: 9px 11px; border-bottom: 1px solid var(--slate-100); overflow-wrap: anywhere; white-space: pre-wrap; }
-    .bitrix-field-list dt { color: var(--slate-600); background: var(--slate-50); font-size: 11px; font-weight: 750; }
-    .bitrix-field-list dd { color: var(--navy-800); font-size: 12px; }
-    .bitrix-field-list > div:last-child dt, .bitrix-field-list > div:last-child dd { border-bottom: 0; }
+    .drawer-custom-add { display: flex; gap: 8px; align-items: end; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--slate-200); }
+    .drawer-custom-add .field { flex: 1; }
+    .drawer-custom-empty { padding: 22px; border: 1px dashed var(--slate-300); border-radius: 10px; color: var(--slate-500); text-align: center; font-size: 12px; }
     dialog.filter-dialog { width: min(940px, calc(100% - 28px)); }
     .filter-layout { min-height: min(680px, calc(100vh - 50px)); display: grid; grid-template-columns: 245px minmax(0, 1fr); }
     .filter-sidebar { display: flex; flex-direction: column; gap: 14px; padding: 21px 17px; border-right: 1px solid var(--slate-200); background: var(--slate-50); }
@@ -375,8 +369,9 @@
     <form id="drawerForm">
       <div class="drawer-head"><div><h3 id="entityDrawerTitle">Editar registro</h3><p id="entityDrawerSubtitle">Altere os dados e salve para atualizar a lista.</p></div><button type="button" class="close-button" data-action="cancel-drawer" aria-label="Fechar painel">×</button></div>
       <div class="drawer-body">
-        <div class="drawer-tabs" id="drawerTabs" role="tablist" aria-label="Seções do Negócio" hidden><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="info" aria-selected="true">Informações</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="quotes" aria-selected="false">Orçamentos</button></div>
-        <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div><section class="bitrix-fields" id="drawerBitrixFields" hidden></section></section>
+        <div class="drawer-tabs" id="drawerTabs" role="tablist" aria-label="Seções do cadastro" hidden><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="info" aria-selected="true">Informações</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="custom" aria-selected="false">Campos adicionais</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="quotes" aria-selected="false">Orçamentos</button></div>
+        <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div></section>
+        <section id="drawerCustomPanel" role="tabpanel" hidden><div class="form-grid" id="drawerCustomFields"></div><div class="drawer-custom-add"><div class="field"><label for="drawerAddCustomField">Campo adicional para adicionar</label><select id="drawerAddCustomField"></select></div><button type="button" class="button small" data-action="add-custom-field">Adicionar campo</button></div></section>
         <section id="drawerQuotesPanel" role="tabpanel" hidden></section>
       </div>
       <div class="drawer-foot" id="drawerFoot"><button type="button" class="button" data-action="cancel-drawer">Cancelar</button><button type="submit" class="button primary">Salvar registro</button></div>
@@ -1214,11 +1209,13 @@
       document.getElementById('entityDrawerTitle').textContent = `Editar ${entityLabel(entity)}`;
       document.getElementById('entityDrawerSubtitle').textContent = `${id} · As alterações ficam somente neste navegador.`;
       document.getElementById('drawerFields').innerHTML = formDefinitions[entity].map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
-      const bitrixSection = document.getElementById('drawerBitrixFields');
-      const bitrixFields = Array.isArray(record.bitrixFields) ? record.bitrixFields : [];
-      bitrixSection.hidden = !bitrixFields.length;
-      bitrixSection.innerHTML = bitrixFields.length ? `<h4>Campos do Bitrix</h4><p>${bitrixFields.length} coluna(s) preservada(s) na ordem original.</p><dl class="bitrix-field-list">${bitrixFields.map((field, index) => `<div data-bitrix-field="${index}"><dt>${escapeHTML(field.name || 'Campo sem nome')}${field.occurrence > 1 ? ` (${field.occurrence})` : ''}</dt><dd>${escapeHTML(field.value)}</dd></div>`).join('')}</dl>` : '';
-      document.getElementById('drawerTabs').hidden = entity !== 'deal';
+      const hasCustomFields = Array.isArray(record.customFields) && record.customFields.length > 0;
+      renderDrawerCustomFields(record);
+      const customTab = document.querySelector('[data-drawer-tab="custom"]');
+      const quotesTab = document.querySelector('[data-drawer-tab="quotes"]');
+      customTab.hidden = !hasCustomFields;
+      quotesTab.hidden = entity !== 'deal';
+      document.getElementById('drawerTabs').hidden = entity !== 'deal' && !hasCustomFields;
       if (entity === 'deal') renderDrawerQuotes(record);
       setDrawerTab('info');
       drawerInitialValue = formSignature(form);
@@ -1234,12 +1231,55 @@
       document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div><button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button></div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${money(quote.total)}</strong><span></span><span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
     }
 
+    function customFieldHTML(field) {
+      const id = `drawer-custom-${field.key}`;
+      const control = field.value.includes('\n')
+        ? `<textarea id="${id}" name="custom:${field.key}">${escapeHTML(field.value)}</textarea>`
+        : `<input id="${id}" name="custom:${field.key}" type="text" value="${escapeHTML(field.value)}">`;
+      return `<div class="field" data-custom-field="${escapeHTML(field.key)}"><label for="${id}">${escapeHTML(field.label)}</label>${control}</div>`;
+    }
+
+    function renderDrawerCustomFields(record) {
+      const fields = Array.isArray(record.customFields) ? record.customFields : [];
+      const visibleKeys = new Set(record.visibleCustomFieldKeys || []);
+      const visible = fields.filter(field => field.value !== '' || visibleKeys.has(field.key));
+      const hidden = fields.filter(field => !visible.includes(field));
+      document.getElementById('drawerCustomFields').innerHTML = visible.length
+        ? visible.map(customFieldHTML).join('')
+        : '<div class="drawer-custom-empty full">Nenhum campo adicional visível.</div>';
+      const select = document.getElementById('drawerAddCustomField');
+      select.innerHTML = hidden.length
+        ? `<option value="">Selecione um campo...</option>${hidden.map(field => `<option value="${escapeHTML(field.key)}">${escapeHTML(field.label)}</option>`).join('')}`
+        : '<option value="">Todos os campos já foram adicionados</option>';
+      select.disabled = !hidden.length;
+      document.querySelector('[data-action="add-custom-field"]').disabled = !hidden.length;
+    }
+
+    function addDrawerCustomField() {
+      const form = document.getElementById('drawerForm');
+      const record = state[collectionFor(form.dataset.entity)]?.find(item => item.id === form.dataset.id);
+      const select = document.getElementById('drawerAddCustomField');
+      const field = record?.customFields?.find(candidate => candidate.key === select.value);
+      if (!field || form.elements.namedItem(`custom:${field.key}`)) return;
+      document.querySelector('#drawerCustomFields .drawer-custom-empty')?.remove();
+      document.getElementById('drawerCustomFields').insertAdjacentHTML('beforeend', customFieldHTML(field));
+      select.querySelector(`option[value="${CSS.escape(field.key)}"]`)?.remove();
+      if (select.options.length === 1) {
+        select.innerHTML = '<option value="">Todos os campos já foram adicionados</option>';
+        select.disabled = true;
+        document.querySelector('[data-action="add-custom-field"]').disabled = true;
+      } else select.value = '';
+      form.elements.namedItem(`custom:${field.key}`)?.focus();
+    }
+
     function setDrawerTab(tab) {
       const form = document.getElementById('drawerForm');
       const quotesActive = form.dataset.entity === 'deal' && tab === 'quotes';
-      drawerActiveTab = quotesActive ? 'quotes' : 'info';
+      const customActive = !document.querySelector('[data-drawer-tab="custom"]').hidden && tab === 'custom';
+      drawerActiveTab = quotesActive ? 'quotes' : customActive ? 'custom' : 'info';
       document.querySelectorAll('#drawerTabs [role="tab"]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.drawerTab === drawerActiveTab)));
-      document.getElementById('drawerInfoPanel').hidden = quotesActive;
+      document.getElementById('drawerInfoPanel').hidden = drawerActiveTab !== 'info';
+      document.getElementById('drawerCustomPanel').hidden = drawerActiveTab !== 'custom';
       document.getElementById('drawerQuotesPanel').hidden = !quotesActive;
       document.getElementById('drawerFoot').hidden = quotesActive;
     }
@@ -1289,12 +1329,20 @@
       const entity = form.dataset.entity;
       const collection = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' }[entity];
       const prefixes = { lead: 'L', contact: 'C', company: 'E', deal: 'N' };
-      const data = Object.fromEntries(new FormData(form));
+      const entries = Array.from(new FormData(form).entries());
+      const data = Object.fromEntries(entries.filter(([name]) => !name.startsWith('custom:')));
+      const customValues = new Map(entries.filter(([name]) => name.startsWith('custom:')).map(([name, value]) => [name.slice(7), String(value)]));
       const existing = form.dataset.id ? state[collection].find(item => item.id === form.dataset.id) : null;
       if (data.assistants !== undefined) data.assistants = data.assistants ? [data.assistants] : [];
       if (data.amount !== undefined) data.amount = Number(data.amount);
       if (['lead', 'deal'].includes(entity)) data.team = state.users.find(user => user.id === data.responsibleId)?.team || currentUser().team;
-      if (existing) Object.assign(existing, data, { updatedAt: new Date().toISOString() });
+      if (existing) {
+        Object.assign(existing, data, { updatedAt: new Date().toISOString() });
+        if (Array.isArray(existing.customFields) && form.id === 'drawerForm') {
+          existing.customFields.forEach(field => { if (customValues.has(field.key)) field.value = customValues.get(field.key); });
+          existing.visibleCustomFieldKeys = [...customValues.keys()];
+        }
+      }
       else {
         const base = { id: nextId(prefixes[entity], state[collection]) };
         const now = new Date().toISOString();
@@ -1723,6 +1771,7 @@
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
       if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
+      if (action === 'add-custom-field') addDrawerCustomField();
       if (action === 'open-bitrix-import') openBitrixImport();
       if (action === 'open-dashboard-filters') openDashboardFilters();
       if (action === 'dashboard-filter-scope') setDashboardFilterScope(button.dataset.dashboardFilterScope);
