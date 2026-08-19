@@ -114,6 +114,33 @@ async function createLead(page, name) {
     assert.equal(Number.isNaN(Date.parse(normalized.deals.find(deal => deal.stage === 'Ganho').wonAt)), false);
   });
 
+  await run('BCF-01 migra campos Bitrix legados sem exigir nova importação', async page => {
+    const legacy = await stateFrom(page);
+    legacy.contacts[0].bitrixId = 'LEGACY-1';
+    legacy.contacts[0].bitrixEntity = 'contact';
+    legacy.contacts[0].bitrixFields = [
+      { name: 'ID', occurrence: 1, value: 'LEGACY-1' },
+      { name: 'Nome', occurrence: 1, value: 'Ana' },
+      { name: 'Sobrenome', occurrence: 1, value: 'Berclay' },
+      { name: 'Cargo', occurrence: 1, value: 'Compradora' },
+      { name: 'Cargo', occurrence: 2, value: 'Decisora' },
+      { name: 'Observação', occurrence: 1, value: '<b>texto seguro</b>' },
+      { name: 'Campo futuro', occurrence: 1, value: '' }
+    ];
+    delete legacy.contacts[0].customFields;
+    delete legacy.contacts[0].visibleCustomFieldKeys;
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: legacy });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    const migrated = (await stateFrom(page)).contacts.find(contact => contact.bitrixId === 'LEGACY-1');
+    assert.deepEqual(migrated.customFields.map(field => [field.key, field.label, field.value]), [
+      ['bitrix:cargo:2', 'Cargo (2)', 'Decisora'],
+      ['bitrix:observacao:1', 'Observação', '<b>texto seguro</b>'],
+      ['bitrix:campo%20futuro:1', 'Campo futuro', '']
+    ]);
+    assert.deepEqual(migrated.visibleCustomFieldKeys, ['bitrix:cargo:2', 'bitrix:observacao:1']);
+  });
+
   await run('DEMO-04 navega pelos seis destinos', async page => {
     const destinations = [
       ['Visão geral', 'Visão geral'], ['Leads', 'Leads'], ['Contatos', 'Contatos'],
@@ -830,11 +857,11 @@ async function createLead(page, name) {
     assert.equal(await dialog.getByLabel('CSV de Leads').isVisible(), true);
     assert.equal(await dialog.getByRole('button', { name: 'Importar amostra' }).isDisabled(), true);
 
-    const csv = '\ufeffID;Nome do negócio;Empresa;Contato;Fase;Total;Responsável;Observação;Cargo;Cargo;\n'
-      + '9001;Negócio importado;Empresa Bitrix;Maria Silva;Negociação Revisão;1234.50;Paula Pincetta;"valor; preservado\ncom quebra";Comprador;Decisor;campo sem cabeçalho\n'
-      + '9002;Segundo Negócio;Empresa Dois;Contato Dois;Em Contato;99;Paula Pincetta;Importar;Comprador;Decisor;fim\n'
-      + '9003;Terceiro Negócio;Empresa Três;Contato Três;Em Contato;199;Vitor Costa;Importar;Comprador;Decisor;fim\n'
-      + '9004;Quarta linha ignorada;Empresa Quatro;Contato Quatro;Em Contato;299;Vitor Costa;Não importar;Comprador;Decisor;fim\n';
+    const csv = '\ufeffID;Nome do negócio;Empresa;Contato;Fase;Total;Responsável;Observação;Cargo;Cargo;;Campo vazio\n'
+      + '9001;Negócio importado;Empresa Bitrix;Maria Silva;Negociação Revisão;1234.50;Paula Pincetta;"valor; preservado\ncom quebra";Comprador;Decisor;campo sem cabeçalho;\n'
+      + '9002;Segundo Negócio;Empresa Dois;Contato Dois;Em Contato;99;Paula Pincetta;Importar;Comprador;Decisor;fim;\n'
+      + '9003;Terceiro Negócio;Empresa Três;Contato Três;Em Contato;199;Vitor Costa;Importar;Comprador;Decisor;fim;\n'
+      + '9004;Quarta linha ignorada;Empresa Quatro;Contato Quatro;Em Contato;299;Vitor Costa;Não importar;Comprador;Decisor;fim;\n';
     await dialog.getByLabel('CSV de Negócios').setInputFiles({
       name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8')
     });
@@ -868,7 +895,7 @@ async function createLead(page, name) {
     assert.equal(deal.stage, 'Negociação Revisão');
     assert.equal(deal.amount, 1234.5);
     assert.equal(deal.responsibleId, 'u-paula');
-    assert.equal(deal.bitrixFields.length, 11);
+    assert.equal(deal.bitrixFields.length, 12);
     assert.deepEqual(deal.bitrixFields.map(field => [field.name, field.occurrence, field.value]), [
       ['ID', 1, '9001'],
       ['Nome do negócio', 1, 'Negócio importado'],
@@ -880,7 +907,18 @@ async function createLead(page, name) {
       ['Observação', 1, 'valor; preservado\ncom quebra'],
       ['Cargo', 1, 'Comprador'],
       ['Cargo', 2, 'Decisor'],
-      ['', 1, 'campo sem cabeçalho']
+      ['', 1, 'campo sem cabeçalho'],
+      ['Campo vazio', 1, '']
+    ]);
+    assert.deepEqual(deal.customFields.map(field => [field.key, field.label, field.value]), [
+      ['bitrix:observacao:1', 'Observação', 'valor; preservado\ncom quebra'],
+      ['bitrix:cargo:1', 'Cargo', 'Comprador'],
+      ['bitrix:cargo:2', 'Cargo (2)', 'Decisor'],
+      ['bitrix:__blank__:1', 'Campo sem nome', 'campo sem cabeçalho'],
+      ['bitrix:campo%20vazio:1', 'Campo vazio', '']
+    ]);
+    assert.deepEqual(deal.visibleCustomFieldKeys, [
+      'bitrix:observacao:1', 'bitrix:cargo:1', 'bitrix:cargo:2', 'bitrix:__blank__:1'
     ]);
     const contact = state.contacts.find(item => item.bitrixId === '3001');
     assert.equal(state.contacts.filter(item => item.bitrixId).length, 3);
@@ -903,7 +941,7 @@ async function createLead(page, name) {
     const drawer = page.locator('#entityDrawer');
     await drawer.waitFor({ state: 'visible' });
     assert.match(await drawer.innerText(), /Campos do Bitrix/);
-    assert.equal(await drawer.locator('[data-bitrix-field]').count(), 11);
+    assert.equal(await drawer.locator('[data-bitrix-field]').count(), 12);
     assert.equal(await drawer.locator('[data-bitrix-field="9"] dt').innerText(), 'Cargo (2)');
     assert.equal(await drawer.locator('[data-bitrix-field="9"] dd').innerText(), 'Decisor');
     assert.equal(await drawer.locator('[data-bitrix-field="10"] dt').innerText(), 'Campo sem nome');

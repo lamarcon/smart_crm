@@ -598,6 +598,11 @@
         (normalized[collection] || []).forEach((record, index) => {
           record.createdAt = ensureIso(record.createdAt, fallbackAt(index + 1));
           record.updatedAt = ensureIso(record.updatedAt, record.createdAt);
+          if (Array.isArray(record.bitrixFields) && !Array.isArray(record.customFields)) {
+            const entity = ({ leads: 'lead', contacts: 'contact', companies: 'company' })[collection];
+            record.customFields = bitrixCustomFields(entity, record.bitrixFields);
+            record.visibleCustomFieldKeys = record.customFields.filter(field => field.value !== '').map(field => field.key);
+          }
         });
       });
       (normalized.deals || []).forEach((deal, index) => {
@@ -612,6 +617,10 @@
           byId: entry.byId || entry.changedById || deal.stageChangedById
         }));
         if (deal.stage === 'Ganho') deal.wonAt = ensureIso(deal.wonAt, deal.stageChangedAt);
+        if (Array.isArray(deal.bitrixFields) && !Array.isArray(deal.customFields)) {
+          deal.customFields = bitrixCustomFields('deal', deal.bitrixFields);
+          deal.visibleCustomFieldKeys = deal.customFields.filter(field => field.value !== '').map(field => field.key);
+        }
       });
       const defaults = defaultUiState(normalized.users || []);
       normalized.ui ||= defaults;
@@ -1394,6 +1403,53 @@
       return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR');
     }
 
+    function bitrixFieldKey(field) {
+      const header = normalizeBitrixHeader(field.name) || '__blank__';
+      return `bitrix:${encodeURIComponent(header)}:${field.occurrence || 1}`;
+    }
+
+    function bitrixFieldMatch(fields, ...names) {
+      const expected = new Set(names.map(normalizeBitrixHeader));
+      const candidates = fields.filter(field => expected.has(normalizeBitrixHeader(field.name)));
+      return candidates.find(field => String(field.value || '').trim() !== '') || candidates[0];
+    }
+
+    function bitrixCoreFieldGroups(entity) {
+      const shared = [['ID']];
+      const groups = {
+        deal: [
+          ['Nome do negócio', 'Título', 'Nome'], ['Empresa'], ['Contato'], ['Fase', 'Etapa'],
+          ['Total', 'Valor', 'Montante'], ['Responsável', 'Pessoa responsável']
+        ],
+        contact: [
+          ['Nome', 'Primeiro Nome'], ['Sobrenome'], ['Nome completo'], ['Empresa', 'Conta Nome'],
+          ['Email de trabalho', 'E-mail', 'Outro Email'], ['Telefone de trabalho', 'Outro Telefone'], ['Cargo']
+        ],
+        company: [
+          ['Nome da Empresa', 'Nome'], ['Cidade'], ['UF.', 'UF'], ['Segmento de Mercado', 'Segmento'],
+          ['Telefone de trabalho', 'Outro Telefone'], ['Responsável']
+        ],
+        lead: [
+          ['Nome completo', 'Nome'], ['Nome da empresa', 'Empresa'], ['Email de trabalho', 'E-mail', 'Outro Email'],
+          ['Telefone de trabalho', 'Outro Telefone'], ['Segmento de Mercado', 'Segmento'],
+          ['Origem do Lead', 'Origem'], ['Etapa'], ['Pessoa responsável', 'Responsável']
+        ]
+      };
+      return shared.concat(groups[entity] || []);
+    }
+
+    function bitrixCustomFields(entity, fields) {
+      const used = new Set(bitrixCoreFieldGroups(entity).map(group => bitrixFieldMatch(fields, ...group)).filter(Boolean).map(bitrixFieldKey));
+      return fields.filter(field => !used.has(bitrixFieldKey(field))).map(field => ({
+        key: bitrixFieldKey(field),
+        label: `${field.name || 'Campo sem nome'}${field.occurrence > 1 ? ` (${field.occurrence})` : ''}`,
+        value: String(field.value ?? ''),
+        sourceName: field.name,
+        occurrence: field.occurrence || 1,
+        type: 'text'
+      }));
+    }
+
     function countDelimiter(line, delimiter) {
       let count = 0;
       let quoted = false;
@@ -1450,8 +1506,7 @@
     }
 
     function bitrixFieldValue(fields, ...names) {
-      const expected = new Set(names.map(normalizeBitrixHeader));
-      return fields.find(field => expected.has(normalizeBitrixHeader(field.name)))?.value?.trim() || '';
+      return bitrixFieldMatch(fields, ...names)?.value?.trim() || '';
     }
 
     function parseBitrixMoney(value) {
@@ -1470,11 +1525,15 @@
     function bitrixCoreRecord(entity, fields, existing) {
       const now = new Date().toISOString();
       const bitrixId = bitrixFieldValue(fields, 'ID');
+      const customFields = bitrixCustomFields(entity, fields);
+      const previousVisible = new Set(existing?.visibleCustomFieldKeys || []);
       const base = {
         id: `BX-${entity.toUpperCase()}-${bitrixId}`,
         bitrixId,
         bitrixEntity: entity,
         bitrixFields: fields,
+        customFields,
+        visibleCustomFieldKeys: customFields.filter(field => field.value !== '' || previousVisible.has(field.key)).map(field => field.key),
         createdAt: existing?.createdAt || now,
         updatedAt: now
       };
