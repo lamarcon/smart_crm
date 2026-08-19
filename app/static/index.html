@@ -220,6 +220,18 @@
     .hint { color: var(--slate-500); font-size: 11px; line-height: 1.4; }
     .quote-total { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 15px; border-radius: 10px; color: white; background: var(--navy-900); }
     .quote-total strong { font-size: 21px; }
+    .import-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .import-summary { margin-top: 16px; padding: 13px 15px; border: 1px solid var(--slate-200); border-radius: 10px; color: var(--navy-700); background: var(--slate-50); font-weight: 750; }
+    .import-details { margin: 8px 0 0; padding-left: 20px; color: var(--red-600); font-size: 12px; line-height: 1.5; }
+    .bitrix-fields { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--slate-200); }
+    .bitrix-fields h4 { margin: 0 0 5px; font-size: 14px; }
+    .bitrix-fields > p { margin: 0 0 12px; color: var(--slate-500); font-size: 11px; }
+    .bitrix-field-list { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(0, 1.2fr); margin: 0; border: 1px solid var(--slate-200); border-radius: 10px; overflow: hidden; }
+    .bitrix-field-list > div { display: contents; }
+    .bitrix-field-list dt, .bitrix-field-list dd { margin: 0; padding: 9px 11px; border-bottom: 1px solid var(--slate-100); overflow-wrap: anywhere; white-space: pre-wrap; }
+    .bitrix-field-list dt { color: var(--slate-600); background: var(--slate-50); font-size: 11px; font-weight: 750; }
+    .bitrix-field-list dd { color: var(--navy-800); font-size: 12px; }
+    .bitrix-field-list > div:last-child dt, .bitrix-field-list > div:last-child dd { border-bottom: 0; }
     dialog.filter-dialog { width: min(940px, calc(100% - 28px)); }
     .filter-layout { min-height: min(680px, calc(100vh - 50px)); display: grid; grid-template-columns: 245px minmax(0, 1fr); }
     .filter-sidebar { display: flex; flex-direction: column; gap: 14px; padding: 21px 17px; border-right: 1px solid var(--slate-200); background: var(--slate-50); }
@@ -351,7 +363,7 @@
   <aside class="entity-drawer" id="entityDrawer" role="dialog" aria-modal="true" aria-labelledby="entityDrawerTitle" aria-hidden="true">
     <form id="drawerForm">
       <div class="drawer-head"><div><h3 id="entityDrawerTitle">Editar registro</h3><p id="entityDrawerSubtitle">Altere os dados e salve para atualizar a lista.</p></div><button type="button" class="close-button" data-action="cancel-drawer" aria-label="Fechar painel">×</button></div>
-      <div class="drawer-body"><div class="form-grid" id="drawerFields"></div></div>
+      <div class="drawer-body"><div class="form-grid" id="drawerFields"></div><section class="bitrix-fields" id="drawerBitrixFields" hidden></section></div>
       <div class="drawer-foot"><button type="button" class="button" data-action="cancel-drawer">Cancelar</button><button type="submit" class="button primary">Salvar registro</button></div>
     </form>
   </aside>
@@ -372,6 +384,23 @@
         <div class="quote-total"><span>Total estimado</span><strong id="quoteTotal">R$ 0,00</strong></div>
       </div>
       <div class="modal-foot"><button type="button" class="button" data-close="quoteDialog">Cancelar</button><button type="submit" class="button primary">Adicionar orçamento</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="bitrixImportDialog">
+    <form id="bitrixImportForm">
+      <div class="modal-head"><div><h3>Importar amostra do Bitrix</h3><p class="hint">O teste importa somente a primeira linha de cada CSV.</p></div><button type="button" class="close-button" data-close="bitrixImportDialog" aria-label="Fechar">×</button></div>
+      <div class="modal-body">
+        <div class="import-grid">
+          <div class="field"><label for="bitrixDealFile">CSV de Negócios</label><input id="bitrixDealFile" type="file" accept=".csv,text/csv" data-bitrix-entity="deal"></div>
+          <div class="field"><label for="bitrixContactFile">CSV de Contatos</label><input id="bitrixContactFile" type="file" accept=".csv,text/csv" data-bitrix-entity="contact"></div>
+          <div class="field"><label for="bitrixCompanyFile">CSV de Empresas</label><input id="bitrixCompanyFile" type="file" accept=".csv,text/csv" data-bitrix-entity="company"></div>
+          <div class="field"><label for="bitrixLeadFile">CSV de Leads</label><input id="bitrixLeadFile" type="file" accept=".csv,text/csv" data-bitrix-entity="lead"></div>
+        </div>
+        <div class="import-summary" id="bitrixImportSummary" hidden></div>
+        <ul class="import-details" id="bitrixImportDetails"></ul>
+      </div>
+      <div class="modal-foot"><button type="button" class="button" data-close="bitrixImportDialog">Cancelar</button><button type="submit" class="button primary" id="bitrixImportSubmit" disabled>Importar amostra</button></div>
     </form>
   </dialog>
 
@@ -1003,7 +1032,7 @@
       const dashboardFilterCount = activeFilterCount(`dashboard_${dashboard.scope}`);
       const scopeLabel = ({ all: 'Todos', leads: 'Leads', deals: 'Negócios' })[dashboard.scope];
       return `
-        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions"><button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar demo</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
+        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions">${currentUser().role === 'Administrador' ? '<button class="button" data-action="open-bitrix-import">⇩ Importar Bitrix</button>' : ''}<button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar demo</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
         <div class="stats">
           <article class="stat" style="--stat-color:var(--blue-100)"><div class="stat-top"><span>Leads em contato</span><span class="stat-icon">◎</span></div><strong>${leads.filter(item => item.stage === 'Em contato').length}</strong><small><b>Dados locais</b> deste perfil</small></article>
           <article class="stat" style="--stat-color:var(--purple-100)"><div class="stat-top"><span>Negócios abertos</span><span class="stat-icon">◇</span></div><strong>${openDeals.length}</strong><small>${money(total)} em pipeline</small></article>
@@ -1160,6 +1189,10 @@
       document.getElementById('entityDrawerTitle').textContent = `Editar ${entityLabel(entity)}`;
       document.getElementById('entityDrawerSubtitle').textContent = `${id} · As alterações ficam somente neste navegador.`;
       document.getElementById('drawerFields').innerHTML = formDefinitions[entity].map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
+      const bitrixSection = document.getElementById('drawerBitrixFields');
+      const bitrixFields = Array.isArray(record.bitrixFields) ? record.bitrixFields : [];
+      bitrixSection.hidden = !bitrixFields.length;
+      bitrixSection.innerHTML = bitrixFields.length ? `<h4>Campos do Bitrix</h4><p>${bitrixFields.length} coluna(s) preservada(s) na ordem original.</p><dl class="bitrix-field-list">${bitrixFields.map((field, index) => `<div data-bitrix-field="${index}"><dt>${escapeHTML(field.name || 'Campo sem nome')}${field.occurrence > 1 ? ` (${field.occurrence})` : ''}</dt><dd>${escapeHTML(field.value)}</dd></div>`).join('')}</dl>` : '';
       drawerInitialValue = formSignature(form);
       drawer.classList.add('open');
       drawer.setAttribute('aria-hidden', 'false');
@@ -1323,6 +1356,216 @@
       toast('A última mudança de etapa foi desfeita.');
     }
 
+    function normalizeBitrixHeader(value) {
+      return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR');
+    }
+
+    function countDelimiter(line, delimiter) {
+      let count = 0;
+      let quoted = false;
+      for (let index = 0; index < line.length; index += 1) {
+        if (line[index] === '"') {
+          if (quoted && line[index + 1] === '"') index += 1;
+          else quoted = !quoted;
+        } else if (!quoted && line[index] === delimiter) count += 1;
+      }
+      return count;
+    }
+
+    function detectCsvDelimiter(text) {
+      let quoted = false;
+      let header = '';
+      for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        if (char === '"') {
+          if (quoted && text[index + 1] === '"') { header += '""'; index += 1; continue; }
+          quoted = !quoted;
+        }
+        if (!quoted && (char === '\n' || char === '\r')) break;
+        header += char;
+      }
+      return countDelimiter(header, ';') >= countDelimiter(header, ',') ? ';' : ',';
+    }
+
+    function parseCsv(text) {
+      const source = String(text || '').replace(/^\uFEFF/, '');
+      const delimiter = detectCsvDelimiter(source);
+      const rows = [];
+      let row = [];
+      let field = '';
+      let quoted = false;
+      for (let index = 0; index < source.length; index += 1) {
+        const char = source[index];
+        if (char === '"') {
+          if (quoted && source[index + 1] === '"') { field += '"'; index += 1; }
+          else quoted = !quoted;
+        } else if (!quoted && char === delimiter) {
+          row.push(field); field = '';
+        } else if (!quoted && (char === '\n' || char === '\r')) {
+          if (char === '\r' && source[index + 1] === '\n') index += 1;
+          row.push(field); field = '';
+          if (row.some(value => value !== '')) rows.push(row);
+          row = [];
+        } else field += char;
+      }
+      if (field !== '' || row.length) {
+        row.push(field);
+        if (row.some(value => value !== '')) rows.push(row);
+      }
+      return rows;
+    }
+
+    function bitrixFieldValue(fields, ...names) {
+      const expected = new Set(names.map(normalizeBitrixHeader));
+      return fields.find(field => expected.has(normalizeBitrixHeader(field.name)))?.value?.trim() || '';
+    }
+
+    function parseBitrixMoney(value) {
+      const compact = String(value || '').replace(/[^\d,.-]/g, '');
+      if (!compact) return 0;
+      const decimal = compact.includes(',') ? compact.replace(/\./g, '').replace(',', '.') : compact;
+      const number = Number(decimal);
+      return Number.isFinite(number) ? number : 0;
+    }
+
+    function responsibleIdFromBitrix(value, fallback) {
+      const expected = normalizeBitrixHeader(value);
+      return state.users.find(user => normalizeBitrixHeader(user.name) === expected)?.id || fallback || state.currentUserId;
+    }
+
+    function bitrixCoreRecord(entity, fields, existing) {
+      const now = new Date().toISOString();
+      const bitrixId = bitrixFieldValue(fields, 'ID');
+      const base = {
+        id: `BX-${entity.toUpperCase()}-${bitrixId}`,
+        bitrixId,
+        bitrixEntity: entity,
+        bitrixFields: fields,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+      };
+      if (entity === 'deal') {
+        const responsibleId = responsibleIdFromBitrix(bitrixFieldValue(fields, 'Responsável', 'Pessoa responsável'), existing?.responsibleId);
+        const exportedStage = bitrixFieldValue(fields, 'Fase', 'Etapa');
+        return Object.assign(base, {
+          title: bitrixFieldValue(fields, 'Nome do negócio', 'Título', 'Nome') || `Negócio Bitrix ${bitrixId}`,
+          company: bitrixFieldValue(fields, 'Empresa'),
+          contact: bitrixFieldValue(fields, 'Contato'),
+          amount: parseBitrixMoney(bitrixFieldValue(fields, 'Total', 'Valor', 'Montante')),
+          stage: dealStages.includes(exportedStage) ? exportedStage : 'Em Contato',
+          responsibleId,
+          team: state.users.find(user => user.id === responsibleId)?.team || currentUser().team,
+          assistants: existing?.assistants || [],
+          quotes: existing?.quotes || [],
+          stageChangedAt: existing?.stageChangedAt || now,
+          stageChangedById: existing?.stageChangedById || state.currentUserId,
+          stageHistory: existing?.stageHistory || []
+        });
+      }
+      if (entity === 'contact') {
+        const firstName = bitrixFieldValue(fields, 'Nome', 'Primeiro Nome');
+        const lastName = bitrixFieldValue(fields, 'Sobrenome');
+        return Object.assign(base, {
+          name: [firstName, lastName].filter(Boolean).join(' ') || bitrixFieldValue(fields, 'Nome completo') || `Contato Bitrix ${bitrixId}`,
+          company: bitrixFieldValue(fields, 'Empresa', 'Conta Nome'),
+          email: bitrixFieldValue(fields, 'Email de trabalho', 'E-mail', 'Outro Email'),
+          phone: bitrixFieldValue(fields, 'Telefone de trabalho', 'Outro Telefone'),
+          role: bitrixFieldValue(fields, 'Cargo')
+        });
+      }
+      if (entity === 'company') {
+        const city = bitrixFieldValue(fields, 'Cidade');
+        const region = bitrixFieldValue(fields, 'UF.', 'UF');
+        return Object.assign(base, {
+          name: bitrixFieldValue(fields, 'Nome da Empresa', 'Nome') || `Empresa Bitrix ${bitrixId}`,
+          city: [city, region].filter(Boolean).join(' / '),
+          segment: bitrixFieldValue(fields, 'Segmento de Mercado', 'Segmento'),
+          phone: bitrixFieldValue(fields, 'Telefone de trabalho', 'Outro Telefone'),
+          ownerId: responsibleIdFromBitrix(bitrixFieldValue(fields, 'Responsável'), existing?.ownerId)
+        });
+      }
+      const responsibleId = responsibleIdFromBitrix(bitrixFieldValue(fields, 'Pessoa responsável', 'Responsável'), existing?.responsibleId);
+      const exportedStage = bitrixFieldValue(fields, 'Etapa');
+      return Object.assign(base, {
+        name: bitrixFieldValue(fields, 'Nome completo', 'Nome') || `Lead Bitrix ${bitrixId}`,
+        company: bitrixFieldValue(fields, 'Nome da empresa', 'Empresa'),
+        email: bitrixFieldValue(fields, 'Email de trabalho', 'E-mail', 'Outro Email'),
+        phone: bitrixFieldValue(fields, 'Telefone de trabalho', 'Outro Telefone'),
+        segment: bitrixFieldValue(fields, 'Segmento de Mercado', 'Segmento'),
+        source: bitrixFieldValue(fields, 'Origem do Lead', 'Origem'),
+        stage: leadStages.includes(exportedStage) ? exportedStage : 'Em contato',
+        responsibleId,
+        team: state.users.find(user => user.id === responsibleId)?.team || currentUser().team,
+        assistants: existing?.assistants || []
+      });
+    }
+
+    function openBitrixImport() {
+      const form = document.getElementById('bitrixImportForm');
+      form.reset();
+      document.getElementById('bitrixImportSubmit').disabled = true;
+      document.getElementById('bitrixImportSummary').hidden = true;
+      document.getElementById('bitrixImportDetails').innerHTML = '';
+      document.getElementById('bitrixImportDialog').showModal();
+    }
+
+    function syncBitrixImportButton() {
+      const hasFile = Array.from(document.querySelectorAll('[data-bitrix-entity]')).some(input => input.files.length);
+      document.getElementById('bitrixImportSubmit').disabled = !hasFile;
+    }
+
+    async function importBitrixSample(form) {
+      const result = { created: 0, updated: 0, rejected: 0, details: [] };
+      const collections = { deal: 'deals', contact: 'contacts', company: 'companies', lead: 'leads' };
+      for (const input of form.querySelectorAll('[data-bitrix-entity]')) {
+        const file = input.files[0];
+        if (!file) continue;
+        if (!file.name.toLocaleLowerCase('pt-BR').endsWith('.csv')) {
+          result.rejected += 1;
+          result.details.push(`${file.name}: selecione um arquivo CSV`);
+          continue;
+        }
+        const rows = parseCsv(await file.text());
+        if (rows.length < 2) {
+          result.rejected += 1;
+          result.details.push(`${file.name}: nenhuma linha de dados`);
+          continue;
+        }
+        const headers = rows[0];
+        const values = rows[1];
+        const occurrences = new Map();
+        const fields = headers.map((name, index) => {
+          const occurrence = (occurrences.get(name) || 0) + 1;
+          occurrences.set(name, occurrence);
+          return { name, occurrence, value: values[index] ?? '' };
+        });
+        const bitrixId = bitrixFieldValue(fields, 'ID');
+        if (!bitrixId) {
+          result.rejected += 1;
+          result.details.push(`${file.name}: ID do Bitrix ausente`);
+          continue;
+        }
+        const entity = input.dataset.bitrixEntity;
+        const collection = collections[entity];
+        const existing = state[collection].find(record => record.bitrixId === bitrixId);
+        const record = bitrixCoreRecord(entity, fields, existing);
+        if (existing) {
+          Object.assign(existing, record, { id: existing.id });
+          result.updated += 1;
+        } else {
+          state[collection].unshift(record);
+          result.created += 1;
+        }
+      }
+      saveState();
+      render();
+      const summary = document.getElementById('bitrixImportSummary');
+      summary.textContent = `Criados: ${result.created} · Atualizados: ${result.updated} · Rejeitados: ${result.rejected}`;
+      summary.hidden = false;
+      document.getElementById('bitrixImportDetails').innerHTML = result.details.map(detail => `<li>${escapeHTML(detail)}</li>`).join('');
+      toast('Importação de amostra do Bitrix concluída.');
+    }
+
     function openQuote(id) {
       const deal = state.deals.find(item => item.id === id);
       if (!deal) return;
@@ -1376,6 +1619,7 @@
       const action = button.dataset.action;
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
+      if (action === 'open-bitrix-import') openBitrixImport();
       if (action === 'open-dashboard-filters') openDashboardFilters();
       if (action === 'dashboard-filter-scope') setDashboardFilterScope(button.dataset.dashboardFilterScope);
       if (action === 'reset-dashboard-filters') resetDashboardFilters();
@@ -1406,6 +1650,7 @@
     });
 
     document.addEventListener('change', event => {
+      if (event.target.dataset.bitrixEntity) syncBitrixImportButton();
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }
       if (event.target.name === 'filter-operator' && event.target.closest('#filterDialog')) { syncFilterDraftFromPanel(); renderFilterPanel(); }
       if (event.target.dataset.stageControl) requestStageChange(event.target.dataset.entity, event.target.dataset.stageControl, event.target.value);
@@ -1417,6 +1662,7 @@
     document.getElementById('entityForm').addEventListener('submit', event => { event.preventDefault(); saveEntity(event.currentTarget); });
     document.getElementById('drawerForm').addEventListener('submit', event => { event.preventDefault(); saveEntity(event.currentTarget); });
     document.getElementById('quoteForm').addEventListener('submit', event => { event.preventDefault(); saveQuote(event.currentTarget); });
+    document.getElementById('bitrixImportForm').addEventListener('submit', event => { event.preventDefault(); importBitrixSample(event.currentTarget); });
     document.getElementById('filterForm').addEventListener('submit', event => { event.preventDefault(); applyFilterPanel(); });
     document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));
     document.getElementById('sidebarOverlay').addEventListener('click', () => toggleSidebar(false));

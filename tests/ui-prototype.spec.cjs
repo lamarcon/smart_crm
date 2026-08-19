@@ -208,6 +208,7 @@ async function createLead(page, name) {
     await goTo(page, 'Leads');
     await page.getByRole('button', { name: 'Larissa Spinola', exact: true }).click();
     const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).waitFor({ state: 'visible' });
     const box = await drawer.boundingBox();
     assert.equal(Math.round(box.width), 390);
     assert.equal(await drawer.getByRole('button', { name: 'Salvar registro' }).isVisible(), true);
@@ -774,6 +775,106 @@ async function createLead(page, name) {
     deal = state.deals.find(item => item.company === 'Open Analítica');
     assert.equal(deal.quotes.at(-1).total, 100);
     assert.equal(deal.quotes.at(-1).pdf, 'proposta-teste.pdf');
+  });
+
+  await run('BITRIX-01 importa uma amostra e preserva todos os campos por posição', async page => {
+    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
+    const dialog = page.locator('#bitrixImportDialog');
+    assert.equal(await dialog.getByLabel('CSV de Negócios').isVisible(), true);
+    assert.equal(await dialog.getByLabel('CSV de Contatos').isVisible(), true);
+    assert.equal(await dialog.getByLabel('CSV de Empresas').isVisible(), true);
+    assert.equal(await dialog.getByLabel('CSV de Leads').isVisible(), true);
+    assert.equal(await dialog.getByRole('button', { name: 'Importar amostra' }).isDisabled(), true);
+
+    const csv = '\ufeffID;Nome do negócio;Empresa;Fase;Total;Responsável;Observação;Cargo;Cargo;\n'
+      + '9001;Negócio importado;Empresa Bitrix;Negociação Revisão;1234.50;Paula Pincetta;"valor; preservado\ncom quebra";Comprador;Decisor;campo sem cabeçalho\n'
+      + '9003;Segunda linha ignorada;Outra Empresa;Em Contato;99;Paula Pincetta;Não importar;Cargo;Cargo;fim\n';
+    await dialog.getByLabel('CSV de Negócios').setInputFiles({
+      name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8')
+    });
+    assert.equal(await dialog.getByRole('button', { name: 'Importar amostra' }).isEnabled(), true);
+    await dialog.getByRole('button', { name: 'Importar amostra' }).click();
+    await dialog.locator('#bitrixImportSummary').waitFor({ state: 'visible' });
+    assert.equal(await dialog.locator('#bitrixImportSummary').innerText(), 'Criados: 1 · Atualizados: 0 · Rejeitados: 0');
+
+    const state = await stateFrom(page);
+    const deal = state.deals.find(item => item.bitrixId === '9001');
+    assert.ok(deal, 'Negócio importado não encontrado');
+    assert.equal(state.deals.some(item => item.bitrixId === '9003'), false);
+    assert.equal(deal.id, 'BX-DEAL-9001');
+    assert.equal(deal.title, 'Negócio importado');
+    assert.equal(deal.company, 'Empresa Bitrix');
+    assert.equal(deal.stage, 'Negociação Revisão');
+    assert.equal(deal.amount, 1234.5);
+    assert.equal(deal.responsibleId, 'u-paula');
+    assert.equal(deal.bitrixFields.length, 10);
+    assert.deepEqual(deal.bitrixFields.map(field => [field.name, field.occurrence, field.value]), [
+      ['ID', 1, '9001'],
+      ['Nome do negócio', 1, 'Negócio importado'],
+      ['Empresa', 1, 'Empresa Bitrix'],
+      ['Fase', 1, 'Negociação Revisão'],
+      ['Total', 1, '1234.50'],
+      ['Responsável', 1, 'Paula Pincetta'],
+      ['Observação', 1, 'valor; preservado\ncom quebra'],
+      ['Cargo', 1, 'Comprador'],
+      ['Cargo', 2, 'Decisor'],
+      ['', 1, 'campo sem cabeçalho']
+    ]);
+
+    await dialog.getByRole('button', { name: 'Fechar' }).click();
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Negócio importado' }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.waitFor({ state: 'visible' });
+    assert.match(await drawer.innerText(), /Campos do Bitrix/);
+    assert.equal(await drawer.locator('[data-bitrix-field]').count(), 10);
+    assert.equal(await drawer.locator('[data-bitrix-field="8"] dt').innerText(), 'Cargo (2)');
+    assert.equal(await drawer.locator('[data-bitrix-field="8"] dd').innerText(), 'Decisor');
+    assert.equal(await drawer.locator('[data-bitrix-field="9"] dt').innerText(), 'Campo sem nome');
+  });
+
+  await run('BITRIX-02 reimporta pelo ID sem criar duplicata', async page => {
+    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
+    const dialog = page.locator('#bitrixImportDialog');
+    const input = dialog.getByLabel('CSV de Negócios');
+    const first = '\ufeffID;Nome do negócio;Empresa;Fase;Total\n9002;Título inicial;Empresa Teste;Em Contato;10\n';
+    await input.setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(first, 'utf8') });
+    await dialog.getByRole('button', { name: 'Importar amostra' }).click();
+    await dialog.locator('#bitrixImportSummary').waitFor({ state: 'visible' });
+    assert.equal(await dialog.locator('#bitrixImportSummary').innerText(), 'Criados: 1 · Atualizados: 0 · Rejeitados: 0');
+
+    const second = '\ufeffID;Nome do negócio;Empresa;Fase;Total\n9002;Título atualizado;Empresa Teste;Em Contato;20\n';
+    await input.setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(second, 'utf8') });
+    await dialog.getByRole('button', { name: 'Importar amostra' }).click();
+    await page.waitForFunction(() => document.getElementById('bitrixImportSummary')?.textContent.includes('Atualizados: 1'));
+    assert.equal(await dialog.locator('#bitrixImportSummary').innerText(), 'Criados: 0 · Atualizados: 1 · Rejeitados: 0');
+
+    const state = await stateFrom(page);
+    const matches = state.deals.filter(item => item.bitrixId === '9002');
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].title, 'Título atualizado');
+    assert.equal(matches[0].amount, 20);
+  });
+
+  await run('BITRIX-02 rejeita CSV sem ID e arquivo fora do formato sem alterar dados', async page => {
+    const before = await stateFrom(page);
+    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
+    const dialog = page.locator('#bitrixImportDialog');
+    await dialog.getByLabel('CSV de Leads').setInputFiles({
+      name: 'lead.csv', mimeType: 'text/csv', buffer: Buffer.from('\ufeffID;Nome\n;Lead sem chave\n', 'utf8')
+    });
+    await dialog.getByLabel('CSV de Empresas').setInputFiles({
+      name: 'empresa.txt', mimeType: 'text/plain', buffer: Buffer.from('ID;Nome da Empresa\n77;Inválida\n', 'utf8')
+    });
+    await dialog.getByRole('button', { name: 'Importar amostra' }).click();
+    await dialog.locator('#bitrixImportSummary').waitFor({ state: 'visible' });
+    assert.equal(await dialog.locator('#bitrixImportSummary').innerText(), 'Criados: 0 · Atualizados: 0 · Rejeitados: 2');
+    assert.match(await dialog.locator('#bitrixImportDetails').innerText(), /lead.csv: ID do Bitrix ausente/);
+    assert.match(await dialog.locator('#bitrixImportDetails').innerText(), /empresa.txt: selecione um arquivo CSV/);
+
+    const after = await stateFrom(page);
+    assert.equal(after.leads.length, before.leads.length);
+    assert.equal(after.companies.length, before.companies.length);
   });
 
   await run('DEMO-14 aplica fronteiras de Administrador, Gestor, Vendedor e Assistente', async page => {
