@@ -930,6 +930,25 @@ async function createLead(page, name) {
     const state = await stateFrom(page);
     assert.deepEqual(state.deals.filter(item => item.bitrixId).map(item => item.bitrixId).sort(), ['9101', '9102', '9103']);
     assert.equal(state.deals.filter(item => ['9101', '9102', '9103'].includes(item.bitrixId)).length, 3);
+
+    const changed = '\ufeffID;Nome do negócio;Empresa;Fase;Total\n'
+      + '9101;Primeiro atualizado;Empresa Teste;Em Contato;11\n'
+      + '9102;Segundo atualizado;Empresa Teste;Em Contato;22\n'
+      + '9103;Terceiro atualizado;Empresa Teste;Em Contato;33\n';
+    await input.setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(changed, 'utf8') });
+    await dialog.getByRole('button', { name: 'Importar amostra' }).click();
+    await page.waitForFunction(() => {
+      const current = JSON.parse(localStorage.getItem('smart-crm-demo-v1'));
+      return current.deals.find(item => item.bitrixId === '9103')?.title === 'Terceiro atualizado';
+    });
+    assert.equal(await dialog.locator('#bitrixImportSummary').innerText(), 'Criados: 0 · Atualizados: 3 · Rejeitados: 0');
+    const updated = (await stateFrom(page)).deals.filter(item => ['9101', '9102', '9103'].includes(item.bitrixId)).sort((a, b) => a.bitrixId.localeCompare(b.bitrixId));
+    assert.deepEqual(updated.map(item => [item.bitrixId, item.title, item.amount]), [
+      ['9101', 'Primeiro atualizado', 11],
+      ['9102', 'Segundo atualizado', 22],
+      ['9103', 'Terceiro atualizado', 33]
+    ]);
+    assert.equal(updated.length, 3);
   });
 
   await run('BITRIX-02 rejeita arquivos inválidos e mantém a importação parcial', async page => {
