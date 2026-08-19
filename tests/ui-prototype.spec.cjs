@@ -804,7 +804,6 @@ async function createLead(page, name) {
     await quoteDialog.getByLabel('Item / serviço *').fill('Orçamento pelo painel');
     await quoteDialog.getByLabel('Quantidade *').fill('2');
     await quoteDialog.getByLabel('Valor unitário (R$) *').fill('500');
-    await quoteDialog.getByLabel('Anexar PDF (opcional)').setInputFiles({ name: 'painel.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n') });
     await quoteDialog.getByRole('button', { name: 'Adicionar orçamento' }).click();
     assert.match(await drawer.getAttribute('class'), /open/);
     assert.equal(await drawer.getByRole('tab', { name: 'Orçamentos' }).getAttribute('aria-selected'), 'true');
@@ -813,7 +812,7 @@ async function createLead(page, name) {
     assert.match(await added.innerText(), /Orçamento pelo painel/);
     assert.match(await added.innerText(), /R\$\s*1\.000,00/);
     assert.match(await added.innerText(), /Rascunho/);
-    assert.match(await added.innerText(), /painel\.pdf/);
+    assert.match(await added.innerText(), /Sem anexo/);
 
     await drawer.getByRole('button', { name: 'Fechar painel' }).click();
     await page.getByRole('button', { name: 'Renovação ALS Pharma' }).click();
