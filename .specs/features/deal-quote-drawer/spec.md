@@ -51,7 +51,7 @@ O orçamento só pode ser iniciado pelos atalhos da Lista e do Kanban. O painel 
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| QUOTE-01 | P1: Gerenciar orçamento no painel lateral | Execute | Implementing |
+| QUOTE-01 | P1: Gerenciar orçamento no painel lateral | Execute | Verified |
 
 **Coverage:** 1 total, 1 mapped to execution, 0 unmapped.
 
