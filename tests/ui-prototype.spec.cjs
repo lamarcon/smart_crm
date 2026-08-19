@@ -830,9 +830,9 @@ async function createLead(page, name) {
     assert.equal(await dialog.getByLabel('CSV de Leads').isVisible(), true);
     assert.equal(await dialog.getByRole('button', { name: 'Importar amostra' }).isDisabled(), true);
 
-    const csv = '\ufeffID;Nome do negócio;Empresa;Fase;Total;Responsável;Observação;Cargo;Cargo;\n'
-      + '9001;Negócio importado;Empresa Bitrix;Negociação Revisão;1234.50;Paula Pincetta;"valor; preservado\ncom quebra";Comprador;Decisor;campo sem cabeçalho\n'
-      + '9003;Segunda linha ignorada;Outra Empresa;Em Contato;99;Paula Pincetta;Não importar;Cargo;Cargo;fim\n';
+    const csv = '\ufeffID;Nome do negócio;Empresa;Contato;Fase;Total;Responsável;Observação;Cargo;Cargo;\n'
+      + '9001;Negócio importado;Empresa Bitrix;Maria Silva;Negociação Revisão;1234.50;Paula Pincetta;"valor; preservado\ncom quebra";Comprador;Decisor;campo sem cabeçalho\n'
+      + '9003;Segunda linha ignorada;Outra Empresa;Outro Contato;Em Contato;99;Paula Pincetta;Não importar;Cargo;Cargo;fim\n';
     await dialog.getByLabel('CSV de Negócios').setInputFiles({
       name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8')
     });
@@ -854,14 +854,16 @@ async function createLead(page, name) {
     assert.equal(deal.id, 'BX-DEAL-9001');
     assert.equal(deal.title, 'Negócio importado');
     assert.equal(deal.company, 'Empresa Bitrix');
+    assert.equal(deal.contact, 'Maria Silva');
     assert.equal(deal.stage, 'Negociação Revisão');
     assert.equal(deal.amount, 1234.5);
     assert.equal(deal.responsibleId, 'u-paula');
-    assert.equal(deal.bitrixFields.length, 10);
+    assert.equal(deal.bitrixFields.length, 11);
     assert.deepEqual(deal.bitrixFields.map(field => [field.name, field.occurrence, field.value]), [
       ['ID', 1, '9001'],
       ['Nome do negócio', 1, 'Negócio importado'],
       ['Empresa', 1, 'Empresa Bitrix'],
+      ['Contato', 1, 'Maria Silva'],
       ['Fase', 1, 'Negociação Revisão'],
       ['Total', 1, '1234.50'],
       ['Responsável', 1, 'Paula Pincetta'],
@@ -889,10 +891,10 @@ async function createLead(page, name) {
     const drawer = page.locator('#entityDrawer');
     await drawer.waitFor({ state: 'visible' });
     assert.match(await drawer.innerText(), /Campos do Bitrix/);
-    assert.equal(await drawer.locator('[data-bitrix-field]').count(), 10);
-    assert.equal(await drawer.locator('[data-bitrix-field="8"] dt').innerText(), 'Cargo (2)');
-    assert.equal(await drawer.locator('[data-bitrix-field="8"] dd').innerText(), 'Decisor');
-    assert.equal(await drawer.locator('[data-bitrix-field="9"] dt').innerText(), 'Campo sem nome');
+    assert.equal(await drawer.locator('[data-bitrix-field]').count(), 11);
+    assert.equal(await drawer.locator('[data-bitrix-field="9"] dt').innerText(), 'Cargo (2)');
+    assert.equal(await drawer.locator('[data-bitrix-field="9"] dd').innerText(), 'Decisor');
+    assert.equal(await drawer.locator('[data-bitrix-field="10"] dt').innerText(), 'Campo sem nome');
   });
 
   await run('BITRIX-02 reimporta pelo ID sem criar duplicata', async page => {
