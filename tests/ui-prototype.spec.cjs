@@ -979,14 +979,25 @@ async function createLead(page, name) {
     await page.getByRole('button', { name: 'Importar Bitrix' }).click();
     const dialog = page.locator('#bitrixImportDialog');
     const input = dialog.getByLabel('CSV de Negócios');
-    const first = '\ufeffID;Nome do negócio;Empresa;Fase;Total\n'
-      + '9101;Primeiro;Empresa Teste;Em Contato;10\n'
-      + '9102;Segundo;Empresa Teste;Em Contato;20\n'
-      + '9103;Terceiro;Empresa Teste;Em Contato;30\n';
+    const first = '\ufeffID;Nome do negócio;Empresa;Fase;Total;Observação;Campo futuro\n'
+      + '9101;Primeiro;Empresa Teste;Em Contato;10;Original um;\n'
+      + '9102;Segundo;Empresa Teste;Em Contato;20;Original dois;\n'
+      + '9103;Terceiro;Empresa Teste;Em Contato;30;Original três;\n';
     await input.setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(first, 'utf8') });
     await dialog.getByRole('button', { name: 'Importar amostra' }).click();
     await dialog.locator('#bitrixImportSummary').waitFor({ state: 'visible' });
     assert.equal(await dialog.locator('#bitrixImportSummary').innerText(), 'Criados: 3 · Atualizados: 0 · Rejeitados: 0');
+
+    await dialog.getByRole('button', { name: 'Fechar' }).click();
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Primeiro', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    await drawer.getByLabel('Campo adicional para adicionar').selectOption({ label: 'Campo futuro' });
+    await drawer.getByRole('button', { name: 'Adicionar campo' }).click();
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    await goTo(page, 'Visão geral');
+    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
 
     await input.setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(first, 'utf8') });
     await dialog.getByRole('button', { name: 'Importar amostra' }).click();
@@ -997,10 +1008,10 @@ async function createLead(page, name) {
     assert.deepEqual(state.deals.filter(item => item.bitrixId).map(item => item.bitrixId).sort(), ['9101', '9102', '9103']);
     assert.equal(state.deals.filter(item => ['9101', '9102', '9103'].includes(item.bitrixId)).length, 3);
 
-    const changed = '\ufeffID;Nome do negócio;Empresa;Fase;Total\n'
-      + '9101;Primeiro atualizado;Empresa Teste;Em Contato;11\n'
-      + '9102;Segundo atualizado;Empresa Teste;Em Contato;22\n'
-      + '9103;Terceiro atualizado;Empresa Teste;Em Contato;33\n';
+    const changed = '\ufeffID;Nome do negócio;Empresa;Fase;Total;Observação;Campo futuro\n'
+      + '9101;Primeiro atualizado;Empresa Teste;Em Contato;11;Atualizada um;\n'
+      + '9102;Segundo atualizado;Empresa Teste;Em Contato;22;Atualizada dois;\n'
+      + '9103;Terceiro atualizado;Empresa Teste;Em Contato;33;Atualizada três;\n';
     await input.setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(changed, 'utf8') });
     await dialog.getByRole('button', { name: 'Importar amostra' }).click();
     await page.waitForFunction(() => {
@@ -1009,12 +1020,68 @@ async function createLead(page, name) {
     });
     assert.equal(await dialog.locator('#bitrixImportSummary').innerText(), 'Criados: 0 · Atualizados: 3 · Rejeitados: 0');
     const updated = (await stateFrom(page)).deals.filter(item => ['9101', '9102', '9103'].includes(item.bitrixId)).sort((a, b) => a.bitrixId.localeCompare(b.bitrixId));
-    assert.deepEqual(updated.map(item => [item.bitrixId, item.title, item.amount]), [
-      ['9101', 'Primeiro atualizado', 11],
-      ['9102', 'Segundo atualizado', 22],
-      ['9103', 'Terceiro atualizado', 33]
+    assert.deepEqual(updated.map(item => [item.bitrixId, item.title, item.amount, item.customFields.find(field => field.label === 'Observação').value]), [
+      ['9101', 'Primeiro atualizado', 11, 'Atualizada um'],
+      ['9102', 'Segundo atualizado', 22, 'Atualizada dois'],
+      ['9103', 'Terceiro atualizado', 33, 'Atualizada três']
     ]);
     assert.equal(updated.length, 3);
+    assert.equal(updated[0].visibleCustomFieldKeys.includes('bitrix:campo%20futuro:1'), true);
+  });
+
+  await run('BCF-03 pesquisa e filtra campos adicionais em conjunto com campos padrão', async page => {
+    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
+    const dialog = page.locator('#bitrixImportDialog');
+    const csv = '\ufeffID;Nome do negócio;Empresa;Fase;Total;Código interno;Campo futuro\n'
+      + '9201;Primeiro Alpha;Empresa Teste;Em Contato;10;COD-ALPHA;\n'
+      + '9202;Segundo Beta;Empresa Teste;Em Contato;20;COD-BETA;\n'
+      + '9203;Terceiro Alpha;Empresa Teste;Em Contato;30;COD-ALPHA;\n';
+    await dialog.getByLabel('CSV de Negócios').setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
+    await dialog.getByRole('button', { name: 'Importar amostra' }).click();
+    await dialog.locator('#bitrixImportSummary').waitFor({ state: 'visible' });
+    await dialog.getByRole('button', { name: 'Fechar' }).click();
+    await goTo(page, 'Negócios');
+
+    const search = page.getByPlaceholder('Buscar em negócios...');
+    await search.fill('cod-beta');
+    assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
+    assert.match(await page.locator('#page-deals tbody').innerText(), /Segundo Beta/);
+
+    await search.fill('');
+    await page.getByRole('button', { name: 'Primeiro Alpha' }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    await drawer.getByLabel('Campo adicional para adicionar').selectOption({ label: 'Campo futuro' });
+    await drawer.getByRole('button', { name: 'Adicionar campo' }).click();
+    await drawer.getByLabel('Campo futuro').fill('Buscável depois');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    await search.fill('buscável depois');
+    assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
+    assert.match(await page.locator('#page-deals tbody').innerText(), /Primeiro Alpha/);
+
+    await search.fill('');
+    await page.getByRole('button', { name: /Filtros/ }).click();
+    const panel = page.locator('#filterDialog');
+    const availableLabels = await panel.locator('#addFilterField option').allTextContents();
+    assert.equal(availableLabels.filter(label => label === 'Código interno').length, 1);
+    await panel.locator('#addFilterField').selectOption({ label: 'Código interno' });
+    await panel.getByRole('button', { name: 'Adicionar campo' }).click();
+    const customRow = panel.locator('[data-filter-field^="custom:"]');
+    assert.deepEqual(await customRow.locator('select[name="filter-operator"] option').evaluateAll(options => options.map(option => option.value)), ['contains', 'exact']);
+    await panel.locator('[data-filter-field="title"] input[name="filter-value"]').fill('Primeiro');
+    await customRow.locator('input[name="filter-value"]').fill('cod-alpha');
+    await panel.getByRole('button', { name: 'Pesquisar' }).click();
+    assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
+    assert.match(await page.locator('#page-deals tbody').innerText(), /Primeiro Alpha/);
+    assert.doesNotMatch(await page.locator('#page-deals tbody').innerText(), /Terceiro Alpha/);
+
+    await page.getByRole('button', { name: /Filtros/ }).click();
+    await panel.locator('[data-filter-field="title"] input[name="filter-value"]').fill('');
+    await customRow.locator('select[name="filter-operator"]').selectOption('exact');
+    await customRow.locator('input[name="filter-value"]').fill('cod-beta');
+    await panel.getByRole('button', { name: 'Pesquisar' }).click();
+    assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
+    assert.match(await page.locator('#page-deals tbody').innerText(), /Segundo Beta/);
   });
 
   await run('BITRIX-02 rejeita arquivos inválidos e mantém a importação parcial', async page => {

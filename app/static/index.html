@@ -671,11 +671,27 @@
 
     function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
+    function customFilterDefinitions(scope) {
+      if (!entityConfigs[scope] || !Array.isArray(state[scope])) return [];
+      const definitions = new Map();
+      state[scope].forEach(record => (record.customFields || []).forEach(field => {
+        if (!definitions.has(field.key)) definitions.set(field.key, {
+          name: `custom:${field.key}`,
+          label: field.label,
+          type: 'text',
+          searchable: true,
+          custom: true
+        });
+      }));
+      return [...definitions.values()];
+    }
+
     function filterConfig(scope) {
       if (scope === 'dashboard_all') return dashboardAllConfig;
       if (scope === 'dashboard_leads') return entityConfigs.leads;
       if (scope === 'dashboard_deals') return entityConfigs.deals;
-      return entityConfigs[scope];
+      const config = entityConfigs[scope];
+      return config ? { ...config, fields: [...config.fields, ...customFilterDefinitions(scope)] } : config;
     }
 
     function filterRecords(scope) {
@@ -730,6 +746,7 @@
 
     function rawFieldValue(record, name) {
       if (name === 'team') return record?.team || state.users.find(user => user.id === record?.responsibleId)?.team || '';
+      if (name.startsWith('custom:')) return record?.customFields?.find(field => field.key === name.slice(7))?.value || '';
       return record?.[name];
     }
 

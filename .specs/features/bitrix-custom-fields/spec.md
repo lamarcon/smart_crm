@@ -106,8 +106,8 @@ A importação atual preserva todas as colunas do Bitrix, mas exibe os dados ext
 | -------------- | ----- | ----- | ------ |
 | BCF-01 | P1: Converter colunas extras | Execute | Implementing |
 | BCF-02 | P1: Editar campos adicionais | Execute | Implementing |
-| BCF-03 | P1: Pesquisar e filtrar | Execute | Pending |
-| BCF-04 | Edge cases | Execute | Pending |
+| BCF-03 | P1: Pesquisar e filtrar | Execute | Implementing |
+| BCF-04 | Edge cases | Execute | Implementing |
 
 **Coverage:** 4 total, 4 mapped to the execution plan, 0 unmapped.
 
