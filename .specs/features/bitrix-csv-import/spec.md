@@ -79,8 +79,8 @@ O ambiente de teste ainda não demonstra que um registro exportado do Bitrix pod
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| BITRIX-01 | P1: Importar uma amostra completa | Execute | Implementing |
-| BITRIX-02 | P1: Reimportar sem duplicar | Execute | Implementing |
+| BITRIX-01 | P1: Importar uma amostra completa | Execute | Verified |
+| BITRIX-02 | P1: Reimportar sem duplicar | Execute | Verified |
 
 **Coverage:** 2 total, 2 mapped to execution, 0 unmapped.
 
