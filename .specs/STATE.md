@@ -20,11 +20,11 @@
 
 ## Handoff
 
-- **Feature**: Protótipo local do Smart CRM / `.specs/features/ui-prototype`
+- **Feature**: Campos Bitrix no formato Smart CRM / `.specs/features/bitrix-custom-fields`
 - **Phase / Task**: Execute concluído e validado independentemente
-- **Completed**: T1, T2, T3, T4, T5, T6, T7, T8
+- **Completed**: BCF-01, BCF-02, BCF-03, BCF-04
 - **In-progress** (file:line): none
-- **Next step**: Revisar o protótipo em `http://localhost:8080`; a implementação do MVP de produção com PostgreSQL continua como trabalho futuro.
+- **Next step**: Atualizar `http://localhost:8080`, revisar os registros importados na aba `Campos adicionais` e informar ajustes visuais ou de mapeamento.
 - **Blockers**: none
 - **Uncommitted files**: none após o commit final de validação
 - **Branch**: main

@@ -104,10 +104,10 @@ A importação atual preserva todas as colunas do Bitrix, mas exibe os dados ext
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| BCF-01 | P1: Converter colunas extras | Execute | Implementing |
-| BCF-02 | P1: Editar campos adicionais | Execute | Implementing |
-| BCF-03 | P1: Pesquisar e filtrar | Execute | Implementing |
-| BCF-04 | Edge cases | Execute | Implementing |
+| BCF-01 | P1: Converter colunas extras | Execute | Verified |
+| BCF-02 | P1: Editar campos adicionais | Execute | Verified |
+| BCF-03 | P1: Pesquisar e filtrar | Execute | Verified |
+| BCF-04 | Edge cases | Execute | Verified |
 
 **Coverage:** 4 total, 4 mapped to the execution plan, 0 unmapped.
 
@@ -115,8 +115,8 @@ A importação atual preserva todas as colunas do Bitrix, mas exibe os dados ext
 
 ## Success Criteria
 
-- [ ] Um registro já importado passa a exibir campos adicionais após uma recarga, sem reenviar o CSV.
-- [ ] Todos os valores extras não vazios podem ser vistos e editados como campos Smart CRM.
-- [ ] Campos extras vazios podem ser adicionados ao formulário.
-- [ ] Busca e filtros do módulo encontram valores adicionais.
-- [ ] A suíte completa e a validação independente terminam sem lacunas.
+- [x] Um registro já importado passa a exibir campos adicionais após uma recarga, sem reenviar o CSV.
+- [x] Todos os valores extras não vazios podem ser vistos e editados como campos Smart CRM.
+- [x] Campos extras vazios podem ser adicionados ao formulário.
+- [x] Busca e filtros do módulo encontram valores adicionais.
+- [x] A suíte completa e a validação independente terminam sem lacunas.
