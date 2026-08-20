@@ -949,7 +949,7 @@ async function createLead(page, name) {
       id: 'BX-LEAD-5001', name: 'Lead Importado', company: 'Empresa Lead', email: 'lead@teste.invalid', phone: '1133335555', segment: 'Diagnóstico', source: 'Site', stage: 'Em contato', responsibleId: 'u-vitor', rawFields: 9
     });
 
-    await dialog.getByRole('button', { name: 'Fechar' }).click();
+    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
     await goTo(page, 'Negócios');
     await page.getByRole('button', { name: 'Negócio importado' }).click();
     const drawer = page.locator('#entityDrawer');
@@ -1089,6 +1089,63 @@ async function createLead(page, name) {
     await panel.getByRole('button', { name: 'Pesquisar' }).click();
     assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
     assert.match(await page.locator('#page-deals tbody').innerText(), /Segundo Beta/);
+  });
+
+  await run('ADM-01 Administrador gerencia campos padrão e personalizados por módulo', async page => {
+    await goTo(page, 'Negócios');
+    const manage = page.getByRole('button', { name: 'Gerenciar campos' });
+    await manage.click();
+    const dialog = page.locator('#fieldManagerDialog');
+    await dialog.waitFor({ state: 'visible' });
+
+    assert.deepEqual(await dialog.locator('#customFieldType option').allTextContents(), [
+      'Texto curto', 'Texto longo', 'Número', 'Moeda', 'Data', 'Sim/Não',
+      'E-mail', 'Telefone', 'Link', 'Seleção única', 'Seleção múltipla'
+    ]);
+
+    const before = await stateFrom(page);
+    const firstDeal = before.deals[0];
+    await dialog.getByLabel('Contato').uncheck();
+    await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
+    await page.getByRole('button', { name: firstDeal.title }).click();
+    const drawer = page.locator('#entityDrawer');
+    assert.equal(await drawer.getByLabel('Contato').count(), 0);
+    assert.equal((await stateFrom(page)).deals.find(deal => deal.id === firstDeal.id).contact, firstDeal.contact);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+
+    await manage.click();
+    await dialog.getByLabel('Contato').check();
+    await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
+    await page.getByRole('button', { name: firstDeal.title }).click();
+    assert.equal(await drawer.getByLabel('Contato').inputValue(), firstDeal.contact);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+
+    await manage.click();
+    await dialog.getByLabel('Nome do campo').fill('Número do contrato');
+    await dialog.getByLabel('Tipo do campo').selectOption('text');
+    await dialog.getByRole('button', { name: 'Criar campo' }).click();
+    let configured = await stateFrom(page);
+    assert.equal(configured.customFieldSchemas.deals.filter(field => field.label === 'Número do contrato').length, 1);
+    assert.equal(configured.deals.every(deal => deal.customFields.some(field => field.label === 'Número do contrato')), true);
+
+    await dialog.getByLabel('Nome do campo').fill('número DO CONTRATO');
+    await dialog.getByRole('button', { name: 'Criar campo' }).click();
+    assert.match(await dialog.locator('#fieldManagerError').innerText(), /Já existe um campo com esse nome/);
+    configured = await stateFrom(page);
+    assert.equal(configured.customFieldSchemas.deals.filter(field => field.label.toLocaleLowerCase('pt-BR') === 'número do contrato').length, 1);
+
+    await dialog.getByLabel('Nome do campo').fill('Prioridade comercial');
+    await dialog.getByLabel('Tipo do campo').selectOption('select');
+    await dialog.getByLabel('Opções').fill('   ');
+    await dialog.getByRole('button', { name: 'Criar campo' }).click();
+    assert.equal(await dialog.locator('#fieldManagerError').innerText(), 'Informe ao menos uma opção.');
+    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
+
+    await selectProfile(page, 'u-paula');
+    await goTo(page, 'Negócios');
+    assert.equal(await page.getByRole('button', { name: 'Gerenciar campos' }).count(), 0);
+    assert.equal(await page.evaluate(() => openFieldManager('deals')), false);
+    assert.equal(await page.locator('#fieldManagerDialog').getAttribute('open'), null);
   });
 
   await run('BITRIX-02 rejeita arquivos inválidos e mantém a importação parcial', async page => {

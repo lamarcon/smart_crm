@@ -237,6 +237,13 @@
     .drawer-custom-add { display: flex; gap: 8px; align-items: end; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--slate-200); }
     .drawer-custom-add .field { flex: 1; }
     .drawer-custom-empty { padding: 22px; border: 1px dashed var(--slate-300); border-radius: 10px; color: var(--slate-500); text-align: center; font-size: 12px; }
+    .field-manager-list { display: grid; gap: 8px; margin-top: 10px; }
+    .field-manager-check { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid var(--slate-200); border-radius: 9px; color: var(--navy-700); font-size: 12px; font-weight: 700; }
+    .field-manager-check input { width: 17px; height: 17px; }
+    .field-manager-created { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .field-manager-error { min-height: 18px; margin: 10px 0 0; color: var(--red-600); font-size: 12px; font-weight: 700; }
+    .field-manager-section + .field-manager-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--slate-200); }
+    .field-manager-section h4 { margin: 0; font-size: 14px; }
     dialog.filter-dialog { width: min(940px, calc(100% - 28px)); }
     .filter-layout { min-height: min(680px, calc(100vh - 50px)); display: grid; grid-template-columns: 245px minmax(0, 1fr); }
     .filter-sidebar { display: flex; flex-direction: column; gap: 14px; padding: 21px 17px; border-right: 1px solid var(--slate-200); background: var(--slate-50); }
@@ -414,6 +421,31 @@
     </form>
   </dialog>
 
+  <dialog id="fieldManagerDialog">
+    <form id="fieldManagerForm">
+      <div class="modal-head"><div><h3 id="fieldManagerTitle">Gerenciar campos</h3><p class="hint">A configuração vale para todo o módulo.</p></div><button type="button" class="close-button" data-close="fieldManagerDialog" aria-label="Fechar">×</button></div>
+      <div class="modal-body">
+        <section class="field-manager-section">
+          <h4>Campos padrão visíveis</h4>
+          <div class="field-manager-list" id="fieldManagerStandardFields"></div>
+          <button type="button" class="button small" data-action="save-field-visibility">Salvar visualização</button>
+        </section>
+        <section class="field-manager-section">
+          <h4>Criar campo personalizado</h4>
+          <div class="field-manager-created" id="fieldManagerCreatedFields"></div>
+          <div class="form-grid" style="margin-top:14px">
+            <div class="field"><label for="customFieldName">Nome do campo</label><input id="customFieldName" autocomplete="off"></div>
+            <div class="field"><label for="customFieldType">Tipo do campo</label><select id="customFieldType"></select></div>
+            <div class="field full" id="customFieldOptionsWrap" hidden><label for="customFieldOptions">Opções</label><textarea id="customFieldOptions" placeholder="Uma opção por linha"></textarea></div>
+          </div>
+          <p class="field-manager-error" id="fieldManagerError" role="alert"></p>
+          <button type="button" class="button primary" data-action="create-custom-field">Criar campo</button>
+        </section>
+      </div>
+      <div class="modal-foot"><button type="button" class="button" data-close="fieldManagerDialog">Fechar</button></div>
+    </form>
+  </dialog>
+
   <dialog id="filterDialog" class="filter-dialog">
     <form id="filterForm">
       <div class="filter-layout">
@@ -439,6 +471,12 @@
       'Em Contato', 'Orçamento Proposta Preço', 'Orçamentos enviados',
       'Negociação Revisão', 'Pedido aprovado Consultar', 'Faturando',
       'Ganho', 'Orçamento Não Aprovado', 'Analisar falha'
+    ];
+    const customFieldTypes = [
+      ['text', 'Texto curto'], ['textarea', 'Texto longo'], ['number', 'Número'],
+      ['money', 'Moeda'], ['date', 'Data'], ['boolean', 'Sim/Não'],
+      ['email', 'E-mail'], ['phone', 'Telefone'], ['url', 'Link'],
+      ['select', 'Seleção única'], ['multiselect', 'Seleção múltipla']
     ];
     const pageMeta = {
       dashboard: ['Visão geral', 'Acompanhe os principais indicadores comerciais'],
@@ -589,6 +627,13 @@
       const normalized = raw;
       const base = Date.parse('2026-08-18T12:00:00.000Z');
       const fallbackAt = (index, hourOffset = 0) => new Date(base - index * 86400000 + hourOffset * 3600000).toISOString();
+      normalized.customFieldSchemas ||= { leads: [], contacts: [], companies: [], deals: [] };
+      normalized.moduleFieldSettings ||= { leads: { hiddenStandardFields: [] }, contacts: { hiddenStandardFields: [] }, companies: { hiddenStandardFields: [] }, deals: { hiddenStandardFields: [] } };
+      ['leads', 'contacts', 'companies', 'deals'].forEach(collection => {
+        normalized.customFieldSchemas[collection] = Array.isArray(normalized.customFieldSchemas[collection]) ? normalized.customFieldSchemas[collection] : [];
+        normalized.moduleFieldSettings[collection] ||= { hiddenStandardFields: [] };
+        normalized.moduleFieldSettings[collection].hiddenStandardFields = Array.isArray(normalized.moduleFieldSettings[collection].hiddenStandardFields) ? normalized.moduleFieldSettings[collection].hiddenStandardFields : [];
+      });
       ['leads', 'contacts', 'companies'].forEach(collection => {
         (normalized[collection] || []).forEach((record, index) => {
           record.createdAt = ensureIso(record.createdAt, fallbackAt(index + 1));
@@ -617,6 +662,9 @@
           deal.visibleCustomFieldKeys = deal.customFields.filter(field => field.value !== '').map(field => field.key);
         }
       });
+      ['leads', 'contacts', 'companies', 'deals'].forEach(collection => {
+        (normalized[collection] || []).forEach(record => ensureSchemaFields(normalized, collection, record));
+      });
       const defaults = defaultUiState(normalized.users || []);
       normalized.ui ||= defaults;
       normalized.ui.filtersByUser ||= {};
@@ -632,6 +680,20 @@
         normalized.ui.dashboardScopeByUser[user.id] ||= 'all';
       });
       return normalized;
+    }
+
+    function emptyCustomValue(type) { return type === 'multiselect' ? [] : type === 'boolean' ? false : ''; }
+
+    function ensureSchemaFields(targetState, collection, record) {
+      record.customFields = Array.isArray(record.customFields) ? record.customFields : [];
+      record.visibleCustomFieldKeys = Array.isArray(record.visibleCustomFieldKeys) ? record.visibleCustomFieldKeys : record.customFields.filter(field => field.value !== '').map(field => field.key);
+      (targetState.customFieldSchemas?.[collection] || []).forEach(schema => {
+        if (!record.customFields.some(field => field.key === schema.key)) {
+          record.customFields.push({ ...clone(schema), value: emptyCustomValue(schema.type) });
+          record.visibleCustomFieldKeys.push(schema.key);
+        }
+      });
+      record.visibleCustomFieldKeys = [...new Set(record.visibleCustomFieldKeys)];
     }
 
     function loadState() {
@@ -1125,7 +1187,8 @@
       const countBadge = activeFilterCount(entity);
       const mode = stageOptions.length ? getViewMode(entity) : 'list';
       const viewSwitch = stageOptions.length ? `<div class="view-switch" aria-label="Modo de visualização"><button type="button" aria-label="Lista" class="${mode === 'list' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="list">☷ Lista</button><button type="button" aria-label="Kanban" class="${mode === 'kanban' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="kanban">▦ Kanban</button></div>` : '';
-      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}<button class="button primary" data-action="new" data-entity="${entity.slice(0, -1)}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados de demonstração</span></div></div>`;
+      const manageFields = currentUser().role === 'Administrador' ? `<button class="button" data-action="manage-fields" data-scope="${entity}">Gerenciar campos</button>` : '';
+      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}${manageFields}<button class="button primary" data-action="new" data-entity="${entity.slice(0, -1)}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados de demonstração</span></div></div>`;
     }
 
     function leadsHTML() {
@@ -1208,6 +1271,86 @@
         ['assistants', 'Assistente', 'assistant', false]
       ]
     };
+
+    function fieldManagerEntity(scope) { return ({ leads: 'lead', contacts: 'contact', companies: 'company', deals: 'deal' })[scope]; }
+
+    function renderFieldManager() {
+      const form = document.getElementById('fieldManagerForm');
+      const scope = form.dataset.scope;
+      const entity = fieldManagerEntity(scope);
+      if (!entity) return;
+      const hidden = new Set(state.moduleFieldSettings[scope]?.hiddenStandardFields || []);
+      document.getElementById('fieldManagerStandardFields').innerHTML = formDefinitions[entity].map(([name, label]) => `<label class="field-manager-check"><input type="checkbox" data-standard-field="${escapeHTML(name)}" ${hidden.has(name) ? '' : 'checked'}>${escapeHTML(label)}</label>`).join('');
+      const schemas = state.customFieldSchemas[scope] || [];
+      document.getElementById('fieldManagerCreatedFields').innerHTML = schemas.length ? schemas.map(field => `<span class="tag">${escapeHTML(field.label)} · ${escapeHTML(customFieldTypes.find(([type]) => type === field.type)?.[1] || field.type)}</span>`).join('') : '<span class="hint">Nenhum campo personalizado criado.</span>';
+      document.getElementById('customFieldType').innerHTML = customFieldTypes.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+      document.getElementById('customFieldName').value = '';
+      document.getElementById('customFieldType').value = 'text';
+      document.getElementById('customFieldOptions').value = '';
+      document.getElementById('customFieldOptionsWrap').hidden = true;
+      document.getElementById('fieldManagerError').textContent = '';
+    }
+
+    function openFieldManager(scope) {
+      if (currentUser().role !== 'Administrador' || !fieldManagerEntity(scope)) return false;
+      const form = document.getElementById('fieldManagerForm');
+      form.dataset.scope = scope;
+      document.getElementById('fieldManagerTitle').textContent = `Gerenciar campos de ${entityConfigs[scope].label === 'Negócio' ? 'Negócios' : entityConfigs[scope].label + 's'}`;
+      renderFieldManager();
+      document.getElementById('fieldManagerDialog').showModal();
+      return true;
+    }
+
+    function saveFieldVisibility() {
+      if (currentUser().role !== 'Administrador') return false;
+      const form = document.getElementById('fieldManagerForm');
+      const scope = form.dataset.scope;
+      state.moduleFieldSettings[scope].hiddenStandardFields = Array.from(form.querySelectorAll('[data-standard-field]:not(:checked)')).map(input => input.dataset.standardField);
+      saveState();
+      document.getElementById('fieldManagerDialog').close();
+      render();
+      toast('Visualização de campos atualizada.');
+      return true;
+    }
+
+    function normalizedFieldOptions(value) {
+      const seen = new Set();
+      return String(value || '').split(/[\n,;]/).map(option => option.trim()).filter(option => {
+        const key = option.toLocaleLowerCase('pt-BR');
+        if (!option || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function createCustomField() {
+      if (currentUser().role !== 'Administrador') return false;
+      const form = document.getElementById('fieldManagerForm');
+      const scope = form.dataset.scope;
+      const name = document.getElementById('customFieldName').value.trim();
+      const type = document.getElementById('customFieldType').value;
+      const error = document.getElementById('fieldManagerError');
+      if (!name) { error.textContent = 'Informe o nome do campo.'; return false; }
+      if ((state.customFieldSchemas[scope] || []).some(field => field.label.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR'))) {
+        error.textContent = 'Já existe um campo com esse nome.';
+        return false;
+      }
+      const options = normalizedFieldOptions(document.getElementById('customFieldOptions').value);
+      if (['select', 'multiselect'].includes(type) && !options.length) { error.textContent = 'Informe ao menos uma opção.'; return false; }
+      const key = `user:${Date.now().toString(36)}:${name.toLocaleLowerCase('pt-BR').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'campo'}`;
+      const schema = { key, label: name, type, options, userCreated: true };
+      state.customFieldSchemas[scope].push(schema);
+      state[scope].forEach(record => {
+        record.customFields = Array.isArray(record.customFields) ? record.customFields : [];
+        record.customFields.push({ ...clone(schema), value: emptyCustomValue(type) });
+        record.visibleCustomFieldKeys = [...new Set([...(record.visibleCustomFieldKeys || []), key])];
+      });
+      saveState();
+      renderFieldManager();
+      toast(`Campo ${name} criado.`);
+      return true;
+    }
+
     let drawerInitialValue = '';
     let drawerActiveTab = 'info';
 
@@ -1225,7 +1368,8 @@
       form.dataset.id = id;
       document.getElementById('entityDrawerTitle').textContent = `Editar ${entityLabel(entity)}`;
       document.getElementById('entityDrawerSubtitle').textContent = `${id} · As alterações ficam somente neste navegador.`;
-      document.getElementById('drawerFields').innerHTML = formDefinitions[entity].map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
+      const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
+      document.getElementById('drawerFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
       const hasCustomFields = Array.isArray(record.customFields) && record.customFields.length > 0;
       renderDrawerCustomFields(record);
       const customTab = document.querySelector('[data-drawer-tab="custom"]');
@@ -1323,7 +1467,8 @@
       form.dataset.entity = entity;
       form.dataset.id = id || '';
       document.getElementById('entityDialogTitle').textContent = `${id ? 'Editar' : 'Novo'} ${labels[entity]}`;
-      document.getElementById('entityFields').innerHTML = formDefinitions[entity].map(([name, label, type, required]) => fieldHTML(name, label, type, required, record?.[name])).join('');
+      const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
+      document.getElementById('entityFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record?.[name])).join('');
       dialog.showModal();
     }
 
@@ -1366,7 +1511,9 @@
         Object.assign(base, { createdAt: now, updatedAt: now });
         if (entity === 'lead') Object.assign(base, { stage: 'Em contato' });
         if (entity === 'deal') Object.assign(base, { quotes: [], stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [] });
-        state[collection].unshift(Object.assign(base, data));
+        Object.assign(base, data);
+        ensureSchemaFields(state, collection, base);
+        state[collection].unshift(base);
       }
       notify(existing ? `${entityLabel(entity)} atualizado.` : `Novo ${entityLabel(entity)} criado.`, data.name || data.title || data.company || 'Registro demonstrativo');
       saveState();
@@ -1401,6 +1548,7 @@
         assistants: [...(lead.assistants || [])], createdAt: now, updatedAt: now,
         stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [], quotes: []
       };
+      ensureSchemaFields(state, 'deals', deal);
       state.deals.unshift(deal);
       notify('Lead convertido em Negócio.', `${lead.name} → ${deal.id}`, lead.responsibleId);
       saveState(); render(); toast(`Lead convertido. O Negócio ${deal.id} foi criado em Em Contato.`);
@@ -1789,6 +1937,9 @@
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
       if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
       if (action === 'add-custom-field') addDrawerCustomField();
+      if (action === 'manage-fields') openFieldManager(button.dataset.scope);
+      if (action === 'save-field-visibility') saveFieldVisibility();
+      if (action === 'create-custom-field') createCustomField();
       if (action === 'open-bitrix-import') openBitrixImport();
       if (action === 'open-dashboard-filters') openDashboardFilters();
       if (action === 'dashboard-filter-scope') setDashboardFilterScope(button.dataset.dashboardFilterScope);
@@ -1821,6 +1972,7 @@
 
     document.addEventListener('change', event => {
       if (event.target.dataset.bitrixEntity) syncBitrixImportButton();
+      if (event.target.id === 'customFieldType') document.getElementById('customFieldOptionsWrap').hidden = !['select', 'multiselect'].includes(event.target.value);
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }
       if (event.target.name === 'filter-operator' && event.target.closest('#filterDialog')) { syncFilterDraftFromPanel(); renderFilterPanel(); }
       if (event.target.dataset.stageControl) requestStageChange(event.target.dataset.entity, event.target.dataset.stageControl, event.target.value);
