@@ -83,6 +83,9 @@ async function createLead(page, name) {
     const legacy = await stateFrom(page);
     legacy.leads[0].name = 'Lead legado preservado';
     delete legacy.ui;
+    delete legacy.customFieldSchemas;
+    delete legacy.moduleFieldSettings;
+    legacy.users.forEach(user => { delete user.email; delete user.jobTitle; delete user.status; });
     legacy.leads.forEach(lead => { lead.createdAt = 'Hoje, 09:42'; delete lead.updatedAt; });
     legacy.contacts.forEach(contact => { delete contact.createdAt; delete contact.updatedAt; });
     legacy.companies.forEach(company => { delete company.createdAt; delete company.updatedAt; });
@@ -101,6 +104,9 @@ async function createLead(page, name) {
     assert.equal(normalized.leads[0].name, 'Lead legado preservado');
     assert.deepEqual(normalized.ui.viewModesByUser['u-admin'], { leads: 'list', deals: 'list' });
     assert.equal(normalized.ui.dashboardScopeByUser['u-admin'], 'all');
+    assert.deepEqual(Object.keys(normalized.customFieldSchemas), ['leads', 'contacts', 'companies', 'deals']);
+    assert.deepEqual(normalized.moduleFieldSettings.deals.hiddenStandardFields, []);
+    assert.equal(normalized.users.every(user => user.email && user.jobTitle && user.status === 'Ativo'), true);
     for (const record of [...normalized.leads, ...normalized.contacts, ...normalized.companies]) {
       assert.equal(Number.isNaN(Date.parse(record.createdAt)), false, `${record.id} sem createdAt ISO`);
       assert.equal(Number.isNaN(Date.parse(record.updatedAt)), false, `${record.id} sem updatedAt ISO`);
@@ -150,12 +156,13 @@ async function createLead(page, name) {
     assert.equal(await drawer.locator('#drawerCustomPanel b').count(), 0);
   });
 
-  await run('DEMO-04 navega pelos seis destinos', async page => {
+  await run('DEMO-04 Administrador navega pelos sete destinos', async page => {
     const destinations = [
       ['Visão geral', 'Visão geral'], ['Leads', 'Leads'], ['Contatos', 'Contatos'],
-      ['Empresas', 'Empresas'], ['Negócios', 'Negócios'], ['Notificações', 'Notificações']
+      ['Empresas', 'Empresas'], ['Negócios', 'Negócios'], ['Notificações', 'Notificações'],
+      ['Usuários e permissões', 'Usuários e permissões']
     ];
-    assert.equal(await page.locator('.nav button').count(), 6);
+    assert.equal(await page.locator('.nav button:visible').count(), 7);
     for (const [button, heading] of destinations) {
       await goTo(page, button);
       assert.equal(await page.locator('#topTitle').innerText(), heading);
@@ -1092,11 +1099,15 @@ async function createLead(page, name) {
   });
 
   await run('ADM-01 Administrador gerencia campos padrão e personalizados por módulo', async page => {
-    await goTo(page, 'Negócios');
+    for (const module of ['Leads', 'Contatos', 'Empresas', 'Negócios']) {
+      await goTo(page, module);
+      assert.equal(await page.getByRole('button', { name: 'Gerenciar campos' }).count(), 1);
+    }
     const manage = page.getByRole('button', { name: 'Gerenciar campos' });
     await manage.click();
     const dialog = page.locator('#fieldManagerDialog');
     await dialog.waitFor({ state: 'visible' });
+    assert.equal(await dialog.locator('[data-standard-field]').count(), 7);
 
     assert.deepEqual(await dialog.locator('#customFieldType option').allTextContents(), [
       'Texto curto', 'Texto longo', 'Número', 'Moeda', 'Data', 'Sim/Não',
@@ -1134,6 +1145,15 @@ async function createLead(page, name) {
     configured = await stateFrom(page);
     assert.equal(configured.customFieldSchemas.deals.filter(field => field.label.toLocaleLowerCase('pt-BR') === 'número do contrato').length, 1);
 
+    await dialog.getByLabel('Nome do campo').fill('');
+    await dialog.getByRole('button', { name: 'Criar campo' }).click();
+    assert.equal(await dialog.locator('#fieldManagerError').innerText(), 'Informe o nome do campo.');
+    await dialog.getByLabel('Nome do campo').fill('Canais comerciais');
+    await dialog.getByLabel('Tipo do campo').selectOption('multiselect');
+    await dialog.getByLabel('Opções').fill('Portal\nportal\nEvento');
+    await dialog.getByRole('button', { name: 'Criar campo' }).click();
+    assert.deepEqual((await stateFrom(page)).customFieldSchemas.deals.find(field => field.label === 'Canais comerciais').options, ['Portal', 'Evento']);
+
     await dialog.getByLabel('Nome do campo').fill('Prioridade comercial');
     await dialog.getByLabel('Tipo do campo').selectOption('select');
     await dialog.getByLabel('Opções').fill('   ');
@@ -1141,11 +1161,191 @@ async function createLead(page, name) {
     assert.equal(await dialog.locator('#fieldManagerError').innerText(), 'Informe ao menos uma opção.');
     await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
 
+    await page.getByRole('button', { name: 'Novo Negócio' }).click();
+    const newDialog = page.locator('#entityDialog');
+    await newDialog.getByLabel('Título do Negócio *').fill('Negócio com campo configurado');
+    await newDialog.getByLabel('Empresa *').fill('Empresa Nova');
+    await newDialog.getByLabel('Valor (R$) *').fill('100');
+    await newDialog.getByLabel('Responsável *').selectOption('u-paula');
+    await newDialog.getByRole('button', { name: 'Salvar registro' }).click();
+    const created = (await stateFrom(page)).deals.find(deal => deal.title === 'Negócio com campo configurado');
+    assert.equal(created.customFields.some(field => field.label === 'Número do contrato'), true);
+    assert.equal(created.visibleCustomFieldKeys.includes(created.customFields.find(field => field.label === 'Número do contrato').key), true);
+
     await selectProfile(page, 'u-paula');
     await goTo(page, 'Negócios');
     assert.equal(await page.getByRole('button', { name: 'Gerenciar campos' }).count(), 0);
     assert.equal(await page.evaluate(() => openFieldManager('deals')), false);
     assert.equal(await page.locator('#fieldManagerDialog').getAttribute('open'), null);
+  });
+
+  await run('ADM-02 campos tipados preservam valores ocultação busca e filtros', async page => {
+    const configured = await stateFrom(page);
+    const schemas = [
+      { key: 'test:text', label: 'Contrato teste', type: 'text', options: [], userCreated: true },
+      { key: 'test:textarea', label: 'Escopo detalhado', type: 'textarea', options: [], userCreated: true },
+      { key: 'test:number', label: 'Quantidade teste', type: 'number', options: [], userCreated: true },
+      { key: 'test:money', label: 'Orçamento teste', type: 'money', options: [], userCreated: true },
+      { key: 'test:date', label: 'Data teste', type: 'date', options: [], userCreated: true },
+      { key: 'test:boolean', label: 'Aprovado teste', type: 'boolean', options: [], userCreated: true },
+      { key: 'test:email', label: 'E-mail teste', type: 'email', options: [], userCreated: true },
+      { key: 'test:phone', label: 'Telefone teste', type: 'phone', options: [], userCreated: true },
+      { key: 'test:url', label: 'Link teste', type: 'url', options: [], userCreated: true },
+      { key: 'test:select', label: 'Prioridade teste', type: 'select', options: ['Alta', 'Baixa'], userCreated: true },
+      { key: 'test:multiselect', label: 'Produtos teste', type: 'multiselect', options: ['CRM', 'Portal'], userCreated: true }
+    ];
+    configured.customFieldSchemas.deals = schemas;
+    configured.deals.forEach(deal => {
+      deal.customFields = [...(deal.customFields || []).filter(field => !field.key.startsWith('test:')), ...schemas.map(field => ({ ...field, value: field.type === 'multiselect' ? [] : field.type === 'boolean' ? false : '' }))];
+      deal.visibleCustomFieldKeys = [...new Set([...(deal.visibleCustomFieldKeys || []), ...schemas.map(field => field.key)])];
+    });
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    await goTo(page, 'Negócios');
+    const firstDeal = (await stateFrom(page)).deals[0];
+    await page.getByRole('button', { name: firstDeal.title }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Escopo detalhado').evaluate(element => element.tagName), 'TEXTAREA');
+    assert.equal(await drawer.getByLabel('Quantidade teste').getAttribute('type'), 'number');
+    assert.equal(await drawer.getByLabel('Orçamento teste').getAttribute('step'), '0.01');
+    assert.equal(await drawer.getByLabel('Data teste').getAttribute('type'), 'date');
+    assert.equal(await drawer.getByLabel('Aprovado teste').getAttribute('type'), 'checkbox');
+    assert.equal(await drawer.getByLabel('E-mail teste').getAttribute('type'), 'email');
+    assert.equal(await drawer.getByLabel('Telefone teste').getAttribute('type'), 'tel');
+    assert.equal(await drawer.getByLabel('Link teste').getAttribute('type'), 'url');
+    assert.equal(await drawer.getByLabel('Prioridade teste').evaluate(element => element.tagName), 'SELECT');
+    assert.equal(await drawer.getByLabel('Produtos teste').getAttribute('multiple'), '');
+
+    await drawer.getByLabel('Contrato teste').fill('CTR-900');
+    await drawer.getByLabel('Escopo detalhado').fill('Implantação completa');
+    await drawer.getByLabel('Quantidade teste').fill('42');
+    await drawer.getByLabel('Orçamento teste').fill('1234.56');
+    await drawer.getByLabel('Data teste').fill('2026-09-15');
+    await drawer.getByLabel('Aprovado teste').check();
+    await drawer.getByLabel('E-mail teste').fill('contrato@teste.invalid');
+    await drawer.getByLabel('Telefone teste').fill('+55 11 99999-0000');
+    await drawer.getByLabel('Link teste').fill('link inválido');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    assert.equal(await drawer.getByLabel('Link teste').evaluate(element => element.checkValidity()), false);
+    await drawer.waitFor({ state: 'visible' });
+    await drawer.getByLabel('Link teste').fill('https://example.test/contrato');
+    await drawer.getByLabel('Prioridade teste').selectOption('Alta');
+    await drawer.getByLabel('Produtos teste').selectOption(['CRM', 'Portal']);
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+
+    let saved = (await stateFrom(page)).deals.find(deal => deal.id === firstDeal.id);
+    const values = Object.fromEntries(saved.customFields.filter(field => field.key.startsWith('test:')).map(field => [field.key, field.value]));
+    assert.equal(values['test:text'], 'CTR-900');
+    assert.equal(values['test:number'], 42);
+    assert.equal(values['test:money'], 1234.56);
+    assert.equal(values['test:date'], '2026-09-15');
+    assert.equal(values['test:boolean'], true);
+    assert.equal(values['test:select'], 'Alta');
+    assert.deepEqual(values['test:multiselect'], ['CRM', 'Portal']);
+
+    await page.getByRole('button', { name: firstDeal.title }).click();
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    await drawer.locator('[data-action="hide-custom-field"][data-key="test:text"]').click();
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    saved = (await stateFrom(page)).deals.find(deal => deal.id === firstDeal.id);
+    assert.equal(saved.customFields.find(field => field.key === 'test:text').value, 'CTR-900');
+    assert.equal(saved.visibleCustomFieldKeys.includes('test:text'), false);
+
+    await page.getByRole('button', { name: firstDeal.title }).click();
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Contrato teste').count(), 0);
+    await drawer.getByLabel('Campo adicional para adicionar').selectOption('test:text');
+    await drawer.getByRole('button', { name: 'Adicionar campo' }).click();
+    assert.equal(await drawer.getByLabel('Contrato teste').inputValue(), 'CTR-900');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+
+    await page.getByPlaceholder('Buscar em negócios...').fill('CTR-900');
+    assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
+    assert.equal(await page.evaluate(() => customFilterDefinitions('deals').find(field => field.label === 'Orçamento teste').type), 'money');
+    assert.deepEqual(await page.evaluate(() => filterOperatorOptions(customFilterDefinitions('deals').find(field => field.label === 'Orçamento teste')).map(option => option[1])), ['Valor exato', 'Maior que', 'Menor que', 'Entre']);
+  });
+
+  await run('ADM-03 Administrador convida edita e controla acesso de funcionários', async page => {
+    await goTo(page, 'Usuários e permissões');
+    await page.getByRole('button', { name: 'Convidar funcionário' }).click();
+    const dialog = page.locator('#userDialog');
+    await dialog.getByLabel('Nome completo').fill('Juliana Lima');
+    await dialog.getByLabel('E-mail').fill('juliana@teste.invalid');
+    await dialog.getByLabel('Cargo profissional').fill('Consultora comercial');
+    await dialog.getByLabel('Equipe').fill('Vendas CMS');
+    await dialog.getByLabel('Perfil de acesso').selectOption('Vendedor');
+    await dialog.getByRole('button', { name: 'Enviar convite' }).click();
+
+    let state = await stateFrom(page);
+    let juliana = state.users.find(user => user.email === 'juliana@teste.invalid');
+    assert.deepEqual({ name: juliana.name, email: juliana.email, jobTitle: juliana.jobTitle, team: juliana.team, role: juliana.role, status: juliana.status }, {
+      name: 'Juliana Lima', email: 'juliana@teste.invalid', jobTitle: 'Consultora comercial', team: 'Vendas CMS', role: 'Vendedor', status: 'Pendente'
+    });
+    assert.equal(await page.getByLabel('Perfil demonstrativo').locator('option[value="' + juliana.id + '"]').count(), 0);
+
+    await page.getByRole('button', { name: 'Convidar funcionário' }).click();
+    await dialog.getByLabel('Nome completo').fill('Juliana Duplicada');
+    await dialog.getByLabel('E-mail').fill('JULIANA@TESTE.INVALID');
+    await dialog.getByLabel('Cargo profissional').fill('Outro cargo');
+    await dialog.getByLabel('Equipe').fill('Outra equipe');
+    await dialog.getByLabel('Perfil de acesso').selectOption('Gestor');
+    await dialog.getByRole('button', { name: 'Enviar convite' }).click();
+    assert.match(await dialog.locator('#userDialogError').innerText(), /e-mail já está cadastrado/i);
+    assert.equal((await stateFrom(page)).users.filter(user => user.email.toLocaleLowerCase('pt-BR') === 'juliana@teste.invalid').length, 1);
+    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
+
+    const invitedAt = juliana.invitedAt;
+    await page.getByRole('button', { name: 'Reenviar convite de Juliana Lima' }).click();
+    juliana = (await stateFrom(page)).users.find(user => user.id === juliana.id);
+    assert.equal(juliana.status, 'Pendente');
+    assert.notEqual(juliana.invitedAt, invitedAt);
+
+    await page.getByRole('button', { name: 'Editar Juliana Lima' }).click();
+    await dialog.getByLabel('Cargo profissional').fill('Executiva de contas');
+    await dialog.getByLabel('Equipe').fill('Vendas Enterprise');
+    await dialog.getByLabel('Perfil de acesso').selectOption('Gestor');
+    await dialog.getByRole('button', { name: 'Salvar funcionário' }).click();
+    juliana = (await stateFrom(page)).users.find(user => user.id === juliana.id);
+    assert.deepEqual([juliana.jobTitle, juliana.team, juliana.role], ['Executiva de contas', 'Vendas Enterprise', 'Gestor']);
+
+    await page.getByRole('button', { name: 'Simular aceitação de Juliana Lima' }).click();
+    assert.equal((await stateFrom(page)).users.find(user => user.id === juliana.id).status, 'Ativo');
+    assert.equal(await page.getByLabel('Perfil demonstrativo').locator(`option[value="${juliana.id}"]`).count(), 1);
+    await page.getByRole('button', { name: 'Desativar Juliana Lima' }).click();
+    assert.equal((await stateFrom(page)).users.find(user => user.id === juliana.id).status, 'Inativo');
+    assert.equal(await page.getByLabel('Perfil demonstrativo').locator(`option[value="${juliana.id}"]`).count(), 0);
+
+    await page.getByRole('button', { name: 'Convidar funcionário' }).click();
+    await dialog.getByLabel('Nome completo').fill('Rafael Teste');
+    await dialog.getByLabel('E-mail').fill('rafael@teste.invalid');
+    await dialog.getByLabel('Cargo profissional').fill('SDR');
+    await dialog.getByLabel('Equipe').fill('Vendas CMS');
+    await dialog.getByLabel('Perfil de acesso').selectOption('Vendedor');
+    await dialog.getByRole('button', { name: 'Enviar convite' }).click();
+    await page.getByRole('button', { name: 'Cancelar convite de Rafael Teste' }).click();
+    const canceled = (await stateFrom(page)).users.find(user => user.email === 'rafael@teste.invalid');
+    assert.equal(canceled.status, 'Cancelado');
+
+    await page.getByRole('button', { name: 'Convidar funcionário' }).click();
+    await dialog.getByLabel('Nome completo').fill('Rafael Reativado');
+    await dialog.getByLabel('E-mail').fill('RAFAEL@TESTE.INVALID');
+    await dialog.getByLabel('Cargo profissional').fill('Consultor');
+    await dialog.getByLabel('Equipe').fill('Vendas CMS');
+    await dialog.getByLabel('Perfil de acesso').selectOption('Vendedor');
+    await dialog.getByRole('button', { name: 'Enviar convite' }).click();
+    const reinvited = (await stateFrom(page)).users.filter(user => user.email.toLocaleLowerCase('pt-BR') === 'rafael@teste.invalid');
+    assert.equal(reinvited.length, 1);
+    assert.equal(reinvited[0].id, canceled.id);
+    assert.equal(reinvited[0].status, 'Pendente');
+    assert.equal(await page.evaluate(() => changeUserStatus('u-admin', 'Inativo')), false);
+    assert.equal((await stateFrom(page)).users.find(user => user.id === 'u-admin').status, 'Ativo');
+
+    await selectProfile(page, 'u-paula');
+    assert.equal(await page.locator('[data-admin-nav]:visible').count(), 0);
+    await page.evaluate(() => showView('admin'));
+    assert.equal(await page.locator('#topTitle').innerText(), 'Visão geral');
   });
 
   await run('BITRIX-02 rejeita arquivos inválidos e mantém a importação parcial', async page => {

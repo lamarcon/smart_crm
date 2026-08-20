@@ -6,9 +6,9 @@ O protótipo permite editar campos adicionais importados, mas não permite criar
 
 ## Goals
 
-- [ ] Permitir que Administradores gerenciem campos padrão e criem campos personalizados compartilhados por módulo.
-- [ ] Permitir ocultar e reexibir campos adicionais por cadastro sem apagar o valor.
-- [ ] Criar uma área administrativa para convites simulados e gestão de cargo, equipe, perfil e status de funcionários.
+- [x] Permitir que Administradores gerenciem campos padrão e criem campos personalizados compartilhados por módulo.
+- [x] Permitir ocultar e reexibir campos adicionais por cadastro sem apagar o valor.
+- [x] Criar uma área administrativa para convites simulados e gestão de cargo, equipe, perfil e status de funcionários.
 
 ## Out of Scope
 
@@ -118,10 +118,10 @@ O protótipo permite editar campos adicionais importados, mas não permite criar
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| ADM-01 | P1: Gerenciar campos | Execute | Pending |
-| ADM-02 | P1: Campos personalizados | Execute | Pending |
-| ADM-03 | P1: Administrar funcionários | Execute | Pending |
-| ADM-04 | Edge cases | Execute | Pending |
+| ADM-01 | P1: Gerenciar campos | Execute | Complete |
+| ADM-02 | P1: Campos personalizados | Execute | Complete |
+| ADM-03 | P1: Administrar funcionários | Execute | Complete |
+| ADM-04 | Edge cases | Execute | Complete |
 
 **Coverage:** 4 total, 4 mapped to the execution plan, 0 unmapped.
 
@@ -129,8 +129,8 @@ O protótipo permite editar campos adicionais importados, mas não permite criar
 
 ## Success Criteria
 
-- [ ] Administradores criam os 11 tipos de campo e ocultam campos padrão por módulo.
-- [ ] Usuários ocultam e reexibem campos adicionais sem perda de valor.
-- [ ] Campos personalizados participam de busca e filtros com tipos compatíveis.
-- [ ] Convites simulados e mudanças de funcionário respeitam status e perfil administrativo.
+- [x] Administradores criam os 11 tipos de campo e ocultam campos padrão por módulo.
+- [x] Usuários ocultam e reexibem campos adicionais sem perda de valor.
+- [x] Campos personalizados participam de busca e filtros com tipos compatíveis.
+- [x] Convites simulados e mudanças de funcionário respeitam status e perfil administrativo.
 - [ ] Todos os critérios têm evidência executável e validação independente PASS.

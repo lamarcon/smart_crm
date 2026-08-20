@@ -37,6 +37,7 @@
     }
 
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body {
       margin: 0;
       min-height: 100vh;
@@ -224,6 +225,7 @@
     .modal-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--slate-200); background: var(--slate-50); }
     .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
     .field { display: grid; gap: 6px; }
+    .field[hidden] { display: none !important; }
     .field.full { grid-column: 1 / -1; }
     .field label { color: var(--navy-700); font-size: 12px; font-weight: 700; }
     .field input, .field select, .field textarea { width: 100%; min-height: 40px; border: 1px solid var(--slate-300); border-radius: 9px; padding: 9px 11px; outline: 0; background: white; }
@@ -244,6 +246,10 @@
     .field-manager-error { min-height: 18px; margin: 10px 0 0; color: var(--red-600); font-size: 12px; font-weight: 700; }
     .field-manager-section + .field-manager-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--slate-200); }
     .field-manager-section h4 { margin: 0; font-size: 14px; }
+    .user-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .user-summary > div { padding: 13px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
+    .user-summary b { display: block; margin-top: 4px; font-size: 20px; }
+    .user-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
     dialog.filter-dialog { width: min(940px, calc(100% - 28px)); }
     .filter-layout { min-height: min(680px, calc(100vh - 50px)); display: grid; grid-template-columns: 245px minmax(0, 1fr); }
     .filter-sidebar { display: flex; flex-direction: column; gap: 14px; padding: 21px 17px; border-right: 1px solid var(--slate-200); background: var(--slate-50); }
@@ -302,6 +308,7 @@
       .filter-sidebar { max-height: 180px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--slate-200); }
       .filter-controls { grid-template-columns: 1fr; }
       .kanban-board { min-height: 480px; }
+      .user-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 560px) {
       .demo-banner { font-size: 11px; }
@@ -310,6 +317,7 @@
       .stat { min-height: 108px; }
       .pipeline-row { grid-template-columns: 112px minmax(80px, 1fr) 65px; }
       .form-grid { grid-template-columns: 1fr; }
+      .user-summary { grid-template-columns: 1fr; }
       .field.full { grid-column: auto; }
       .notice { grid-template-columns: 34px 1fr; }
       .notice .button { grid-column: 2; justify-self: start; }
@@ -332,6 +340,7 @@
         <button data-view="companies"><span class="nav-icon">▦</span>Empresas</button>
         <button data-view="deals"><span class="nav-icon">◇</span>Negócios <span class="nav-count" id="dealNavCount">0</span></button>
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
+        <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
       </nav>
       <div class="sidebar-note"><strong>Protótipo local</strong><br>As alterações ficam apenas neste navegador e podem ser restauradas.</div>
     </aside>
@@ -359,6 +368,7 @@
         <section class="page" id="page-companies"></section>
         <section class="page" id="page-deals"></section>
         <section class="page" id="page-notifications"></section>
+        <section class="page" id="page-admin"></section>
       </div>
     </main>
   </div>
@@ -423,7 +433,7 @@
 
   <dialog id="fieldManagerDialog">
     <form id="fieldManagerForm">
-      <div class="modal-head"><div><h3 id="fieldManagerTitle">Gerenciar campos</h3><p class="hint">A configuração vale para todo o módulo.</p></div><button type="button" class="close-button" data-close="fieldManagerDialog" aria-label="Fechar">×</button></div>
+      <div class="modal-head"><div><h3 id="fieldManagerTitle">Gerenciar campos</h3><p class="hint">A configuração vale para todo o módulo.</p></div><button type="button" class="close-button" data-close="fieldManagerDialog" aria-label="Fechar gerenciador de campos">×</button></div>
       <div class="modal-body">
         <section class="field-manager-section">
           <h4>Campos padrão visíveis</h4>
@@ -443,6 +453,20 @@
         </section>
       </div>
       <div class="modal-foot"><button type="button" class="button" data-close="fieldManagerDialog">Fechar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="userDialog">
+    <form id="userForm">
+      <div class="modal-head"><div><h3 id="userDialogTitle">Convidar funcionário</h3><p class="hint">Convite simulado neste ambiente local.</p></div><button type="button" class="close-button" data-close="userDialog" aria-label="Fechar formulário de usuário">×</button></div>
+      <div class="modal-body"><div class="form-grid">
+        <div class="field"><label for="userName">Nome completo</label><input id="userName" name="name" required></div>
+        <div class="field"><label for="userEmail">E-mail</label><input id="userEmail" name="email" type="email" required></div>
+        <div class="field"><label for="userJobTitle">Cargo profissional</label><input id="userJobTitle" name="jobTitle" required></div>
+        <div class="field"><label for="userTeam">Equipe</label><input id="userTeam" name="team" required></div>
+        <div class="field full"><label for="userRole">Perfil de acesso</label><select id="userRole" name="role" required><option>Administrador</option><option>Gestor</option><option selected>Vendedor</option><option>Assistente</option><option>Faturamento</option></select><span class="hint">O perfil define permissões; o cargo descreve a função profissional.</span></div>
+      </div><p class="field-manager-error" id="userDialogError" role="alert"></p></div>
+      <div class="modal-foot"><button type="button" class="button" data-close="userDialog">Fechar</button><button type="submit" class="button primary" id="userSubmitButton">Enviar convite</button></div>
     </form>
   </dialog>
 
@@ -484,7 +508,8 @@
       contacts: ['Contatos', 'Pessoas relacionadas à operação comercial'],
       companies: ['Empresas', 'Organizações e contas atendidas'],
       deals: ['Negócios', 'Pipeline Vendas CMS e orçamentos'],
-      notifications: ['Notificações', 'Atualizações relevantes da sua operação']
+      notifications: ['Notificações', 'Atualizações relevantes da sua operação'],
+      admin: ['Usuários e permissões', 'Convites, cargos e perfis de acesso']
     };
     const entityConfigs = {
       leads: {
@@ -627,6 +652,13 @@
       const normalized = raw;
       const base = Date.parse('2026-08-18T12:00:00.000Z');
       const fallbackAt = (index, hourOffset = 0) => new Date(base - index * 86400000 + hourOffset * 3600000).toISOString();
+      const defaultJobs = { Administrador: 'Administradora do CRM', Gestor: 'Gestor comercial', Vendedor: 'Consultor comercial', Assistente: 'Assistente comercial', Faturamento: 'Analista de faturamento' };
+      (normalized.users || []).forEach(user => {
+        user.email ||= `${String(user.id || 'usuario').replace(/^u-/, '')}@smartcrm.local`;
+        user.jobTitle ||= defaultJobs[user.role] || 'Colaborador';
+        user.status ||= 'Ativo';
+        user.invitedAt ||= null;
+      });
       normalized.customFieldSchemas ||= { leads: [], contacts: [], companies: [], deals: [] };
       normalized.moduleFieldSettings ||= { leads: { hiddenStandardFields: [] }, contacts: { hiddenStandardFields: [] }, companies: { hiddenStandardFields: [] }, deals: { hiddenStandardFields: [] } };
       ['leads', 'contacts', 'companies', 'deals'].forEach(collection => {
@@ -740,7 +772,8 @@
         if (!definitions.has(field.key)) definitions.set(field.key, {
           name: `custom:${field.key}`,
           label: field.label,
-          type: 'text',
+          type: field.type === 'boolean' ? 'select' : field.type === 'textarea' || field.type === 'email' || field.type === 'phone' || field.type === 'url' ? 'text' : field.type || 'text',
+          options: field.type === 'boolean' ? [{ value: 'true', label: 'Sim' }, { value: 'false', label: 'Não' }] : (field.options || []).map(value => ({ value, label: value })),
           searchable: true,
           custom: true
         });
@@ -808,7 +841,7 @@
 
     function rawFieldValue(record, name) {
       if (name === 'team') return record?.team || state.users.find(user => user.id === record?.responsibleId)?.team || '';
-      if (name.startsWith('custom:')) return record?.customFields?.find(field => field.key === name.slice(7))?.value || '';
+      if (name.startsWith('custom:')) return record?.customFields?.find(field => field.key === name.slice(7))?.value ?? '';
       return record?.[name];
     }
 
@@ -888,7 +921,7 @@
 
     function filterableUsers() {
       const user = currentUser();
-      const candidates = state.users.filter(candidate => ['Administrador', 'Gestor', 'Vendedor', 'Faturamento'].includes(candidate.role));
+      const candidates = state.users.filter(candidate => candidate.status === 'Ativo' && ['Administrador', 'Gestor', 'Vendedor', 'Faturamento'].includes(candidate.role));
       if (user.role === 'Administrador') return candidates;
       return candidates.filter(candidate => candidate.team === user.team || candidate.id === user.id);
     }
@@ -898,6 +931,7 @@
       if (['responsibleId', 'ownerId'].includes(definition.name)) return filterableUsers().map(user => ({ value: user.id, label: user.name }));
       if (definition.name === 'assistants') return state.users.filter(user => user.role === 'Assistente').map(user => ({ value: user.id, label: user.name }));
       if (definition.name === 'team') return [...new Set(filterableUsers().map(user => user.team))].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(value => ({ value, label: value }));
+      if (Array.isArray(definition.options) && definition.options.length) return definition.options;
       const values = [...new Set(filterRecords(scope).flatMap(record => {
         const value = rawFieldValue(record, definition.name);
         return Array.isArray(value) ? value : [value];
@@ -1057,7 +1091,7 @@
     }
 
     function profileOptions() {
-      const allowed = state.users.filter(user => ['Administrador', 'Gestor', 'Vendedor', 'Assistente'].includes(user.role));
+      const allowed = state.users.filter(user => user.status === 'Ativo' && ['Administrador', 'Gestor', 'Vendedor', 'Assistente', 'Faturamento'].includes(user.role));
       document.getElementById('profileSelect').innerHTML = allowed.map(user => `<option value="${user.id}" ${user.id === state.currentUserId ? 'selected' : ''}>${escapeHTML(user.name)} · ${escapeHTML(user.role)}</option>`).join('');
       document.getElementById('profileAvatar').textContent = initials(currentUser().name);
     }
@@ -1224,21 +1258,103 @@
       return `<div class="page-toolbar"><div><h2>Notificações</h2><p>Avisos para ${escapeHTML(currentUser().name)}.</p></div><div class="toolbar-actions"><button class="button" data-action="read-all">✓ Marcar todas como lidas</button></div></div><div class="notice-list">${records.map(item => `<article class="notice ${item.read ? '' : 'unread'}"><span class="notice-icon">♢</span><div><p>${escapeHTML(item.text)}</p><small>${escapeHTML(item.detail)} · ${escapeHTML(item.time)}</small></div>${item.read ? '<span class="tag green">Lida</span>' : `<button class="button small" data-action="read" data-id="${item.id}">Marcar como lida</button>`}</article>`).join('') || emptyHTML('Nenhuma notificação para este perfil')}</div>`;
     }
 
+    function usersAdminHTML() {
+      if (currentUser().role !== 'Administrador') return '';
+      const statusClass = status => status === 'Ativo' ? 'green' : status === 'Pendente' ? 'amber' : status === 'Cancelado' ? 'red' : '';
+      const rows = state.users.map(user => {
+        const pendingActions = user.status === 'Pendente' ? `<button class="button small" data-action="resend-invite" data-id="${user.id}" aria-label="Reenviar convite de ${escapeHTML(user.name)}">Reenviar</button><button class="button small accent" data-action="user-status" data-status="Ativo" data-id="${user.id}" aria-label="Simular aceitação de ${escapeHTML(user.name)}">Aceitar</button><button class="button small" data-action="user-status" data-status="Cancelado" data-id="${user.id}" aria-label="Cancelar convite de ${escapeHTML(user.name)}">Cancelar</button>` : '';
+        const deactivate = user.status === 'Ativo' && user.id !== state.currentUserId ? `<button class="button small" data-action="user-status" data-status="Inativo" data-id="${user.id}" aria-label="Desativar ${escapeHTML(user.name)}">Desativar</button>` : '';
+        return `<tr data-user-id="${escapeHTML(user.id)}"><td><div class="entity"><span class="entity-avatar">${initials(user.name)}</span><div><strong>${escapeHTML(user.name)}</strong><small>${escapeHTML(user.email)}</small></div></div></td><td>${escapeHTML(user.jobTitle)}</td><td>${escapeHTML(user.team)}</td><td>${escapeHTML(user.role)}</td><td><span class="tag ${statusClass(user.status)}">${escapeHTML(user.status)}</span></td><td><div class="user-actions"><button class="button small" data-action="edit-user" data-id="${user.id}" aria-label="Editar ${escapeHTML(user.name)}">Editar</button>${pendingActions}${deactivate}</div></td></tr>`;
+      }).join('');
+      const total = status => state.users.filter(user => user.status === status).length;
+      return `<div class="page-toolbar"><div><h2>Usuários e permissões</h2><p>Gerencie cargos, equipes e acesso ao ambiente de teste.</p></div><div class="toolbar-actions"><button class="button primary" data-action="new-user">＋ Convidar funcionário</button></div></div><div class="user-summary"><div><span class="hint">Ativos</span><b>${total('Ativo')}</b></div><div><span class="hint">Pendentes</span><b>${total('Pendente')}</b></div><div><span class="hint">Inativos</span><b>${total('Inativo')}</b></div><div><span class="hint">Cancelados</span><b>${total('Cancelado')}</b></div></div><div class="list-card"><div class="table-wrap"><table><thead><tr><th>Funcionário</th><th>Cargo profissional</th><th>Equipe</th><th>Perfil de acesso</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer"><span>${state.users.length} usuário(s)</span><span>Convites simulados · sem envio de e-mail</span></div></div>`;
+    }
+
+    function openUserDialog(id = '') {
+      if (currentUser().role !== 'Administrador') return false;
+      const user = id ? state.users.find(candidate => candidate.id === id) : null;
+      const form = document.getElementById('userForm');
+      form.dataset.id = user?.id || '';
+      document.getElementById('userDialogTitle').textContent = user ? 'Editar funcionário' : 'Convidar funcionário';
+      document.getElementById('userSubmitButton').textContent = user ? 'Salvar funcionário' : 'Enviar convite';
+      document.getElementById('userName').value = user?.name || '';
+      document.getElementById('userEmail').value = user?.email || '';
+      document.getElementById('userEmail').readOnly = Boolean(user);
+      document.getElementById('userJobTitle').value = user?.jobTitle || '';
+      document.getElementById('userTeam').value = user?.team || '';
+      document.getElementById('userRole').value = user?.role || 'Vendedor';
+      document.getElementById('userDialogError').textContent = '';
+      document.getElementById('userDialog').showModal();
+      return true;
+    }
+
+    function nextIso(previous) {
+      const now = Date.now();
+      const before = Date.parse(previous || 0);
+      return new Date(Number.isNaN(before) ? now : Math.max(now, before + 1)).toISOString();
+    }
+
+    function saveUser(form) {
+      if (currentUser().role !== 'Administrador') return false;
+      const data = Object.fromEntries(new FormData(form).entries());
+      const emailKey = data.email.trim().toLocaleLowerCase('pt-BR');
+      const error = document.getElementById('userDialogError');
+      let user = form.dataset.id ? state.users.find(candidate => candidate.id === form.dataset.id) : null;
+      if (!user) {
+        const existing = state.users.find(candidate => String(candidate.email || '').toLocaleLowerCase('pt-BR') === emailKey);
+        if (existing && existing.status !== 'Cancelado') { error.textContent = 'Este e-mail já está cadastrado.'; return false; }
+        user = existing || { id: `u-invite-${Date.now().toString(36)}` };
+        Object.assign(user, data, { email: data.email.trim(), status: 'Pendente', invitedAt: nextIso(user.invitedAt) });
+        if (!existing) state.users.push(user);
+        state.ui.filtersByUser[user.id] ||= {};
+        state.ui.viewModesByUser[user.id] ||= { leads: 'list', deals: 'list' };
+        state.ui.dashboardScopeByUser[user.id] ||= 'all';
+      } else Object.assign(user, { name: data.name, jobTitle: data.jobTitle, team: data.team, role: data.role });
+      saveState();
+      document.getElementById('userDialog').close();
+      render();
+      toast(form.dataset.id ? 'Funcionário atualizado.' : 'Convite simulado criado.');
+      return true;
+    }
+
+    function resendInvite(id) {
+      if (currentUser().role !== 'Administrador') return false;
+      const user = state.users.find(candidate => candidate.id === id && candidate.status === 'Pendente');
+      if (!user) return false;
+      user.invitedAt = nextIso(user.invitedAt);
+      saveState(); render(); toast(`Convite de ${user.name} reenviado na demonstração.`);
+      return true;
+    }
+
+    function changeUserStatus(id, status) {
+      if (currentUser().role !== 'Administrador') return false;
+      const user = state.users.find(candidate => candidate.id === id);
+      if (!user || (id === state.currentUserId && status === 'Inativo')) { toast('Você não pode desativar o próprio usuário.'); return false; }
+      if (!['Ativo', 'Inativo', 'Cancelado'].includes(status)) return false;
+      user.status = status;
+      saveState(); render(); toast(`Status de ${user.name}: ${status}.`);
+      return true;
+    }
+
     function emptyHTML(message) { return `<div class="empty"><div class="empty-icon">⌕</div><b>${escapeHTML(message)}</b><p>Tente ajustar a busca ou restaurar os dados de demonstração.</p></div>`; }
 
     function render() {
       profileOptions();
       updateCounts();
+      document.querySelector('[data-admin-nav]').hidden = currentUser().role !== 'Administrador';
       document.getElementById('page-dashboard').innerHTML = dashboardHTML();
       document.getElementById('page-leads').innerHTML = leadsHTML();
       document.getElementById('page-contacts').innerHTML = contactsHTML();
       document.getElementById('page-companies').innerHTML = companiesHTML();
       document.getElementById('page-deals').innerHTML = dealsHTML();
       document.getElementById('page-notifications').innerHTML = notificationsHTML();
+      document.getElementById('page-admin').innerHTML = usersAdminHTML();
       showView(activeView, false);
     }
 
     function showView(view, closeMobile = true) {
+      if (view === 'admin' && currentUser().role !== 'Administrador') view = 'dashboard';
+      if (!pageMeta[view]) view = 'dashboard';
       activeView = view;
       document.querySelectorAll('.page').forEach(page => page.classList.toggle('active', page.id === `page-${view}`));
       document.querySelectorAll('.nav button').forEach(button => button.classList.toggle('active', button.dataset.view === view));
@@ -1394,16 +1510,27 @@
 
     function customFieldHTML(field) {
       const id = `drawer-custom-${field.key}`;
-      const control = field.value.includes('\n')
-        ? `<textarea id="${id}" name="custom:${field.key}">${escapeHTML(field.value)}</textarea>`
-        : `<input id="${id}" name="custom:${field.key}" type="text" value="${escapeHTML(field.value)}">`;
-      return `<div class="field" data-custom-field="${escapeHTML(field.key)}"><label for="${id}">${escapeHTML(field.label)}</label>${control}</div>`;
+      const name = `custom:${field.key}`;
+      const value = field.value ?? emptyCustomValue(field.type);
+      const options = (field.options || []).map(option => String(option));
+      let control;
+      if (field.type === 'textarea' || String(value).includes('\n')) control = `<textarea id="${id}" name="${escapeHTML(name)}" data-custom-input data-custom-key="${escapeHTML(field.key)}" data-custom-type="${field.type === 'textarea' ? 'textarea' : 'text'}">${escapeHTML(value)}</textarea>`;
+      else if (field.type === 'boolean') control = `<input id="${id}" name="${escapeHTML(name)}" type="checkbox" data-custom-input data-custom-key="${escapeHTML(field.key)}" data-custom-type="boolean" ${value === true || value === 'true' ? 'checked' : ''}>`;
+      else if (['select', 'multiselect'].includes(field.type)) {
+        const selected = Array.isArray(value) ? value.map(String) : [String(value || '')];
+        control = `<select id="${id}" name="${escapeHTML(name)}" data-custom-input data-custom-key="${escapeHTML(field.key)}" data-custom-type="${field.type}" ${field.type === 'multiselect' ? 'multiple' : ''}>${field.type === 'select' ? '<option value="">Selecione...</option>' : ''}${options.map(option => `<option value="${escapeHTML(option)}" ${selected.includes(option) ? 'selected' : ''}>${escapeHTML(option)}</option>`).join('')}</select>`;
+      } else {
+        const inputType = ({ number: 'number', money: 'number', date: 'date', email: 'email', phone: 'tel', url: 'url' })[field.type] || 'text';
+        const step = field.type === 'money' ? ' step="0.01"' : field.type === 'number' ? ' step="any"' : '';
+        control = `<input id="${id}" name="${escapeHTML(name)}" type="${inputType}"${step} value="${escapeHTML(value)}" data-custom-input data-custom-key="${escapeHTML(field.key)}" data-custom-type="${escapeHTML(field.type || 'text')}">`;
+      }
+      return `<div class="field" data-custom-field="${escapeHTML(field.key)}"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><label for="${id}">${escapeHTML(field.label)}</label><button type="button" class="row-action" data-action="hide-custom-field" data-key="${escapeHTML(field.key)}" aria-label="Ocultar campo" title="Ocultar ${escapeHTML(field.label)}">×</button></div>${control}</div>`;
     }
 
     function renderDrawerCustomFields(record) {
       const fields = Array.isArray(record.customFields) ? record.customFields : [];
       const visibleKeys = new Set(record.visibleCustomFieldKeys || []);
-      const visible = fields.filter(field => field.value !== '' || visibleKeys.has(field.key));
+      const visible = fields.filter(field => visibleKeys.has(field.key));
       const hidden = fields.filter(field => !visible.includes(field));
       document.getElementById('drawerCustomFields').innerHTML = visible.length
         ? visible.map(customFieldHTML).join('')
@@ -1431,6 +1558,21 @@
         document.querySelector('[data-action="add-custom-field"]').disabled = true;
       } else select.value = '';
       form.elements.namedItem(`custom:${field.key}`)?.focus();
+    }
+
+    function hideDrawerCustomField(key) {
+      const form = document.getElementById('drawerForm');
+      const record = state[collectionFor(form.dataset.entity)]?.find(item => item.id === form.dataset.id);
+      const field = record?.customFields?.find(candidate => candidate.key === key);
+      const wrapper = document.querySelector(`#drawerCustomFields [data-custom-field="${CSS.escape(key)}"]`);
+      if (!field || !wrapper) return;
+      wrapper.remove();
+      if (!document.querySelector('#drawerCustomFields [data-custom-field]')) document.getElementById('drawerCustomFields').innerHTML = '<div class="drawer-custom-empty full">Nenhum campo adicional visível.</div>';
+      const select = document.getElementById('drawerAddCustomField');
+      const hiddenFields = (record.customFields || []).filter(candidate => !form.elements.namedItem(`custom:${candidate.key}`));
+      select.innerHTML = `<option value="">Selecione um campo...</option>${hiddenFields.map(candidate => `<option value="${escapeHTML(candidate.key)}">${escapeHTML(candidate.label)}</option>`).join('')}`;
+      select.disabled = false;
+      document.querySelector('[data-action="add-custom-field"]').disabled = false;
     }
 
     function setDrawerTab(tab) {
@@ -1475,11 +1617,11 @@
     function fieldHTML(name, label, type, required, value, idPrefix = 'field') {
       const requiredAttr = required ? 'required' : '';
       if (type === 'user') {
-        const users = state.users.filter(user => ['Administrador', 'Gestor', 'Vendedor', 'Faturamento'].includes(user.role));
+        const users = state.users.filter(user => user.status === 'Ativo' && ['Administrador', 'Gestor', 'Vendedor', 'Faturamento'].includes(user.role));
         return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><select id="${idPrefix}-${name}" name="${name}" ${requiredAttr}>${users.map(user => `<option value="${user.id}" ${user.id === value ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
       }
       if (type === 'assistant') {
-        const assistants = state.users.filter(user => user.role === 'Assistente');
+        const assistants = state.users.filter(user => user.status === 'Ativo' && user.role === 'Assistente');
         const selected = Array.isArray(value) ? value[0] : '';
         return `<div class="field"><label for="${idPrefix}-${name}">${label}</label><select id="${idPrefix}-${name}" name="${name}"><option value="">Nenhum</option>${assistants.map(user => `<option value="${user.id}" ${user.id === selected ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
       }
@@ -1493,7 +1635,14 @@
       const prefixes = { lead: 'L', contact: 'C', company: 'E', deal: 'N' };
       const entries = Array.from(new FormData(form).entries());
       const data = Object.fromEntries(entries.filter(([name]) => !name.startsWith('custom:')));
-      const customValues = new Map(entries.filter(([name]) => name.startsWith('custom:')).map(([name, value]) => [name.slice(7), String(value)]));
+      const customValues = new Map(Array.from(form.querySelectorAll('[data-custom-input]')).map(input => {
+        let value;
+        if (input.dataset.customType === 'boolean') value = input.checked;
+        else if (input.dataset.customType === 'multiselect') value = Array.from(input.selectedOptions).map(option => option.value);
+        else if (['number', 'money'].includes(input.dataset.customType)) value = input.value === '' ? '' : Number(input.value);
+        else value = input.value;
+        return [input.dataset.customKey, value];
+      }));
       const existing = form.dataset.id ? state[collection].find(item => item.id === form.dataset.id) : null;
       if (data.assistants !== undefined) data.assistants = data.assistants ? [data.assistants] : [];
       if (data.amount !== undefined) data.amount = Number(data.amount);
@@ -1858,6 +2007,13 @@
           }
           const existing = state[collection].find(record => record.bitrixId === bitrixId);
           const record = bitrixCoreRecord(entity, fields, existing);
+          ensureSchemaFields(state, collection, record);
+          (state.customFieldSchemas[collection] || []).forEach(schema => {
+            const previous = existing?.customFields?.find(field => field.key === schema.key);
+            const current = record.customFields.find(field => field.key === schema.key);
+            if (previous && current) current.value = clone(previous.value);
+            if (existing && !existing.visibleCustomFieldKeys?.includes(schema.key)) record.visibleCustomFieldKeys = record.visibleCustomFieldKeys.filter(key => key !== schema.key);
+          });
           if (existing) {
             Object.assign(existing, record, { id: existing.id });
             result.updated += 1;
@@ -1937,9 +2093,14 @@
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
       if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
       if (action === 'add-custom-field') addDrawerCustomField();
+      if (action === 'hide-custom-field') hideDrawerCustomField(button.dataset.key);
       if (action === 'manage-fields') openFieldManager(button.dataset.scope);
       if (action === 'save-field-visibility') saveFieldVisibility();
       if (action === 'create-custom-field') createCustomField();
+      if (action === 'new-user') openUserDialog();
+      if (action === 'edit-user') openUserDialog(button.dataset.id);
+      if (action === 'resend-invite') resendInvite(button.dataset.id);
+      if (action === 'user-status') changeUserStatus(button.dataset.id, button.dataset.status);
       if (action === 'open-bitrix-import') openBitrixImport();
       if (action === 'open-dashboard-filters') openDashboardFilters();
       if (action === 'dashboard-filter-scope') setDashboardFilterScope(button.dataset.dashboardFilterScope);
@@ -1986,6 +2147,7 @@
     document.getElementById('quoteForm').addEventListener('submit', event => { event.preventDefault(); saveQuote(event.currentTarget); });
     document.getElementById('bitrixImportForm').addEventListener('submit', event => { event.preventDefault(); importBitrixSample(event.currentTarget); });
     document.getElementById('filterForm').addEventListener('submit', event => { event.preventDefault(); applyFilterPanel(); });
+    document.getElementById('userForm').addEventListener('submit', event => { event.preventDefault(); saveUser(event.currentTarget); });
     document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));
     document.getElementById('sidebarOverlay').addEventListener('click', () => toggleSidebar(false));
     document.getElementById('entityDrawerOverlay').addEventListener('click', () => closeEntityDrawer());
