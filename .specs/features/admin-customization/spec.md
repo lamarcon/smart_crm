@@ -133,4 +133,4 @@ O protótipo permite editar campos adicionais importados, mas não permite criar
 - [x] Usuários ocultam e reexibem campos adicionais sem perda de valor.
 - [x] Campos personalizados participam de busca e filtros com tipos compatíveis.
 - [x] Convites simulados e mudanças de funcionário respeitam status e perfil administrativo.
-- [ ] Todos os critérios têm evidência executável e validação independente PASS.
+- [x] Todos os critérios têm evidência executável e validação independente PASS.
