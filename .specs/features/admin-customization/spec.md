@@ -74,7 +74,7 @@ O protótipo permite editar campos adicionais importados, mas não permite criar
 3. WHEN o usuário ocultar um campo adicional com valor THEN o sistema SHALL remover o controle do card sem apagar o valor persistido.
 4. WHEN o usuário reexibir um campo adicional oculto THEN o sistema SHALL restaurar o controle com o valor anterior.
 5. WHEN uma busca corresponder ao valor de um campo personalizado THEN o sistema SHALL manter somente os registros correspondentes.
-6. WHEN o painel de filtros for aberto THEN o sistema SHALL usar operadores compatíveis com o tipo do campo personalizado.
+6. WHEN o painel de filtros for aberto THEN o sistema SHALL oferecer exatamente `Contém` e `É exatamente` para Texto curto, Texto longo, E-mail, Telefone e Link; `Valor exato`, `Maior que`, `Menor que` e `Entre` para Número e Moeda; `Qualquer data`, `Data exata`, `Antes de`, `Depois de` e `Entre` para Data; e `É um de` para Sim/Não, Seleção única e Seleção múltipla.
 
 **Independent Test**: Preencher campos tipados, ocultar um deles, reexibir e pesquisar/filtrar pelo valor salvo.
 

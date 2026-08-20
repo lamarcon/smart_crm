@@ -1107,7 +1107,10 @@ async function createLead(page, name) {
     await manage.click();
     const dialog = page.locator('#fieldManagerDialog');
     await dialog.waitFor({ state: 'visible' });
-    assert.equal(await dialog.locator('[data-standard-field]').count(), 7);
+    assert.deepEqual(await dialog.locator('[data-standard-field]').evaluateAll(inputs => inputs.map(input => [input.closest('label').textContent.trim(), input.checked])), [
+      ['Título do Negócio', true], ['Empresa', true], ['Contato', true], ['Valor (R$)', true],
+      ['Etapa', true], ['Responsável', true], ['Assistente', true]
+    ]);
 
     assert.deepEqual(await dialog.locator('#customFieldType option').allTextContents(), [
       'Texto curto', 'Texto longo', 'Número', 'Moeda', 'Data', 'Sim/Não',
@@ -1118,11 +1121,13 @@ async function createLead(page, name) {
     const firstDeal = before.deals[0];
     await dialog.getByLabel('Contato').uncheck();
     await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
-    await page.getByRole('button', { name: firstDeal.title }).click();
     const drawer = page.locator('#entityDrawer');
-    assert.equal(await drawer.getByLabel('Contato').count(), 0);
-    assert.equal((await stateFrom(page)).deals.find(deal => deal.id === firstDeal.id).contact, firstDeal.contact);
-    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+    assert.deepEqual((await stateFrom(page)).deals.map(deal => [deal.id, deal.contact]), before.deals.map(deal => [deal.id, deal.contact]));
+    for (const deal of before.deals) {
+      await page.getByRole('button', { name: deal.title }).click();
+      assert.equal(await drawer.getByLabel('Contato').count(), 0, `${deal.id} ainda exibiu Contato`);
+      await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+    }
 
     await manage.click();
     await dialog.getByLabel('Contato').check();
@@ -1145,9 +1150,11 @@ async function createLead(page, name) {
     configured = await stateFrom(page);
     assert.equal(configured.customFieldSchemas.deals.filter(field => field.label.toLocaleLowerCase('pt-BR') === 'número do contrato').length, 1);
 
+    const schemaBeforeEmptyName = JSON.stringify((await stateFrom(page)).customFieldSchemas.deals);
     await dialog.getByLabel('Nome do campo').fill('');
     await dialog.getByRole('button', { name: 'Criar campo' }).click();
     assert.equal(await dialog.locator('#fieldManagerError').innerText(), 'Informe o nome do campo.');
+    assert.equal(JSON.stringify((await stateFrom(page)).customFieldSchemas.deals), schemaBeforeEmptyName);
     await dialog.getByLabel('Nome do campo').fill('Canais comerciais');
     await dialog.getByLabel('Tipo do campo').selectOption('multiselect');
     await dialog.getByLabel('Opções').fill('Portal\nportal\nEvento');
@@ -1207,6 +1214,7 @@ async function createLead(page, name) {
     await page.getByRole('button', { name: firstDeal.title }).click();
     const drawer = page.locator('#entityDrawer');
     await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Contrato teste').getAttribute('type'), 'text');
     assert.equal(await drawer.getByLabel('Escopo detalhado').evaluate(element => element.tagName), 'TEXTAREA');
     assert.equal(await drawer.getByLabel('Quantidade teste').getAttribute('type'), 'number');
     assert.equal(await drawer.getByLabel('Orçamento teste').getAttribute('step'), '0.01');
@@ -1226,10 +1234,12 @@ async function createLead(page, name) {
     await drawer.getByLabel('Aprovado teste').check();
     await drawer.getByLabel('E-mail teste').fill('contrato@teste.invalid');
     await drawer.getByLabel('Telefone teste').fill('+55 11 99999-0000');
+    const beforeInvalidSave = JSON.stringify((await stateFrom(page)).deals.find(deal => deal.id === firstDeal.id));
     await drawer.getByLabel('Link teste').fill('link inválido');
     await drawer.getByRole('button', { name: 'Salvar registro' }).click();
     assert.equal(await drawer.getByLabel('Link teste').evaluate(element => element.checkValidity()), false);
     await drawer.waitFor({ state: 'visible' });
+    assert.equal(JSON.stringify((await stateFrom(page)).deals.find(deal => deal.id === firstDeal.id)), beforeInvalidSave);
     await drawer.getByLabel('Link teste').fill('https://example.test/contrato');
     await drawer.getByLabel('Prioridade teste').selectOption('Alta');
     await drawer.getByLabel('Produtos teste').selectOption(['CRM', 'Portal']);
@@ -1244,9 +1254,21 @@ async function createLead(page, name) {
     assert.equal(values['test:boolean'], true);
     assert.equal(values['test:select'], 'Alta');
     assert.deepEqual(values['test:multiselect'], ['CRM', 'Portal']);
+    assert.deepEqual(saved.customFields.filter(field => ['test:text', 'test:number', 'test:money', 'test:date', 'test:boolean', 'test:select', 'test:multiselect'].includes(field.key)).map(field => ({ key: field.key, type: field.type, value: field.value })), [
+      { key: 'test:text', type: 'text', value: 'CTR-900' },
+      { key: 'test:number', type: 'number', value: 42 },
+      { key: 'test:money', type: 'money', value: 1234.56 },
+      { key: 'test:date', type: 'date', value: '2026-09-15' },
+      { key: 'test:boolean', type: 'boolean', value: true },
+      { key: 'test:select', type: 'select', value: 'Alta' },
+      { key: 'test:multiselect', type: 'multiselect', value: ['CRM', 'Portal'] }
+    ]);
 
     await page.getByRole('button', { name: firstDeal.title }).click();
     await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Contrato teste').inputValue(), 'CTR-900');
+    assert.equal(await drawer.getByLabel('Data teste').inputValue(), '2026-09-15');
+    assert.equal(await drawer.getByLabel('Prioridade teste').inputValue(), 'Alta');
     await drawer.locator('[data-action="hide-custom-field"][data-key="test:text"]').click();
     await drawer.getByRole('button', { name: 'Salvar registro' }).click();
     saved = (await stateFrom(page)).deals.find(deal => deal.id === firstDeal.id);
@@ -1263,8 +1285,18 @@ async function createLead(page, name) {
 
     await page.getByPlaceholder('Buscar em negócios...').fill('CTR-900');
     assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
-    assert.equal(await page.evaluate(() => customFilterDefinitions('deals').find(field => field.label === 'Orçamento teste').type), 'money');
-    assert.deepEqual(await page.evaluate(() => filterOperatorOptions(customFilterDefinitions('deals').find(field => field.label === 'Orçamento teste')).map(option => option[1])), ['Valor exato', 'Maior que', 'Menor que', 'Entre']);
+    assert.deepEqual(await page.evaluate(() => {
+      const definitions = customFilterDefinitions('deals');
+      const operators = label => filterOperatorOptions(definitions.find(field => field.label === label)).map(option => option[1]);
+      return {
+        text: operators('Contrato teste'), textarea: operators('Escopo detalhado'), email: operators('E-mail teste'), phone: operators('Telefone teste'), url: operators('Link teste'),
+        number: operators('Quantidade teste'), money: operators('Orçamento teste'), date: operators('Data teste'), boolean: operators('Aprovado teste'), select: operators('Prioridade teste'), multiselect: operators('Produtos teste')
+      };
+    }), {
+      text: ['Contém', 'É exatamente'], textarea: ['Contém', 'É exatamente'], email: ['Contém', 'É exatamente'], phone: ['Contém', 'É exatamente'], url: ['Contém', 'É exatamente'],
+      number: ['Valor exato', 'Maior que', 'Menor que', 'Entre'], money: ['Valor exato', 'Maior que', 'Menor que', 'Entre'],
+      date: ['Qualquer data', 'Data exata', 'Antes de', 'Depois de', 'Entre'], boolean: ['É um de'], select: ['É um de'], multiselect: ['É um de']
+    });
   });
 
   await run('ADM-03 Administrador convida edita e controla acesso de funcionários', async page => {
@@ -1327,6 +1359,7 @@ async function createLead(page, name) {
     await page.getByRole('button', { name: 'Cancelar convite de Rafael Teste' }).click();
     const canceled = (await stateFrom(page)).users.find(user => user.email === 'rafael@teste.invalid');
     assert.equal(canceled.status, 'Cancelado');
+    assert.equal(await page.getByLabel('Perfil demonstrativo').locator(`option[value="${canceled.id}"]`).count(), 0);
 
     await page.getByRole('button', { name: 'Convidar funcionário' }).click();
     await dialog.getByLabel('Nome completo').fill('Rafael Reativado');
@@ -1337,8 +1370,9 @@ async function createLead(page, name) {
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
     const reinvited = (await stateFrom(page)).users.filter(user => user.email.toLocaleLowerCase('pt-BR') === 'rafael@teste.invalid');
     assert.equal(reinvited.length, 1);
-    assert.equal(reinvited[0].id, canceled.id);
-    assert.equal(reinvited[0].status, 'Pendente');
+    assert.deepEqual({ id: reinvited[0].id, name: reinvited[0].name, email: reinvited[0].email, jobTitle: reinvited[0].jobTitle, team: reinvited[0].team, role: reinvited[0].role, status: reinvited[0].status }, {
+      id: canceled.id, name: 'Rafael Reativado', email: 'RAFAEL@TESTE.INVALID', jobTitle: 'Consultor', team: 'Vendas CMS', role: 'Vendedor', status: 'Pendente'
+    });
     assert.equal(await page.evaluate(() => changeUserStatus('u-admin', 'Inativo')), false);
     assert.equal((await stateFrom(page)).users.find(user => user.id === 'u-admin').status, 'Ativo');
 
