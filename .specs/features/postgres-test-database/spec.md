@@ -81,4 +81,4 @@ O ambiente Docker executa somente a interface demonstrativa. A equipe precisa de
 - [x] A consulta retorna exatamente `smartcrm_test|smartcrm`.
 - [x] A linha de prova permanece única depois do reinício do PostgreSQL.
 - [x] A regressão existente do Smart CRM permanece verde.
-- [ ] A validação independente termina em PASS.
+- [x] A validação independente termina em PASS.
