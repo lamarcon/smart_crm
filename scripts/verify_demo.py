@@ -106,8 +106,17 @@ def main() -> int:
     assert database["image"] == "postgres:17-alpine", database["image"]
     assert any(volume.get("source") == "postgres_data" and volume.get("target") == "/var/lib/postgresql/data" for volume in database["volumes"]), database["volumes"]
     assert any(port.get("host_ip") == "127.0.0.1" and int(port.get("target")) == 5432 for port in database["ports"]), database["ports"]
-    override_env = {**os.environ, "SMART_CRM_DB_PORT": "55432"}
+    override_env = {
+        **os.environ,
+        "SMART_CRM_DB_NAME": "smartcrm_override_test",
+        "SMART_CRM_DB_USER": "smartcrm_override_user",
+        "SMART_CRM_DB_PASSWORD": "smartcrm_override_password",
+        "SMART_CRM_DB_PORT": "55432",
+    }
     override = json.loads(compose_output("config", "--format", "json", env=override_env))["services"]["postgres"]
+    assert override["environment"]["POSTGRES_DB"] == "smartcrm_override_test", override["environment"]
+    assert override["environment"]["POSTGRES_USER"] == "smartcrm_override_user", override["environment"]
+    assert override["environment"]["POSTGRES_PASSWORD"] == "smartcrm_override_password", override["environment"]
     assert any(port.get("host_ip") == "127.0.0.1" and str(port.get("published")) == "55432" for port in override["ports"]), override["ports"]
     compose("build")
     compose("up", "-d")
@@ -138,7 +147,7 @@ def main() -> int:
     persisted = postgres("psql", "-X", "-U", DB_USER, "-d", DB_NAME, "-Atqc", "SELECT count(*) FROM _smartcrm_test_probe")
     assert persisted == "1", persisted
 
-    print(f"compose acceptance: 14 passed, 0 failed ({BASE_URL}; PostgreSQL {DB_NAME})")
+    print(f"compose acceptance: 17 passed, 0 failed ({BASE_URL}; PostgreSQL {DB_NAME})")
     return 0
 
 
