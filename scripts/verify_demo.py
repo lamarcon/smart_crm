@@ -105,7 +105,7 @@ def main() -> int:
     database = config["services"]["postgres"]
     assert database["image"] == "postgres:17-alpine", database["image"]
     assert any(volume.get("source") == "postgres_data" and volume.get("target") == "/var/lib/postgresql/data" for volume in database["volumes"]), database["volumes"]
-    assert any(port.get("host_ip") == "127.0.0.1" and int(port.get("target")) == 5432 for port in database["ports"]), database["ports"]
+    assert any(port.get("host_ip") == "127.0.0.1" and int(port.get("target")) == 5432 and str(port.get("published")) == "5432" for port in database["ports"]), database["ports"]
     override_env = {
         **os.environ,
         "SMART_CRM_DB_NAME": "smartcrm_override_test",
