@@ -1108,6 +1108,7 @@ async function createLead(page, name) {
     await manage.click();
     const dialog = page.locator('#fieldManagerDialog');
     await dialog.waitFor({ state: 'visible' });
+    assert.equal(await dialog.getByText('Nenhum campo personalizado criado.').count(), 1);
     assert.deepEqual(await dialog.locator('[data-standard-field]').evaluateAll(inputs => inputs.map(input => [input.closest('label').textContent.trim(), input.checked])), [
       ['Título do Negócio', true], ['Empresa', true], ['Contato', true], ['Valor (R$)', true],
       ['Etapa', true], ['Responsável', true], ['Assistente', true]
