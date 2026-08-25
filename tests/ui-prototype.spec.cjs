@@ -106,6 +106,7 @@ async function createLead(page, name) {
     assert.equal(normalized.ui.dashboardScopeByUser['u-admin'], 'all');
     assert.deepEqual(Object.keys(normalized.customFieldSchemas), ['leads', 'contacts', 'companies', 'deals']);
     assert.deepEqual(normalized.moduleFieldSettings.deals.hiddenStandardFields, []);
+    assert.deepEqual(normalized.moduleFieldSettings.deals.hiddenCustomFieldKeys, []);
     assert.equal(normalized.users.every(user => user.email && user.jobTitle && user.status === 'Ativo'), true);
     for (const record of [...normalized.leads, ...normalized.contacts, ...normalized.companies]) {
       assert.equal(Number.isNaN(Date.parse(record.createdAt)), false, `${record.id} sem createdAt ISO`);
@@ -1186,6 +1187,64 @@ async function createLead(page, name) {
     assert.equal(await page.locator('#fieldManagerDialog').getAttribute('open'), null);
   });
 
+  await run('FIELDVIS-01 combina ocultação geral e individual sem perder valores', async page => {
+    const configured = await stateFrom(page);
+    const schema = { key: 'test:global', label: 'Campo geral teste', type: 'text', options: [], userCreated: true };
+    configured.customFieldSchemas.deals = [schema];
+    configured.moduleFieldSettings.deals.hiddenCustomFieldKeys = [];
+    configured.deals.forEach((deal, index) => {
+      deal.customFields = [{ ...schema, value: `CTR-GLOBAL-${index + 1}` }];
+      deal.visibleCustomFieldKeys = [schema.key];
+    });
+    configured.deals[1].visibleCustomFieldKeys = [];
+    const valuesBefore = configured.deals.map(deal => deal.customFields[0].value);
+    const individualVisibilityBefore = configured.deals.map(deal => [...deal.visibleCustomFieldKeys]);
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    await goTo(page, 'Negócios');
+    const manage = page.getByRole('button', { name: 'Gerenciar campos' });
+    await manage.click();
+    const dialog = page.locator('#fieldManagerDialog');
+    const globalToggle = dialog.getByLabel('Campo geral teste');
+    assert.equal(await globalToggle.isChecked(), true);
+    await globalToggle.uncheck();
+    await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
+
+    let saved = await stateFrom(page);
+    assert.deepEqual(saved.moduleFieldSettings.deals.hiddenCustomFieldKeys, [schema.key]);
+    assert.deepEqual(saved.deals.map(deal => deal.customFields[0].value), valuesBefore);
+    assert.deepEqual(saved.deals.map(deal => deal.visibleCustomFieldKeys), individualVisibilityBefore);
+
+    const drawer = page.locator('#entityDrawer');
+    for (const deal of saved.deals.slice(0, 2)) {
+      await page.getByRole('button', { name: deal.title }).click();
+      assert.equal(await drawer.getByLabel('Campo geral teste').count(), 0);
+      assert.equal(await drawer.locator('#drawerAddCustomField option[value="test:global"]').count(), 0);
+      assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isHidden(), true);
+      await drawer.getByRole('button', { name: deal.id === saved.deals[0].id ? 'Salvar registro' : 'Fechar painel' }).click();
+    }
+    saved = await stateFrom(page);
+    assert.deepEqual(saved.deals.map(deal => deal.customFields[0].value), valuesBefore);
+    assert.deepEqual(saved.deals.map(deal => deal.visibleCustomFieldKeys), individualVisibilityBefore);
+
+    await manage.click();
+    await dialog.getByLabel('Campo geral teste').check();
+    await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
+    saved = await stateFrom(page);
+    assert.deepEqual(saved.moduleFieldSettings.deals.hiddenCustomFieldKeys, []);
+
+    await page.getByRole('button', { name: saved.deals[0].title }).click();
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Campo geral teste').inputValue(), valuesBefore[0]);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+
+    await page.getByRole('button', { name: saved.deals[1].title }).click();
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Campo geral teste').count(), 0);
+    assert.equal(await drawer.locator('#drawerAddCustomField option[value="test:global"]').count(), 1);
+  });
+
   await run('ADM-02 campos tipados preservam valores ocultação busca e filtros', async page => {
     const configured = await stateFrom(page);
     const schemas = [
@@ -1274,6 +1333,7 @@ async function createLead(page, name) {
     saved = (await stateFrom(page)).deals.find(deal => deal.id === firstDeal.id);
     assert.equal(saved.customFields.find(field => field.key === 'test:text').value, 'CTR-900');
     assert.equal(saved.visibleCustomFieldKeys.includes('test:text'), false);
+    assert.deepEqual((await stateFrom(page)).moduleFieldSettings.deals.hiddenCustomFieldKeys, []);
 
     await page.getByRole('button', { name: firstDeal.title }).click();
     await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();

@@ -438,11 +438,13 @@
         <section class="field-manager-section">
           <h4>Campos padrão visíveis</h4>
           <div class="field-manager-list" id="fieldManagerStandardFields"></div>
+          <h4 style="margin-top:18px">Campos adicionais visíveis em todos os cadastros</h4>
+          <p class="hint">A ocultação geral não apaga valores nem substitui a escolha individual de cada cadastro.</p>
+          <div class="field-manager-list" id="fieldManagerCustomFields"></div>
           <button type="button" class="button small" data-action="save-field-visibility">Salvar visualização</button>
         </section>
         <section class="field-manager-section">
           <h4>Criar campo personalizado</h4>
-          <div class="field-manager-created" id="fieldManagerCreatedFields"></div>
           <div class="form-grid" style="margin-top:14px">
             <div class="field"><label for="customFieldName">Nome do campo</label><input id="customFieldName" autocomplete="off"></div>
             <div class="field"><label for="customFieldType">Tipo do campo</label><select id="customFieldType"></select></div>
@@ -660,11 +662,12 @@
         user.invitedAt ||= null;
       });
       normalized.customFieldSchemas ||= { leads: [], contacts: [], companies: [], deals: [] };
-      normalized.moduleFieldSettings ||= { leads: { hiddenStandardFields: [] }, contacts: { hiddenStandardFields: [] }, companies: { hiddenStandardFields: [] }, deals: { hiddenStandardFields: [] } };
+      normalized.moduleFieldSettings ||= { leads: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] }, contacts: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] }, companies: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] }, deals: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] } };
       ['leads', 'contacts', 'companies', 'deals'].forEach(collection => {
         normalized.customFieldSchemas[collection] = Array.isArray(normalized.customFieldSchemas[collection]) ? normalized.customFieldSchemas[collection] : [];
-        normalized.moduleFieldSettings[collection] ||= { hiddenStandardFields: [] };
+        normalized.moduleFieldSettings[collection] ||= { hiddenStandardFields: [], hiddenCustomFieldKeys: [] };
         normalized.moduleFieldSettings[collection].hiddenStandardFields = Array.isArray(normalized.moduleFieldSettings[collection].hiddenStandardFields) ? normalized.moduleFieldSettings[collection].hiddenStandardFields : [];
+        normalized.moduleFieldSettings[collection].hiddenCustomFieldKeys = Array.isArray(normalized.moduleFieldSettings[collection].hiddenCustomFieldKeys) ? normalized.moduleFieldSettings[collection].hiddenCustomFieldKeys : [];
       });
       ['leads', 'contacts', 'companies'].forEach(collection => {
         (normalized[collection] || []).forEach((record, index) => {
@@ -1398,7 +1401,8 @@
       const hidden = new Set(state.moduleFieldSettings[scope]?.hiddenStandardFields || []);
       document.getElementById('fieldManagerStandardFields').innerHTML = formDefinitions[entity].map(([name, label]) => `<label class="field-manager-check"><input type="checkbox" data-standard-field="${escapeHTML(name)}" ${hidden.has(name) ? '' : 'checked'}>${escapeHTML(label)}</label>`).join('');
       const schemas = state.customFieldSchemas[scope] || [];
-      document.getElementById('fieldManagerCreatedFields').innerHTML = schemas.length ? schemas.map(field => `<span class="tag">${escapeHTML(field.label)} · ${escapeHTML(customFieldTypes.find(([type]) => type === field.type)?.[1] || field.type)}</span>`).join('') : '<span class="hint">Nenhum campo personalizado criado.</span>';
+      const hiddenCustom = new Set(state.moduleFieldSettings[scope]?.hiddenCustomFieldKeys || []);
+      document.getElementById('fieldManagerCustomFields').innerHTML = schemas.length ? schemas.map(field => `<label class="field-manager-check"><input type="checkbox" aria-label="${escapeHTML(field.label)}" data-module-custom-field="${escapeHTML(field.key)}" ${hiddenCustom.has(field.key) ? '' : 'checked'}><span>${escapeHTML(field.label)} <small class="hint">· ${escapeHTML(customFieldTypes.find(([type]) => type === field.type)?.[1] || field.type)}</small></span></label>`).join('') : '<span class="hint">Nenhum campo personalizado criado.</span>';
       document.getElementById('customFieldType').innerHTML = customFieldTypes.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
       document.getElementById('customFieldName').value = '';
       document.getElementById('customFieldType').value = 'text';
@@ -1422,6 +1426,7 @@
       const form = document.getElementById('fieldManagerForm');
       const scope = form.dataset.scope;
       state.moduleFieldSettings[scope].hiddenStandardFields = Array.from(form.querySelectorAll('[data-standard-field]:not(:checked)')).map(input => input.dataset.standardField);
+      state.moduleFieldSettings[scope].hiddenCustomFieldKeys = Array.from(form.querySelectorAll('[data-module-custom-field]:not(:checked)')).map(input => input.dataset.moduleCustomField);
       saveState();
       document.getElementById('fieldManagerDialog').close();
       render();
@@ -1474,6 +1479,11 @@
       return JSON.stringify(Array.from(new FormData(form).entries()));
     }
 
+    function moduleAvailableCustomFields(collection, record) {
+      const hidden = new Set(state.moduleFieldSettings[collection]?.hiddenCustomFieldKeys || []);
+      return (Array.isArray(record?.customFields) ? record.customFields : []).filter(field => !hidden.has(field.key));
+    }
+
     function openEntityDrawer(entity, id) {
       const collection = collectionFor(entity);
       const record = state[collection].find(item => item.id === id);
@@ -1486,7 +1496,7 @@
       document.getElementById('entityDrawerSubtitle').textContent = `${id} · As alterações ficam somente neste navegador.`;
       const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
       document.getElementById('drawerFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
-      const hasCustomFields = Array.isArray(record.customFields) && record.customFields.length > 0;
+      const hasCustomFields = moduleAvailableCustomFields(collection, record).length > 0;
       renderDrawerCustomFields(record);
       const customTab = document.querySelector('[data-drawer-tab="custom"]');
       const quotesTab = document.querySelector('[data-drawer-tab="quotes"]');
@@ -1528,7 +1538,8 @@
     }
 
     function renderDrawerCustomFields(record) {
-      const fields = Array.isArray(record.customFields) ? record.customFields : [];
+      const entity = document.getElementById('drawerForm').dataset.entity;
+      const fields = moduleAvailableCustomFields(collectionFor(entity), record);
       const visibleKeys = new Set(record.visibleCustomFieldKeys || []);
       const visible = fields.filter(field => visibleKeys.has(field.key));
       const hidden = fields.filter(field => !visible.includes(field));
@@ -1650,8 +1661,13 @@
       if (existing) {
         Object.assign(existing, data, { updatedAt: new Date().toISOString() });
         if (Array.isArray(existing.customFields) && form.id === 'drawerForm') {
+          const previousVisible = new Set(existing.visibleCustomFieldKeys || []);
+          const globallyHidden = new Set(state.moduleFieldSettings[collection]?.hiddenCustomFieldKeys || []);
           existing.customFields.forEach(field => { if (customValues.has(field.key)) field.value = customValues.get(field.key); });
-          existing.visibleCustomFieldKeys = [...customValues.keys()];
+          existing.visibleCustomFieldKeys = [...new Set([
+            ...customValues.keys(),
+            ...existing.customFields.filter(field => globallyHidden.has(field.key) && previousVisible.has(field.key)).map(field => field.key)
+          ])];
         }
       }
       else {
