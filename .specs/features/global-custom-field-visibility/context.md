@@ -2,7 +2,7 @@
 
 **Gathered:** 2026-08-25
 **Spec:** `.specs/features/global-custom-field-visibility/spec.md`
-**Status:** Ready for implementation
+**Status:** Implemented and verified
 
 ---
 

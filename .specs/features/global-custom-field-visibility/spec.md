@@ -65,9 +65,9 @@ Campos padrão podem ser ocultados para todo um módulo, mas campos adicionais s
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| FIELDVIS-01 | P1: Gerenciar visibilidade geral | Execute | Implementing |
-| FIELDVIS-02 | P1: Compor visibilidade geral e individual | Execute | Implementing |
-| FIELDVIS-03 | P1: Compatibilidade de estado | Execute | Implementing |
+| FIELDVIS-01 | P1: Gerenciar visibilidade geral | Execute | Verified |
+| FIELDVIS-02 | P1: Compor visibilidade geral e individual | Execute | Verified |
+| FIELDVIS-03 | P1: Compatibilidade de estado | Execute | Verified |
 
 **Coverage:** 3 total, 3 mapped to the implicit execution steps, 0 unmapped.
 
@@ -78,4 +78,4 @@ Campos padrão podem ser ocultados para todo um módulo, mas campos adicionais s
 - [x] Um Administrador oculta e reexibe um campo adicional para todos os cards do módulo.
 - [x] Valores e escolhas individuais permanecem idênticos durante o ciclo.
 - [x] Estado legado e regressão completa permanecem verdes.
-- [ ] A validação independente termina em PASS.
+- [x] A validação independente termina em PASS.
