@@ -1181,11 +1181,13 @@ async function createLead(page, name) {
     assert.equal(created.customFields.some(field => field.label === 'Número do contrato'), true);
     assert.equal(created.visibleCustomFieldKeys.includes(created.customFields.find(field => field.label === 'Número do contrato').key), true);
 
+    const settingsBeforeDeniedAction = JSON.stringify((await stateFrom(page)).moduleFieldSettings.deals);
     await selectProfile(page, 'u-paula');
     await goTo(page, 'Negócios');
     assert.equal(await page.getByRole('button', { name: 'Gerenciar campos' }).count(), 0);
     assert.equal(await page.evaluate(() => openFieldManager('deals')), false);
     assert.equal(await page.locator('#fieldManagerDialog').getAttribute('open'), null);
+    assert.equal(JSON.stringify((await stateFrom(page)).moduleFieldSettings.deals), settingsBeforeDeniedAction);
   });
 
   await run('FIELDVIS-01 combina ocultação geral e individual sem perder valores', async page => {
@@ -1216,6 +1218,10 @@ async function createLead(page, name) {
     assert.deepEqual(saved.moduleFieldSettings.deals.hiddenCustomFieldKeys, [schema.key]);
     assert.deepEqual(saved.deals.map(deal => deal.customFields[0].value), valuesBefore);
     assert.deepEqual(saved.deals.map(deal => deal.visibleCustomFieldKeys), individualVisibilityBefore);
+
+    await manage.click();
+    assert.equal(await dialog.getByLabel('Campo geral teste').isChecked(), false);
+    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
 
     const drawer = page.locator('#entityDrawer');
     for (const deal of saved.deals.slice(0, 2)) {
@@ -1335,6 +1341,13 @@ async function createLead(page, name) {
     assert.equal(saved.customFields.find(field => field.key === 'test:text').value, 'CTR-900');
     assert.equal(saved.visibleCustomFieldKeys.includes('test:text'), false);
     assert.deepEqual((await stateFrom(page)).moduleFieldSettings.deals.hiddenCustomFieldKeys, []);
+
+    const otherDeal = (await stateFrom(page)).deals.find(deal => deal.id !== firstDeal.id);
+    assert.equal(otherDeal.visibleCustomFieldKeys.includes('test:text'), true);
+    await page.getByRole('button', { name: otherDeal.title }).click();
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Contrato teste').count(), 1);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
 
     await page.getByRole('button', { name: firstDeal.title }).click();
     await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();

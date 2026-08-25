@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 7,
+  "next_id": 10,
   "lessons": [
     {
       "id": "L-001",
@@ -112,6 +112,60 @@
       ],
       "created": "2026-08-18T21:03:29Z",
       "last_seen": "2026-08-18T21:03:29Z"
+    },
+    {
+      "id": "L-007",
+      "key": "ac_gap::assert persisted ui state after reopening the configuration surface not only immediately after saving",
+      "text": "Assert persisted UI state after reopening the configuration surface, not only immediately after saving",
+      "signal": "ac_gap",
+      "scope": "ui-state",
+      "status": "candidate",
+      "features": [
+        "global-custom-field-visibility"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md AC1 (ui-state)"
+      ],
+      "created": "2026-08-25T20:07:16Z",
+      "last_seen": "2026-08-25T20:07:16Z"
+    },
+    {
+      "id": "L-008",
+      "key": "ac_gap::for scoped visibility changes assert both the target record and an unaffected sibling",
+      "text": "For scoped visibility changes, assert both the target record and an unaffected sibling",
+      "signal": "ac_gap",
+      "scope": "ui-state",
+      "status": "candidate",
+      "features": [
+        "global-custom-field-visibility"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md AC5 (ui-state)"
+      ],
+      "created": "2026-08-25T20:07:18Z",
+      "last_seen": "2026-08-25T20:07:18Z"
+    },
+    {
+      "id": "L-009",
+      "key": "ac_gap::authorization rejection tests must compare protected state before and after the denied action",
+      "text": "Authorization rejection tests must compare protected state before and after the denied action",
+      "signal": "ac_gap",
+      "scope": "authorization",
+      "status": "candidate",
+      "features": [
+        "global-custom-field-visibility"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md authorization edge (authorization)"
+      ],
+      "created": "2026-08-25T20:07:21Z",
+      "last_seen": "2026-08-25T20:07:21Z"
     }
   ]
 }

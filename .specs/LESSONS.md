@@ -50,6 +50,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: .specs/features/ui-crm-workspace/validation.md:106 (state-payloads)
 - last seen: 2026-08-18T21:03:29Z
 
+### L-007 - Assert persisted UI state after reopening the configuration surface, not only immediately after saving
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `ui-state` · harmful: 0
+- features: global-custom-field-visibility
+- evidence: validation.md AC1 (ui-state)
+- last seen: 2026-08-25T20:07:16Z
+
+### L-008 - For scoped visibility changes, assert both the target record and an unaffected sibling
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `ui-state` · harmful: 0
+- features: global-custom-field-visibility
+- evidence: validation.md AC5 (ui-state)
+- last seen: 2026-08-25T20:07:18Z
+
+### L-009 - Authorization rejection tests must compare protected state before and after the denied action
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `authorization` · harmful: 0
+- features: global-custom-field-visibility
+- evidence: validation.md authorization edge (authorization)
+- last seen: 2026-08-25T20:07:21Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
