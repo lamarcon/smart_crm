@@ -2,7 +2,7 @@
 
 **Gathered:** 2026-08-25
 **Spec:** `.specs/features/global-drawer-hide-action/spec.md`
-**Status:** Ready for implementation
+**Status:** Complete
 
 ---
 

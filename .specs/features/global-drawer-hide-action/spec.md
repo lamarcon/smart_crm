@@ -67,9 +67,9 @@ O botão `×` ao lado de um campo personalizado atualmente oculta o campo soment
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| XHIDE-01 | P1: Ocultação imediata e global | Execute | Implementing |
-| XHIDE-02 | P1: Preservação e reversão | Execute | Implementing |
-| XHIDE-03 | P1: Autorização e bordas | Execute | Implementing |
+| XHIDE-01 | P1: Ocultação imediata e global | Execute | Verified |
+| XHIDE-02 | P1: Preservação e reversão | Execute | Verified |
+| XHIDE-03 | P1: Autorização e bordas | Execute | Verified |
 
 **Coverage:** 3 total, 3 mapped to the implicit execution steps, 0 unmapped.
 
@@ -80,4 +80,4 @@ O botão `×` ao lado de um campo personalizado atualmente oculta o campo soment
 - [x] Um clique no `×` remove o campo de todos os cards do módulo sem salvar o cadastro.
 - [x] Valores e visibilidades individuais permanecem idênticos.
 - [x] Não Administradores não veem nem conseguem executar a ação.
-- [ ] A regressão completa e a validação independente terminam em PASS.
+- [x] A regressão completa e a validação independente terminam em PASS.
