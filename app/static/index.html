@@ -1534,7 +1534,10 @@
         const step = field.type === 'money' ? ' step="0.01"' : field.type === 'number' ? ' step="any"' : '';
         control = `<input id="${id}" name="${escapeHTML(name)}" type="${inputType}"${step} value="${escapeHTML(value)}" data-custom-input data-custom-key="${escapeHTML(field.key)}" data-custom-type="${escapeHTML(field.type || 'text')}">`;
       }
-      return `<div class="field" data-custom-field="${escapeHTML(field.key)}"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><label for="${id}">${escapeHTML(field.label)}</label><button type="button" class="row-action" data-action="hide-custom-field" data-key="${escapeHTML(field.key)}" aria-label="Ocultar campo" title="Ocultar ${escapeHTML(field.label)}">×</button></div>${control}</div>`;
+      const hideControl = currentUser().role === 'Administrador'
+        ? `<button type="button" class="row-action" data-action="hide-custom-field" data-key="${escapeHTML(field.key)}" aria-label="Ocultar campo em todos os cadastros" title="Ocultar ${escapeHTML(field.label)} em todos os cadastros">×</button>`
+        : '';
+      return `<div class="field" data-custom-field="${escapeHTML(field.key)}"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><label for="${id}">${escapeHTML(field.label)}</label>${hideControl}</div>${control}</div>`;
     }
 
     function renderDrawerCustomFields(record) {
@@ -1572,18 +1575,26 @@
     }
 
     function hideDrawerCustomField(key) {
+      if (currentUser().role !== 'Administrador') return false;
       const form = document.getElementById('drawerForm');
-      const record = state[collectionFor(form.dataset.entity)]?.find(item => item.id === form.dataset.id);
+      const collection = collectionFor(form.dataset.entity);
+      const settings = state.moduleFieldSettings[collection];
+      const hidden = settings?.hiddenCustomFieldKeys || [];
+      const record = state[collection]?.find(item => item.id === form.dataset.id);
       const field = record?.customFields?.find(candidate => candidate.key === key);
-      const wrapper = document.querySelector(`#drawerCustomFields [data-custom-field="${CSS.escape(key)}"]`);
-      if (!field || !wrapper) return;
-      wrapper.remove();
-      if (!document.querySelector('#drawerCustomFields [data-custom-field]')) document.getElementById('drawerCustomFields').innerHTML = '<div class="drawer-custom-empty full">Nenhum campo adicional visível.</div>';
-      const select = document.getElementById('drawerAddCustomField');
-      const hiddenFields = (record.customFields || []).filter(candidate => !form.elements.namedItem(`custom:${candidate.key}`));
-      select.innerHTML = `<option value="">Selecione um campo...</option>${hiddenFields.map(candidate => `<option value="${escapeHTML(candidate.key)}">${escapeHTML(candidate.label)}</option>`).join('')}`;
-      select.disabled = false;
-      document.querySelector('[data-action="add-custom-field"]').disabled = false;
+      if (!field || hidden.includes(key)) return false;
+
+      const wasDirty = formSignature(form) !== drawerInitialValue;
+      settings.hiddenCustomFieldKeys = [...new Set([...hidden, key])];
+      saveState();
+      renderDrawerCustomFields(record);
+      const hasCustomFields = moduleAvailableCustomFields(collection, record).length > 0;
+      document.querySelector('[data-drawer-tab="custom"]').hidden = !hasCustomFields;
+      document.getElementById('drawerTabs').hidden = form.dataset.entity !== 'deal' && !hasCustomFields;
+      setDrawerTab(hasCustomFields ? drawerActiveTab : 'info');
+      if (!wasDirty) drawerInitialValue = formSignature(form);
+      toast(`Campo ${field.label} ocultado em todos os cadastros.`);
+      return true;
     }
 
     function setDrawerTab(tab) {

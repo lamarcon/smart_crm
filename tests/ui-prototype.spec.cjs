@@ -1252,6 +1252,89 @@ async function createLead(page, name) {
     assert.equal(await drawer.locator('#drawerAddCustomField option[value="test:global"]').count(), 1);
   });
 
+  await run('XHIDE-01 o x oculta o campo em todos os cards sem perder dados', async page => {
+    const configured = await stateFrom(page);
+    const schema = { key: 'test:x-global', label: 'Campo global pelo x', type: 'text', options: [], userCreated: true };
+    configured.customFieldSchemas.deals = [schema];
+    configured.moduleFieldSettings.deals.hiddenCustomFieldKeys = [];
+    configured.deals.forEach((deal, index) => {
+      deal.customFields = [{ ...schema, value: `VALOR-X-${index + 1}` }];
+      deal.visibleCustomFieldKeys = [schema.key];
+    });
+    configured.deals[1].visibleCustomFieldKeys = [];
+    const valuesBefore = configured.deals.map(deal => deal.customFields[0].value);
+    const visibilityBefore = configured.deals.map(deal => [...deal.visibleCustomFieldKeys]);
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    await goTo(page, 'Negócios');
+    const [firstDeal, secondDeal] = (await stateFrom(page)).deals;
+    const drawer = page.locator('#entityDrawer');
+    await page.getByRole('button', { name: firstDeal.title }).click();
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    const globalHide = drawer.locator('[data-action="hide-custom-field"][data-key="test:x-global"]');
+    assert.equal(await globalHide.count(), 1);
+    assert.equal(await globalHide.getAttribute('aria-label'), 'Ocultar campo em todos os cadastros');
+    await globalHide.click();
+    await page.locator('#toastRegion').getByText('Campo Campo global pelo x ocultado em todos os cadastros.', { exact: true }).waitFor();
+
+    let saved = await stateFrom(page);
+    assert.deepEqual(saved.moduleFieldSettings.deals.hiddenCustomFieldKeys, [schema.key]);
+    assert.deepEqual(saved.deals.map(deal => deal.customFields[0].value), valuesBefore);
+    assert.deepEqual(saved.deals.map(deal => deal.visibleCustomFieldKeys), visibilityBefore);
+    assert.equal(await drawer.locator('#drawerAddCustomField option[value="test:x-global"]').count(), 0);
+    assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isHidden(), true);
+    assert.equal(await drawer.getByRole('tab', { name: 'Informações' }).getAttribute('aria-selected'), 'true');
+    assert.equal(await page.evaluate(key => hideDrawerCustomField(key), schema.key), false);
+    assert.equal(await page.evaluate(() => hideDrawerCustomField('test:inexistente')), false);
+    assert.deepEqual((await stateFrom(page)).moduleFieldSettings.deals.hiddenCustomFieldKeys, [schema.key]);
+
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+    await page.getByRole('button', { name: secondDeal.title }).click();
+    assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isHidden(), true);
+    assert.equal(await drawer.getByLabel('Campo global pelo x').count(), 0);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+
+    await page.getByRole('button', { name: 'Gerenciar campos' }).click();
+    const dialog = page.locator('#fieldManagerDialog');
+    assert.equal(await dialog.getByLabel('Campo global pelo x').isChecked(), false);
+    await dialog.getByLabel('Campo global pelo x').check();
+    await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
+    assert.deepEqual((await stateFrom(page)).moduleFieldSettings.deals.hiddenCustomFieldKeys, []);
+    await page.getByRole('button', { name: firstDeal.title }).click();
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Campo global pelo x').inputValue(), valuesBefore[0]);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+    await page.getByRole('button', { name: secondDeal.title }).click();
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Campo global pelo x').count(), 0);
+    assert.equal(await drawer.locator('#drawerAddCustomField option[value="test:x-global"]').count(), 1);
+  });
+
+
+  await run('XHIDE-02 restringe o x global ao Administrador', async page => {
+    const configured = await stateFrom(page);
+    const schema = { key: 'test:x-restrito', label: 'Campo restrito', type: 'text', options: [], userCreated: true };
+    configured.customFieldSchemas.deals = [schema];
+    configured.moduleFieldSettings.deals.hiddenCustomFieldKeys = [];
+    configured.deals[0].responsibleId = 'u-paula';
+    configured.deals[0].customFields = [{ ...schema, value: 'DADO PRESERVADO' }];
+    configured.deals[0].visibleCustomFieldKeys = [schema.key];
+    configured.currentUserId = 'u-paula';
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    await goTo(page, 'Negócios');
+    const firstDeal = (await stateFrom(page)).deals[0];
+    await page.getByRole('button', { name: firstDeal.title }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.locator('[data-action="hide-custom-field"]').count(), 0);
+    const settingsBefore = JSON.stringify((await stateFrom(page)).moduleFieldSettings.deals);
+    assert.equal(await page.evaluate(key => hideDrawerCustomField(key), schema.key), false);
+    assert.equal(JSON.stringify((await stateFrom(page)).moduleFieldSettings.deals), settingsBefore);
+    assert.equal(await drawer.getByLabel('Campo restrito').inputValue(), 'DADO PRESERVADO');
+  });
   await run('ADM-02 campos tipados preservam valores ocultação busca e filtros', async page => {
     const configured = await stateFrom(page);
     const schemas = [
@@ -1335,27 +1418,7 @@ async function createLead(page, name) {
     assert.equal(await drawer.getByLabel('Contrato teste').inputValue(), 'CTR-900');
     assert.equal(await drawer.getByLabel('Data teste').inputValue(), '2026-09-15');
     assert.equal(await drawer.getByLabel('Prioridade teste').inputValue(), 'Alta');
-    await drawer.locator('[data-action="hide-custom-field"][data-key="test:text"]').click();
-    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
-    saved = (await stateFrom(page)).deals.find(deal => deal.id === firstDeal.id);
-    assert.equal(saved.customFields.find(field => field.key === 'test:text').value, 'CTR-900');
-    assert.equal(saved.visibleCustomFieldKeys.includes('test:text'), false);
-    assert.deepEqual((await stateFrom(page)).moduleFieldSettings.deals.hiddenCustomFieldKeys, []);
-
-    const otherDeal = (await stateFrom(page)).deals.find(deal => deal.id !== firstDeal.id);
-    assert.equal(otherDeal.visibleCustomFieldKeys.includes('test:text'), true);
-    await page.getByRole('button', { name: otherDeal.title }).click();
-    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
-    assert.equal(await drawer.getByLabel('Contrato teste').count(), 1);
     await drawer.getByRole('button', { name: 'Fechar painel' }).click();
-
-    await page.getByRole('button', { name: firstDeal.title }).click();
-    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
-    assert.equal(await drawer.getByLabel('Contrato teste').count(), 0);
-    await drawer.getByLabel('Campo adicional para adicionar').selectOption('test:text');
-    await drawer.getByRole('button', { name: 'Adicionar campo' }).click();
-    assert.equal(await drawer.getByLabel('Contrato teste').inputValue(), 'CTR-900');
-    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
 
     await page.getByPlaceholder('Buscar em negócios...').fill('CTR-900');
     assert.equal(await page.locator('#page-deals tbody tr').count(), 1);
