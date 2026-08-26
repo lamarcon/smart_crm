@@ -235,6 +235,8 @@ T11  T12  T13  T14
 
 ### T7: Implement the versioned workspace service
 
+**Status**: Complete
+
 **What**: Implement bootstrap, load, save, reset, list-deleted and restore transactions with a locked singleton workspace and optimistic version.
 **Where**: `app/services/workspace.py`
 **Depends on**: T6
