@@ -180,6 +180,8 @@ T11  T12  T13  T14
 
 ### T5: Define and validate the workspace contract
 
+**Status**: Complete
+
 **What**: Implement Pydantic request/response models plus cross-record validation and exact persisted counts.
 **Where**: `app/schemas.py`
 **Depends on**: T4
