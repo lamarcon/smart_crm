@@ -163,7 +163,7 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | DBP-08 | P1: Fonte principal | Design | Complete |
 | DBP-09 | P1: Fonte principal | Design | Complete |
 | DBP-10 | P1: Fonte principal | Design | Complete |
-| DBP-11 | P1: Fonte principal | Design | Complete |
+| DBP-11 | P1: Fonte principal | Execute | In progress (T2 complete) |
 | DBP-12 | P1: Fonte principal | Design | Complete |
 | DBP-13 | P1: Fonte principal | Design | Complete |
 | DBP-14 | P1: Compatibilidade | Design | Complete |
@@ -171,11 +171,11 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | DBP-16 | P1: Compatibilidade | Design | Complete |
 | DBP-17 | P1: Compatibilidade | Design | Complete |
 | DBP-18 | P1: Compatibilidade | Design | Complete |
-| DBP-19 | P1: Falhas visíveis | Execute | In progress (T1 complete) |
-| DBP-20 | P1: Falhas visíveis | Execute | In progress (T1 complete) |
+| DBP-19 | P1: Falhas visíveis | Execute | In progress (T1-T2 complete) |
+| DBP-20 | P1: Falhas visíveis | Execute | In progress (T1-T2 complete) |
 | DBP-21 | P1: Falhas visíveis | Design | Complete |
 | DBP-22 | P1: Falhas visíveis | Design | Complete |
-| DBP-23 | P1: Falhas visíveis | Design | Complete |
+| DBP-23 | P1: Falhas visíveis | Execute | In progress (T2 complete) |
 
 **Coverage:** 23 total, 0 pending design, 0 unmapped.
 

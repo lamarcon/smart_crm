@@ -99,6 +99,8 @@ T11  T12  T13  T14
 
 ### T2: Create database settings and session boundary
 
+**Status**: Complete
+
 **What**: Implement settings, SQLAlchemy engine/session creation, connection checking and test overrides as one database boundary.
 **Where**: `app/database.py`
 **Depends on**: T1
