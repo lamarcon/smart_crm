@@ -18,13 +18,21 @@
 - **Date**: 2026-08-17
 - **Status**: active
 
+### AD-003
+- **Decision**: A API local do Smart CRM usará FastAPI, SQLAlchemy 2 com o driver Psycopg 3 e migrações versionadas pelo Alembic; o PostgreSQL será a fonte principal após a inicialização do workspace.
+- **Reason**: A persistência exige validação estruturada, transações explícitas, controle de concorrência e evolução reproduzível do esquema sem substituir a interface já validada.
+- **Trade-off**: O serviço deixa de ser livre de dependências Python e passa a exigir dependências fixadas, migrações e testes de integração com banco.
+- **Scope**: Backend Python, acesso ao PostgreSQL, migrações, saúde do serviço e integrações futuras que reutilizem a API do CRM.
+- **Date**: 2026-08-26
+- **Status**: active
+
 ## Handoff
 
-- **Feature**: Campos Bitrix no formato Smart CRM / `.specs/features/bitrix-custom-fields`
-- **Phase / Task**: Execute concluído e validado independentemente
-- **Completed**: BCF-01, BCF-02, BCF-03, BCF-04
+- **Feature**: Persistência do Smart CRM no PostgreSQL / `.specs/features/postgres-crm-persistence`
+- **Phase / Task**: Execute aprovado; lote 1 (T1-T8) pendente
+- **Completed**: Specify, Design, Tasks
 - **In-progress** (file:line): none
-- **Next step**: Atualizar `http://localhost:8080`, revisar os registros importados na aba `Campos adicionais` e informar ajustes visuais ou de mapeamento.
+- **Next step**: Executar T1-T8 em ordem, com teste e commit atômico por tarefa.
 - **Blockers**: none
-- **Uncommitted files**: none após o commit final de validação
+- **Uncommitted files**: artefatos de planejamento desta feature
 - **Branch**: main
