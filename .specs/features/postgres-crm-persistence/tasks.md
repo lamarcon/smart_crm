@@ -73,6 +73,8 @@ T11  T12  T13  T14
 
 ### T1: Define the Python package and test runtime
 
+**Status**: Complete
+
 **What**: Declare pinned-compatible runtime/development dependencies and pytest discovery for FastAPI, SQLAlchemy, Psycopg, Alembic and backend tests.
 **Where**: `pyproject.toml`
 **Depends on**: None
