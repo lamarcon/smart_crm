@@ -126,6 +126,8 @@ T11  T12  T13  T14
 
 ### T3: Define the normalized relational model
 
+**Status**: Complete
+
 **What**: Define SQLAlchemy metadata for workspace, teams, all CRM modules, links, custom fields, external fields, quotes, notifications and durable preferences.
 **Where**: `app/models.py`
 **Depends on**: T2
