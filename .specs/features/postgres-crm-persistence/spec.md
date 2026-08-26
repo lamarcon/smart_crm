@@ -153,7 +153,7 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DBP-01 | P1: Banco normalizado | Execute | In progress (T1, T3 complete) |
+| DBP-01 | P1: Banco normalizado | Execute | In progress (T1, T3-T4 complete) |
 | DBP-02 | P1: Banco normalizado | Design | Complete |
 | DBP-03 | P1: Banco normalizado | Design | Complete |
 | DBP-04 | P1: Banco normalizado | Design | Complete |
@@ -170,7 +170,7 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | DBP-15 | P1: Compatibilidade | Execute | In progress (T3 complete) |
 | DBP-16 | P1: Compatibilidade | Design | Complete |
 | DBP-17 | P1: Compatibilidade | Design | Complete |
-| DBP-18 | P1: Compatibilidade | Design | Complete |
+| DBP-18 | P1: Compatibilidade | Execute | In progress (T4 complete) |
 | DBP-19 | P1: Falhas visíveis | Execute | In progress (T1-T2 complete) |
 | DBP-20 | P1: Falhas visíveis | Execute | In progress (T1-T2 complete) |
 | DBP-21 | P1: Falhas visíveis | Design | Complete |

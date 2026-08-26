@@ -153,6 +153,8 @@ T11  T12  T13  T14
 
 ### T4: Create the initial Alembic migration
 
+**Status**: Complete
+
 **What**: Add an Alembic environment and one initial revision that creates the normalized schema and singleton uninitialized workspace without touching the existing probe.
 **Where**: `migrations/`
 **Depends on**: T3

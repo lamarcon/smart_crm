@@ -29,10 +29,10 @@
 ## Handoff
 
 - **Feature**: Persistência do Smart CRM no PostgreSQL / `.specs/features/postgres-crm-persistence`
-- **Phase / Task**: Execute aprovado; lote 1, T3 concluída, T4 pendente
-- **Completed**: Specify, Design, Tasks, T1, T2, T3
+- **Phase / Task**: Execute aprovado; lote 1, T4 concluída, T5 pendente
+- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4
 - **In-progress** (file:line): none
-- **Next step**: Executar T4 e seu gate rápido.
+- **Next step**: Executar T5 e seu gate rápido.
 - **Blockers**: none
 - **Uncommitted files**: none após o commit de T1
 - **Branch**: main
