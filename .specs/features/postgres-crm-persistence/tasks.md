@@ -207,6 +207,8 @@ T11  T12  T13  T14
 
 ### T6: Implement relational serialization and reconciliation
 
+**Status**: Complete
+
 **What**: Implement reading an active workspace and atomically reconciling one validated state into normalized tables while preserving deleted children.
 **Where**: `app/repositories/workspace.py`
 **Depends on**: T5
