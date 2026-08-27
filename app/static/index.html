@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR" data-workspace-ready="false" data-workspace-writable="false">
+<html lang="pt-BR" data-workspace-ready="false" data-workspace-writable="false" data-workspace-writing="false">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -206,6 +206,10 @@
     .bootstrap-count span { color: var(--slate-500); font-size: 11px; }
     .bootstrap-access { margin: 16px 0 0; padding: 11px 12px; border-radius: 9px; color: #4b3500; background: var(--amber-100); font-size: 12px; }
     .bootstrap-error { margin: 12px 0 0; color: var(--red-600); font-size: 12px; font-weight: 650; }
+    .deleted-records { display: grid; gap: 9px; margin-top: 15px; }
+    .deleted-record { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--slate-200); border-radius: 9px; background: var(--slate-50); }
+    .deleted-record strong { display: block; font-size: 13px; }
+    .deleted-record span { color: var(--slate-500); font-size: 11px; }
     .drawer-overlay { position: fixed; inset: 0; z-index: 80; visibility: hidden; opacity: 0; background: rgba(10,16,32,.32); transition: .2s ease; }
     .drawer-overlay.open { visibility: visible; opacity: 1; }
     .entity-drawer { position: fixed; z-index: 81; inset: 0 0 0 auto; width: min(560px, 100vw); display: flex; flex-direction: column; visibility: hidden; transform: translateX(100%); background: white; box-shadow: -24px 0 60px rgba(16,24,40,.2); transition: .22s ease; }
@@ -394,6 +398,16 @@
       <p class="bootstrap-error" id="bootstrapError" role="alert"></p>
     </div>
     <div class="modal-foot"><button type="button" class="button" data-close="bootstrapDialog">Aguardar</button><button type="button" class="button primary" id="bootstrapConfirm" data-action="confirm-bootstrap">Confirmar migração</button></div>
+  </dialog>
+
+  <dialog id="deletedRecordsDialog">
+    <div class="modal-head"><div><h3>Recuperar excluídos</h3><p class="hint">A recuperação restaura o registro e seus vínculos preservados.</p></div><button type="button" class="close-button" data-close="deletedRecordsDialog" aria-label="Fechar">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label for="deletedModule">Módulo</label><select id="deletedModule"><option value="leads">Leads</option><option value="contacts">Contatos</option><option value="companies">Empresas</option><option value="deals">Negócios</option><option value="users">Usuários</option><option value="notifications">Notificações</option></select></div>
+      <div class="deleted-records" id="deletedRecords"></div>
+      <p class="bootstrap-error" id="deletedRecordsError" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="button" data-close="deletedRecordsDialog">Fechar</button></div>
   </dialog>
 
   <dialog id="entityDialog">
@@ -662,6 +676,11 @@
     let workspaceVersion = 0;
     let workspaceWritable = false;
     let workspaceInitialized = false;
+    let confirmedState = null;
+    let persistenceScheduled = false;
+    let workspaceWriteInFlight = false;
+    let pendingPersistenceEndpoint = '/api/workspace';
+    let queuedToasts = [];
     let activeView = 'dashboard';
     function defaultUiState(users) {
       const ui = { filtersByUser: {}, savedFilters: [], viewModesByUser: {}, dashboardScopeByUser: {} };
@@ -773,7 +792,17 @@
       return fresh;
     }
 
-    function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    function writeLocalState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    function saveState(options = {}) {
+      writeLocalState();
+      if (!workspaceWritable || !confirmedState) return;
+      if (JSON.stringify(extractDurableState()) === JSON.stringify(confirmedState)) return;
+      if (options.reset) pendingPersistenceEndpoint = '/api/workspace/reset';
+      if (persistenceScheduled || workspaceWriteInFlight) return;
+      persistenceScheduled = true;
+      document.documentElement.dataset.workspaceWriting = 'true';
+      queueMicrotask(persistPendingMutation);
+    }
     function extractDurableState(source = state) {
       const durable = clone(source);
       delete durable.currentUserId;
@@ -839,8 +868,70 @@
     }
     async function responseJson(response) {
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error?.message || `HTTP ${response.status}`);
+      if (!response.ok) {
+        const failure = new Error(payload.error?.message || `HTTP ${response.status}`);
+        failure.status = response.status;
+        failure.payload = payload;
+        throw failure;
+      }
       return payload;
+    }
+    function flushQueuedToasts() {
+      const pending = queuedToasts;
+      queuedToasts = [];
+      pending.forEach(({ message, action }) => showToast(message, action));
+    }
+    async function loadCanonicalWorkspace() {
+      const payload = await responseJson(await fetch('/api/workspace', { headers: { Accept: 'application/json' } }));
+      if (!payload.initialized || !payload.state) throw new Error('Workspace canônico indisponível.');
+      workspaceVersion = payload.version;
+      confirmedState = extractDurableState(payload.state);
+      state = mergeDurableState(payload.state, state);
+      writeConfirmedCache(workspaceVersion, payload.state);
+      writeLocalState();
+      render();
+    }
+    async function persistPendingMutation() {
+      persistenceScheduled = false;
+      workspaceWriteInFlight = true;
+      const endpoint = pendingPersistenceEndpoint;
+      pendingPersistenceEndpoint = '/api/workspace';
+      const candidate = extractDurableState();
+      try {
+        const payload = await responseJson(await fetch(endpoint, {
+          method: endpoint === '/api/workspace' ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ version: workspaceVersion, state: candidate })
+        }));
+        workspaceVersion = payload.version;
+        confirmedState = extractDurableState(payload.state);
+        state = mergeDurableState(payload.state, state);
+        writeConfirmedCache(workspaceVersion, payload.state);
+        writeLocalState();
+        render();
+        flushQueuedToasts();
+      } catch (failure) {
+        queuedToasts = [];
+        if (failure.status === 409) {
+          try {
+            await loadCanonicalWorkspace();
+            showToast('Dados atualizados em outra sessão. A versão atual foi recarregada.');
+          } catch (_) {
+            state = mergeDurableState(confirmedState, state);
+            writeLocalState();
+            render();
+            showToast('Não foi possível salvar no banco.');
+          }
+        } else {
+          state = mergeDurableState(confirmedState, state);
+          writeLocalState();
+          render();
+          showToast('Não foi possível salvar no banco.');
+        }
+      } finally {
+        workspaceWriteInFlight = false;
+        document.documentElement.dataset.workspaceWriting = 'false';
+      }
     }
     async function initializeWorkspace() {
       setWorkspaceAccess(false, false, 'Conectando ao workspace...', 'loading');
@@ -852,6 +943,7 @@
           if (!payload.state) throw new Error('Workspace inicializado sem estado.');
           state = mergeDurableState(payload.state, localCandidate);
           workspaceInitialized = true;
+          confirmedState = extractDurableState(payload.state);
           writeConfirmedCache(workspaceVersion, payload.state);
           saveState();
           setWorkspaceAccess(true, true, 'Ambiente de demonstração — dados fictícios persistidos no PostgreSQL local.', 'ready');
@@ -869,6 +961,7 @@
         workspaceVersion = cached?.version || 0;
         state = cached ? mergeDurableState(cached.state, localCandidate) : normalizeState(seedState());
         workspaceInitialized = Boolean(cached);
+        confirmedState = cached ? extractDurableState(cached.state) : null;
         saveState();
         setWorkspaceAccess(true, false, READ_ONLY_WARNING, 'degraded');
         render();
@@ -890,6 +983,7 @@
         workspaceVersion = payload.version;
         state = mergeDurableState(payload.state, state);
         workspaceInitialized = true;
+        confirmedState = extractDurableState(payload.state);
         writeConfirmedCache(workspaceVersion, payload.state);
         saveState();
         document.getElementById('bootstrapDialog').close();
@@ -1238,6 +1332,14 @@
     }
 
     function toast(message, action = null) {
+      if (persistenceScheduled || workspaceWriteInFlight) {
+        queuedToasts.push({ message, action });
+        return;
+      }
+      showToast(message, action);
+    }
+
+    function showToast(message, action = null) {
       const element = document.createElement('div');
       element.className = 'toast';
       element.innerHTML = `<b>✓</b><span>${escapeHTML(message)}</span>${action ? `<button class="button small" data-action="${action.action}">${escapeHTML(action.label)}</button>` : ''}`;
@@ -1324,7 +1426,7 @@
       const dashboardFilterCount = activeFilterCount(`dashboard_${dashboard.scope}`);
       const scopeLabel = ({ all: 'Todos', leads: 'Leads', deals: 'Negócios' })[dashboard.scope];
       return `
-        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions">${currentUser().role === 'Administrador' ? '<button class="button" data-action="open-bitrix-import">⇩ Importar Bitrix</button>' : ''}<button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar demo</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
+        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions">${currentUser().role === 'Administrador' ? '<button class="button" data-action="open-deleted">↺ Recuperar excluídos</button><button class="button" data-action="open-bitrix-import">⇩ Importar Bitrix</button>' : ''}<button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar demo</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
         <div class="stats">
           <article class="stat" style="--stat-color:var(--blue-100)"><div class="stat-top"><span>Leads em contato</span><span class="stat-icon">◎</span></div><strong>${leads.filter(item => item.stage === 'Em contato').length}</strong><small><b>Dados locais</b> deste perfil</small></article>
           <article class="stat" style="--stat-color:var(--purple-100)"><div class="stat-top"><span>Negócios abertos</span><span class="stat-icon">◇</span></div><strong>${openDeals.length}</strong><small>${money(total)} em pipeline</small></article>
@@ -2244,7 +2346,7 @@
       const discount = Number(data.get('discount') || 0);
       const total = Math.max(0, quantity * unitPrice - discount);
       deal.quotes.push({ id: nextId('ORC', deal.quotes), description: data.get('description'), quantity, unitPrice, discount, total, validity: data.get('validity'), state: 'Rascunho', pdf: file?.name || '' });
-      deal.amount = total; deal.updatedAt = 'Agora';
+      deal.amount = total; deal.updatedAt = new Date().toISOString();
       notify('Orçamento adicionado ao Negócio.', `${deal.id} · ${money(total)}`, deal.responsibleId);
       saveState(); document.getElementById('quoteDialog').close(); render();
       const drawer = document.getElementById('entityDrawer');
@@ -2259,9 +2361,63 @@
     function markRead(id) { const item = state.notifications.find(note => note.id === id); if (item) item.read = true; saveState(); render(); }
     function markAllRead() { state.notifications.filter(item => item.userId === state.currentUserId).forEach(item => item.read = true); saveState(); render(); toast('Notificações marcadas como lidas.'); }
 
+    function deletedRecordLabel(record) {
+      return record.name || record.title || record.text || record.email || record.id;
+    }
+    async function loadDeletedRecords() {
+      const module = document.getElementById('deletedModule').value;
+      const container = document.getElementById('deletedRecords');
+      const error = document.getElementById('deletedRecordsError');
+      container.innerHTML = '<p class="hint">Carregando...</p>';
+      error.textContent = '';
+      try {
+        const payload = await responseJson(await fetch(`/api/workspace/deleted?module=${encodeURIComponent(module)}`, { headers: { Accept: 'application/json' } }));
+        container.innerHTML = payload.records.length ? payload.records.map(record => `<div class="deleted-record"><div><strong>${escapeHTML(deletedRecordLabel(record))}</strong><span>${escapeHTML(record.id)}</span></div><button type="button" class="button small" data-action="restore-deleted" data-module="${escapeHTML(module)}" data-id="${escapeHTML(record.id)}" aria-label="Recuperar ${escapeHTML(record.id)}">Recuperar</button></div>`).join('') : '<p class="hint">Nenhum registro excluído neste módulo.</p>';
+      } catch (failure) {
+        container.innerHTML = '';
+        error.textContent = failure.message;
+      }
+    }
+    function openDeletedRecords() {
+      if (currentUser().role !== 'Administrador') return;
+      const dialog = document.getElementById('deletedRecordsDialog');
+      if (!dialog.open) dialog.showModal();
+      loadDeletedRecords();
+    }
+    async function restoreDeletedRecord(module, id) {
+      if (!requireWritableWorkspace()) return;
+      workspaceWriteInFlight = true;
+      document.documentElement.dataset.workspaceWriting = 'true';
+      try {
+        const payload = await responseJson(await fetch('/api/workspace/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ version: workspaceVersion, module, id })
+        }));
+        workspaceVersion = payload.version;
+        confirmedState = extractDurableState(payload.state);
+        state = mergeDurableState(payload.state, state);
+        writeConfirmedCache(workspaceVersion, payload.state);
+        writeLocalState();
+        render();
+        await loadDeletedRecords();
+        showToast('Registro recuperado com seus vínculos.');
+      } catch (failure) {
+        if (failure.status === 409) {
+          await loadCanonicalWorkspace().catch(() => {});
+          showToast('Dados atualizados em outra sessão. A versão atual foi recarregada.');
+        } else {
+          showToast('Não foi possível recuperar o registro.');
+        }
+      } finally {
+        workspaceWriteInFlight = false;
+        document.documentElement.dataset.workspaceWriting = 'false';
+      }
+    }
+
     function resetDemo() {
       if (!confirm('Restaurar todos os dados fictícios e descartar suas alterações locais?')) return;
-      state = mergeDurableState(extractDurableState(normalizeState(seedState())), state); saveState(); activeView = 'dashboard'; render(); toast('Dados de demonstração restaurados.');
+      state = mergeDurableState(extractDurableState(normalizeState(seedState())), state); saveState({ reset: true }); activeView = 'dashboard'; render(); toast('Dados de demonstração restaurados.');
     }
 
     function toggleSidebar(open) {
@@ -2272,13 +2428,13 @@
     const durableActions = new Set([
       'new', 'add-custom-field', 'hide-custom-field', 'manage-fields', 'save-field-visibility',
       'create-custom-field', 'new-user', 'edit-user', 'resend-invite', 'user-status',
-      'open-bitrix-import', 'save-filter', 'delete-saved-filter', 'set-view-mode',
+      'open-bitrix-import', 'open-deleted', 'restore-deleted', 'save-filter', 'delete-saved-filter', 'set-view-mode',
       'request-stage', 'undo-stage', 'delete', 'convert', 'discard', 'quote',
       'read', 'read-all', 'reset'
     ]);
     function requireWritableWorkspace() {
-      if (workspaceWritable) return true;
-      toast(document.documentElement.dataset.workspaceReady === 'true' ? READ_ONLY_WARNING : 'Aguarde a inicialização do workspace.');
+      if (workspaceWritable && !persistenceScheduled && !workspaceWriteInFlight) return true;
+      showToast(workspaceWritable ? 'Aguarde a confirmação da alteração atual.' : document.documentElement.dataset.workspaceReady === 'true' ? READ_ONLY_WARNING : 'Aguarde a inicialização do workspace.');
       return false;
     }
 
@@ -2300,6 +2456,8 @@
       if (action === 'create-custom-field') createCustomField();
       if (action === 'new-user') openUserDialog();
       if (action === 'edit-user') openUserDialog(button.dataset.id);
+      if (action === 'open-deleted') openDeletedRecords();
+      if (action === 'restore-deleted') restoreDeletedRecord(button.dataset.module, button.dataset.id);
       if (action === 'resend-invite') resendInvite(button.dataset.id);
       if (action === 'user-status') changeUserStatus(button.dataset.id, button.dataset.status);
       if (action === 'open-bitrix-import') openBitrixImport();
@@ -2334,6 +2492,7 @@
 
     document.addEventListener('change', event => {
       if (event.target.dataset.bitrixEntity) syncBitrixImportButton();
+      if (event.target.id === 'deletedModule') loadDeletedRecords();
       if (event.target.id === 'customFieldType') document.getElementById('customFieldOptionsWrap').hidden = !['select', 'multiselect'].includes(event.target.value);
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }
       if (event.target.name === 'filter-operator' && event.target.closest('#filterDialog')) { syncFilterDraftFromPanel(); renderFilterPanel(); }

@@ -42,7 +42,14 @@ function countsFor(state) {
 }
 
 async function stateFrom(page) {
-  return JSON.parse(await page.evaluate(key => localStorage.getItem(key), STORAGE_KEY));
+  await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting !== 'true');
+  const local = JSON.parse(await page.evaluate(key => localStorage.getItem(key), STORAGE_KEY));
+  const api = apiByPage.get(page);
+  const writable = await page.evaluate(() => document.documentElement.dataset.workspaceWritable === 'true');
+  if (api?.initialized && writable && api.assertSynchronized && !api.writeFailure) {
+    assert.deepEqual(durableState(local), api.state, 'estado durável local divergiu da API confirmada');
+  }
+  return local;
 }
 
 async function openFresh(options = {}) {
@@ -51,12 +58,13 @@ async function openFresh(options = {}) {
     await context.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: options.preloadState });
   }
   const page = await context.newPage();
-  const api = { initialized: false, version: 0, state: null, loadFailure: Boolean(options.loadFailure) };
+  const api = { initialized: false, version: 0, state: null, loadFailure: Boolean(options.loadFailure), writeFailure: false, assertSynchronized: false, deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] } };
   apiByPage.set(page, api);
   await context.route('**/api/workspace**', async route => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname !== '/api/workspace' && url.pathname !== '/api/workspace/bootstrap') return route.continue();
+    const workspacePaths = ['/api/workspace', '/api/workspace/bootstrap', '/api/workspace/reset', '/api/workspace/deleted', '/api/workspace/restore'];
+    if (!workspacePaths.includes(url.pathname)) return route.continue();
     if (request.method() === 'GET' && url.pathname === '/api/workspace') {
       if (api.loadFailure) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Banco de dados indisponível.' } }) });
@@ -75,7 +83,47 @@ async function openFresh(options = {}) {
       api.state = durableState(payload.state);
       api.initialized = true;
       api.version = 1;
+      api.assertSynchronized = true;
       return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ version: api.version, counts: countsFor(api.state), state: api.state }) });
+    }
+    if (request.method() === 'GET' && url.pathname === '/api/workspace/deleted') {
+      const module = url.searchParams.get('module');
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ module, records: clone(api.deleted[module] || []) }) });
+    }
+    if ((request.method() === 'PUT' && url.pathname === '/api/workspace') || (request.method() === 'POST' && url.pathname === '/api/workspace/reset')) {
+      if (api.writeFailure) {
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Banco de dados indisponível.', errorId: 'mock-write-failure' } }) });
+      }
+      const payload = request.postDataJSON();
+      if (payload.version !== api.version) {
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'version_conflict', message: 'Versão do workspace desatualizada.', currentVersion: api.version } }) });
+      }
+      const next = durableState(payload.state);
+      for (const module of ['users', 'leads', 'contacts', 'companies', 'deals', 'notifications']) {
+        const nextIds = new Set(next[module].map(record => record.id));
+        for (const record of api.state[module].filter(record => !nextIds.has(record.id))) {
+          if (!api.deleted[module].some(candidate => candidate.id === record.id)) api.deleted[module].push(clone(record));
+        }
+        const activeIds = new Set(next[module].map(record => record.id));
+        api.deleted[module] = api.deleted[module].filter(record => !activeIds.has(record.id));
+      }
+      api.state = next;
+      api.version += 1;
+      api.assertSynchronized = true;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ version: api.version, counts: countsFor(api.state), state: api.state }) });
+    }
+    if (request.method() === 'POST' && url.pathname === '/api/workspace/restore') {
+      const payload = request.postDataJSON();
+      if (payload.version !== api.version) {
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'version_conflict', message: 'Versão do workspace desatualizada.', currentVersion: api.version } }) });
+      }
+      const records = api.deleted[payload.module] || [];
+      const index = records.findIndex(record => record.id === payload.id);
+      if (index < 0) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'record_not_found', message: 'Registro excluído não encontrado.' } }) });
+      api.state[payload.module].push(records.splice(index, 1)[0]);
+      api.version += 1;
+      api.assertSynchronized = true;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ version: api.version, counts: countsFor(api.state), state: api.state }) });
     }
     return route.fulfill({ status: 405 });
   });
@@ -99,18 +147,12 @@ async function reloadReady(page, options = {}) {
   await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
 }
 
-async function syncMockWorkspace(page) {
-  const api = apiByPage.get(page);
-  api.state = durableState(await stateFrom(page));
-  api.initialized = true;
-  api.version += 1;
-}
-
 async function setMockWorkspace(page, nextState) {
   const api = apiByPage.get(page);
   api.state = durableState(nextState);
   api.initialized = true;
   api.version += 1;
+  api.assertSynchronized = false;
 }
 
 function resetMockWorkspace(page) {
@@ -149,7 +191,7 @@ async function visibleRows(page, entity) {
   return page.locator(`#page-${slug} tbody tr`).count();
 }
 
-async function createLead(page, name) {
+async function createLead(page, name, options = {}) {
   await goTo(page, 'Leads');
   await page.getByRole('button', { name: /Novo Lead/ }).click();
   const dialog = page.locator('#entityDialog');
@@ -159,7 +201,7 @@ async function createLead(page, name) {
   await dialog.getByLabel('Responsável *').selectOption('u-paula');
   await dialog.getByLabel('Assistente').selectOption('u-camila');
   await dialog.getByRole('button', { name: 'Salvar registro' }).click();
-  await page.locator('#page-leads .entity-link').filter({ hasText: name }).waitFor();
+  if (options.waitForSaved !== false) await page.locator('#page-leads .entity-link').filter({ hasText: name }).waitFor();
 }
 
 (async () => {
@@ -224,6 +266,91 @@ async function createLead(page, name) {
     assert.equal(await page.evaluate(key => localStorage.getItem(key), CONFIRMED_CACHE_KEY), null);
     assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceWritable), 'false');
   }, { loadFailure: true });
+
+  await run('DBP-08, DBP-09 e DBP-17 confirmam uma versão por ação durável em outro contexto', async page => {
+    const api = apiByPage.get(page);
+    const beforeVersion = api.version;
+    const beforeNotifications = api.state.notifications.length;
+    await createLead(page, 'Lead confirmado pela API');
+    await stateFrom(page);
+    assert.equal(api.version, beforeVersion + 1);
+    assert.equal(api.state.notifications.length, beforeNotifications + 1);
+
+    const secondContext = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+    await secondContext.route('**/api/workspace**', route => {
+      const request = route.request();
+      if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/workspace') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ initialized: true, version: api.version, state: api.state }) });
+      }
+      return route.continue();
+    });
+    const secondPage = await secondContext.newPage();
+    apiByPage.set(secondPage, api);
+    await secondPage.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+    await secondPage.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+    assert.equal(await secondPage.locator('#page-dashboard').getByText('Lead confirmado pela API').count(), 1);
+    assert.equal((await stateFrom(secondPage)).leads.some(lead => lead.name === 'Lead confirmado pela API'), true);
+    await secondContext.close();
+  });
+
+  await run('DBP-16 mantém busca e perfil locais sem incrementar a versão', async page => {
+    const api = apiByPage.get(page);
+    const beforeVersion = api.version;
+    await goTo(page, 'Leads');
+    await page.getByPlaceholder('Buscar em leads...').fill('Larissa');
+    await selectProfile(page, 'u-paula');
+    const local = await stateFrom(page);
+    assert.equal(api.version, beforeVersion);
+    assert.equal(local.currentUserId, 'u-paula');
+    assert.equal(local.ui.filtersByUser['u-admin'].leads.query, 'Larissa');
+    assert.equal(Object.hasOwn(api.state, 'currentUserId'), false);
+    assert.equal(Object.hasOwn(api.state.ui, 'filtersByUser'), false);
+  });
+
+  await run('DBP-22 reverte a alteração e preserva cache quando o PUT falha', async page => {
+    const api = apiByPage.get(page);
+    const beforeVersion = api.version;
+    const before = clone(api.state);
+    api.writeFailure = true;
+    await createLead(page, 'Lead que deve falhar', { waitForSaved: false });
+    await page.getByText('Não foi possível salvar no banco.', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting === 'false');
+    assert.deepEqual(durableState(await stateFrom(page)), before);
+    assert.equal(api.version, beforeVersion);
+    assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).version, CONFIRMED_CACHE_KEY), beforeVersion);
+  });
+
+  await run('DBP-10 recarrega o estado canônico após conflito de versão', async page => {
+    const api = apiByPage.get(page);
+    api.version += 1;
+    api.state.leads[0].name = 'Lead atualizado em outra sessão';
+    await createLead(page, 'Lead em conflito');
+    await page.getByText('Dados atualizados em outra sessão. A versão atual foi recarregada.', { exact: true }).waitFor();
+    const reloaded = await stateFrom(page);
+    assert.equal(reloaded.leads[0].name, 'Lead atualizado em outra sessão');
+    assert.equal(reloaded.leads.some(lead => lead.name === 'Lead em conflito'), false);
+  });
+
+  await run('DBP-12 e DBP-13 listam e recuperam registro excluído com vínculos', async page => {
+    const api = apiByPage.get(page);
+    const initialVersion = api.version;
+    await goTo(page, 'Leads');
+    const row = page.locator('#page-leads tbody tr').filter({ hasText: 'Larissa Spinola' });
+    page.once('dialog', dialog => dialog.accept());
+    await row.getByTitle('Excluir').click();
+    await stateFrom(page);
+    assert.equal(api.version, initialVersion + 1);
+    assert.equal(api.deleted.leads.some(lead => lead.id === 'L-1048' && lead.assistants.includes('u-camila')), true);
+
+    await goTo(page, 'Visão geral');
+    await page.getByRole('button', { name: 'Recuperar excluídos' }).click();
+    const dialog = page.locator('#deletedRecordsDialog');
+    await dialog.getByLabel('Módulo').selectOption('leads');
+    await dialog.getByRole('button', { name: 'Recuperar L-1048' }).click();
+    await stateFrom(page);
+    assert.equal(api.version, initialVersion + 2);
+    assert.equal((await stateFrom(page)).leads.some(lead => lead.id === 'L-1048' && lead.assistants.includes('u-camila')), true);
+  });
 
   await run('DEMO-03 carrega massa fictícia para todos os módulos', async page => {
     const state = await stateFrom(page);
@@ -601,7 +728,6 @@ async function createLead(page, name) {
     assert.equal(await page.locator('#page-leads tbody tr').count(), 1);
     assert.match(await page.locator('#page-leads tbody').innerText(), /Marina Ferreira/);
 
-    await syncMockWorkspace(page);
     await reloadReady(page);
     await goTo(page, 'Leads');
     await page.getByRole('button', { name: /Filtros/ }).click();
@@ -646,7 +772,6 @@ async function createLead(page, name) {
     await page.getByRole('button', { name: 'Kanban', exact: true }).click();
     assert.equal(await page.locator('#page-deals .kanban-card').count(), 1);
     assert.match(await page.locator('#page-deals .kanban-card').innerText(), /Implantação Arkos Estética/);
-    await syncMockWorkspace(page);
     await reloadReady(page);
     await goTo(page, 'Negócios');
     assert.equal(await page.locator('#page-deals .kanban-board').isVisible(), true);
@@ -755,6 +880,7 @@ async function createLead(page, name) {
     await page.getByRole('button', { name: 'Abrir menu' }).click();
     await goTo(page, 'Leads');
     await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    await stateFrom(page);
     const board = page.locator('#page-leads .kanban-board');
     assert.ok((await board.evaluate(element => element.scrollWidth)) > (await board.evaluate(element => element.clientWidth)));
     const larissa = page.getByLabel('Mover Larissa Spinola');
@@ -781,7 +907,6 @@ async function createLead(page, name) {
     await page.getByPlaceholder('Buscar em leads...').fill('Larissa');
     await page.getByRole('button', { name: 'Kanban', exact: true }).click();
     assert.equal(await page.locator('#page-leads .kanban-card').count(), 1);
-    await syncMockWorkspace(page);
     await reloadReady(page);
     await goTo(page, 'Leads');
     assert.equal(await page.locator('#page-leads .kanban-board').isVisible(), true);
@@ -893,7 +1018,6 @@ async function createLead(page, name) {
 
   await run('DEMO-07 recarga preserva alterações no navegador', async page => {
     await createLead(page, 'Lead Persistente');
-    await syncMockWorkspace(page);
     await reloadReady(page);
     await goTo(page, 'Leads');
     assert.equal(await page.locator('#page-leads .entity-link').filter({ hasText: 'Lead Persistente' }).count(), 1);

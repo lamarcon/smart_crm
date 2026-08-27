@@ -319,6 +319,8 @@ T11  T12  T13  T14
 
 ### T10: Route every durable browser mutation through persistence
 
+**Status**: Complete
+
 **What**: Replace durable `saveState()` calls with one versioned `persistMutation()` per user action, including rollback/conflict, deletion recovery and reset.
 **Where**: `app/static/index.html`
 **Depends on**: T9
