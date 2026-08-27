@@ -401,6 +401,8 @@ T11  T12  T13  T14
 
 ### T13: Extend deterministic environment verification
 
+**Status**: Complete
+
 **What**: Verify schema/head, bootstrap or existing data, table counts, API mutation, app recreation, PostgreSQL restart, degraded health and recovery without deleting the volume.
 **Where**: `scripts/verify_demo.py`
 **Depends on**: T12

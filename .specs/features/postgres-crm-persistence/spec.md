@@ -153,9 +153,9 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DBP-01 | P1: Banco normalizado | Execute | In progress (T1, T3-T4, T11 complete) |
+| DBP-01 | P1: Banco normalizado | Execute | Complete (T1, T3-T4, T11, T13) |
 | DBP-02 | P1: Banco normalizado | Execute | In progress (T5, T7, T9 complete) |
-| DBP-03 | P1: Banco normalizado | Execute | In progress (T5-T9 complete) |
+| DBP-03 | P1: Banco normalizado | Execute | Complete (T5-T9, T13) |
 | DBP-04 | P1: Banco normalizado | Execute | In progress (T5, T7-T8 complete) |
 | DBP-05 | P1: Banco normalizado | Execute | Complete (T7-T9) |
 | DBP-06 | P1: Banco normalizado | Execute | In progress (T5, T8 complete) |
@@ -170,12 +170,12 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | DBP-15 | P1: Compatibilidade | Execute | Complete (T3, T5-T6, T10) |
 | DBP-16 | P1: Compatibilidade | Execute | Complete (T9-T10) |
 | DBP-17 | P1: Compatibilidade | Execute | Complete (T10) |
-| DBP-18 | P1: Compatibilidade | Execute | In progress (T4, T7, T11-T12 complete) |
-| DBP-19 | P1: Falhas visíveis | Execute | In progress (T1-T2, T8, T11-T12 complete) |
-| DBP-20 | P1: Falhas visíveis | Execute | In progress (T1-T2, T8, T11-T12 complete) |
+| DBP-18 | P1: Compatibilidade | Execute | Complete (T4, T7, T11-T13) |
+| DBP-19 | P1: Falhas visíveis | Execute | Complete (T1-T2, T8, T11-T13) |
+| DBP-20 | P1: Falhas visíveis | Execute | Complete (T1-T2, T8, T11-T13) |
 | DBP-21 | P1: Falhas visíveis | Execute | Complete (T9) |
 | DBP-22 | P1: Falhas visíveis | Execute | Complete (T10) |
-| DBP-23 | P1: Falhas visíveis | Execute | In progress (T2, T8 complete) |
+| DBP-23 | P1: Falhas visíveis | Execute | Complete (T2, T8, T13) |
 
 **Coverage:** 23 total, 0 pending design, 0 unmapped.
 
