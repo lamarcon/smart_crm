@@ -263,6 +263,8 @@ T11  T12  T13  T14
 
 ### T8: Expose the FastAPI and health contracts
 
+**Status**: Complete
+
 **What**: Build the application factory, API routes, 25 MB streaming guard, structured error IDs, security headers and static frontend mount.
 **Where**: `app/main.py`
 **Depends on**: T7
