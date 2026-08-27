@@ -348,6 +348,8 @@ T11  T12  T13  T14
 
 ### T11: Build the API runtime image
 
+**Status**: Complete
+
 **What**: Install the Python package, copy migrations/static code and run Uvicorn as the unprivileged user while retaining read-only compatibility.
 **Where**: `Dockerfile`
 **Depends on**: T10
