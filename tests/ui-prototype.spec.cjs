@@ -3,6 +3,7 @@ const { chromium } = require('playwright');
 
 const BASE_URL = process.env.SMART_CRM_TEST_URL || 'http://localhost:8080/';
 const STORAGE_KEY = 'smart-crm-demo-v1';
+const CONFIRMED_CACHE_KEY = 'smart-crm-confirmed-v1';
 const LEAD_STAGES = ['Em contato', 'Lead descartado', 'Lead convertido'];
 const DEAL_STAGES = [
   'Em Contato', 'Orçamento Proposta Preço', 'Orçamentos enviados',
@@ -13,6 +14,32 @@ const DEAL_STAGES = [
 let browser;
 let passed = 0;
 let failed = 0;
+const apiByPage = new WeakMap();
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function durableState(source) {
+  const durable = clone(source);
+  delete durable.currentUserId;
+  durable.ui ||= {};
+  delete durable.ui.filtersByUser;
+  return durable;
+}
+
+function countsFor(state) {
+  return {
+    users: state.users.length,
+    leads: state.leads.length,
+    contacts: state.contacts.length,
+    companies: state.companies.length,
+    deals: state.deals.length,
+    quotes: state.deals.reduce((total, deal) => total + (deal.quotes || []).length, 0),
+    notifications: state.notifications.length,
+    customFields: Object.values(state.customFieldSchemas || {}).reduce((total, fields) => total + fields.length, 0)
+  };
+}
 
 async function stateFrom(page) {
   return JSON.parse(await page.evaluate(key => localStorage.getItem(key), STORAGE_KEY));
@@ -20,14 +47,82 @@ async function stateFrom(page) {
 
 async function openFresh(options = {}) {
   const context = await browser.newContext({ viewport: options.viewport || { width: 1366, height: 768 } });
+  if (options.preloadState) {
+    await context.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: options.preloadState });
+  }
   const page = await context.newPage();
+  const api = { initialized: false, version: 0, state: null, loadFailure: Boolean(options.loadFailure) };
+  apiByPage.set(page, api);
+  await context.route('**/api/workspace**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname !== '/api/workspace' && url.pathname !== '/api/workspace/bootstrap') return route.continue();
+    if (request.method() === 'GET' && url.pathname === '/api/workspace') {
+      if (api.loadFailure) {
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Banco de dados indisponível.' } }) });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ initialized: api.initialized, version: api.version, state: api.state })
+      });
+    }
+    if (request.method() === 'POST' && url.pathname === '/api/workspace/bootstrap') {
+      if (api.initialized) {
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'workspace_already_initialized', message: 'Workspace já inicializado.', currentVersion: api.version } }) });
+      }
+      const payload = request.postDataJSON();
+      api.state = durableState(payload.state);
+      api.initialized = true;
+      api.version = 1;
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ version: api.version, counts: countsFor(api.state), state: api.state }) });
+    }
+    return route.fulfill({ status: 405 });
+  });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-  await page.getByText(/Ambiente de demonstração/).first().waitFor();
+  await page.locator('#workspaceBanner').waitFor();
+  if (options.autoBootstrap !== false && !api.loadFailure) {
+    const confirm = page.getByRole('button', { name: 'Confirmar migração' });
+    await confirm.waitFor();
+    await confirm.click();
+  }
+  await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
   return { context, page };
 }
 
-async function run(name, test) {
-  const { context, page } = await openFresh();
+async function reloadReady(page, options = {}) {
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const api = apiByPage.get(page);
+  if (options.autoBootstrap !== false && !api.loadFailure && !api.initialized) {
+    await page.getByRole('button', { name: 'Confirmar migração' }).click();
+  }
+  await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+}
+
+async function syncMockWorkspace(page) {
+  const api = apiByPage.get(page);
+  api.state = durableState(await stateFrom(page));
+  api.initialized = true;
+  api.version += 1;
+}
+
+async function setMockWorkspace(page, nextState) {
+  const api = apiByPage.get(page);
+  api.state = durableState(nextState);
+  api.initialized = true;
+  api.version += 1;
+}
+
+function resetMockWorkspace(page) {
+  const api = apiByPage.get(page);
+  api.initialized = false;
+  api.version = 0;
+  api.state = null;
+  api.loadFailure = false;
+}
+
+async function run(name, test, options = {}) {
+  const { context, page } = await openFresh(options);
   try {
     await test(page);
     passed += 1;
@@ -70,6 +165,66 @@ async function createLead(page, name) {
 (async () => {
   browser = await chromium.launch({ channel: process.env.SMART_CRM_BROWSER || 'chrome', headless: true });
 
+  await run('DBP-02 e DBP-03 exigem Admin e exibem contagens antes do bootstrap', async page => {
+    const local = await stateFrom(page);
+    local.currentUserId = 'u-paula';
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: local });
+    resetMockWorkspace(page);
+    await reloadReady(page, { autoBootstrap: false });
+
+    const dialog = page.locator('#bootstrapDialog');
+    assert.equal(await dialog.isVisible(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceWritable), 'false');
+    assert.equal(await dialog.getByRole('button', { name: 'Confirmar migração' }).isDisabled(), true);
+    assert.match(await dialog.innerText(), /5\s+Leads/);
+    assert.match(await dialog.innerText(), /4\s+Contatos/);
+    assert.match(await dialog.innerText(), /4\s+Empresas/);
+    assert.match(await dialog.innerText(), /6\s+Negócios/);
+
+    local.currentUserId = 'u-admin';
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: local });
+    resetMockWorkspace(page);
+    await reloadReady(page, { autoBootstrap: false });
+    await page.getByRole('button', { name: 'Confirmar migração' }).click();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWritable === 'true');
+    const api = apiByPage.get(page);
+    assert.equal(api.version, 1);
+    assert.deepEqual(countsFor(api.state), { users: 6, leads: 5, contacts: 4, companies: 4, deals: 6, quotes: 1, notifications: 3, customFields: 0 });
+  }, { autoBootstrap: false });
+
+  await run('DBP-07 carrega o banco antes de liberar escrita e ignora cache comercial alterado', async page => {
+    const canonical = clone(apiByPage.get(page).state);
+    const altered = await stateFrom(page);
+    altered.leads[0].name = 'Nome apenas no navegador';
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: altered });
+    await reloadReady(page);
+    const loaded = await stateFrom(page);
+    assert.equal(loaded.leads[0].name, canonical.leads[0].name);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceWritable), 'true');
+  });
+
+  await run('DBP-21 usa somente cache confirmado em leitura quando a API falha', async page => {
+    const cached = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), CONFIRMED_CACHE_KEY);
+    const altered = await stateFrom(page);
+    altered.leads[0].name = 'Alteração não confirmada';
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: altered });
+    apiByPage.get(page).loadFailure = true;
+    await reloadReady(page);
+    assert.equal((await stateFrom(page)).leads[0].name, cached.state.leads[0].name);
+    assert.equal(await page.locator('#workspaceBanner').innerText(), 'Banco indisponível. Alterações bloqueadas.');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceWritable), 'false');
+    await page.getByRole('button', { name: /Novo Lead/ }).click();
+    assert.equal(await page.locator('#entityDialog').getAttribute('open'), null);
+  });
+
+  await run('DBP-21 usa seed em leitura quando a API falha sem cache confirmado', async page => {
+    const state = await stateFrom(page);
+    assert.equal(state.leads[0].name, 'Larissa Spinola');
+    assert.equal(await page.locator('#workspaceBanner').innerText(), 'Banco indisponível. Alterações bloqueadas.');
+    assert.equal(await page.evaluate(key => localStorage.getItem(key), CONFIRMED_CACHE_KEY), null);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceWritable), 'false');
+  }, { loadFailure: true });
+
   await run('DEMO-03 carrega massa fictícia para todos os módulos', async page => {
     const state = await stateFrom(page);
     assert.ok(state.leads.length >= 5, 'Leads fictícios ausentes');
@@ -98,7 +253,8 @@ async function createLead(page, name) {
       delete deal.wonAt;
     });
     await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: legacy });
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    resetMockWorkspace(page);
+    await reloadReady(page);
 
     const normalized = await stateFrom(page);
     assert.equal(normalized.leads[0].name, 'Lead legado preservado');
@@ -137,7 +293,8 @@ async function createLead(page, name) {
     delete legacy.contacts[0].customFields;
     delete legacy.contacts[0].visibleCustomFieldKeys;
     await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: legacy });
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    resetMockWorkspace(page);
+    await reloadReady(page);
 
     const migrated = (await stateFrom(page)).contacts.find(contact => contact.bitrixId === 'LEGACY-1');
     assert.deepEqual(migrated.customFields.map(field => [field.key, field.label, field.value]), [
@@ -444,7 +601,8 @@ async function createLead(page, name) {
     assert.equal(await page.locator('#page-leads tbody tr').count(), 1);
     assert.match(await page.locator('#page-leads tbody').innerText(), /Marina Ferreira/);
 
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await syncMockWorkspace(page);
+    await reloadReady(page);
     await goTo(page, 'Leads');
     await page.getByRole('button', { name: /Filtros/ }).click();
     assert.equal(await panel.getByRole('button', { name: 'Leads convertidos', exact: true }).isVisible(), true);
@@ -460,7 +618,8 @@ async function createLead(page, name) {
       filter: { query: '', visibleFields: ['unknownField'], criteria: { unknownField: { operator: 'contains', value: 'x' } } }
     });
     await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: state });
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await setMockWorkspace(page, state);
+    await reloadReady(page);
     await goTo(page, 'Leads');
     await page.getByRole('button', { name: /Filtros/ }).click();
     const panel = page.locator('#filterDialog');
@@ -487,7 +646,8 @@ async function createLead(page, name) {
     await page.getByRole('button', { name: 'Kanban', exact: true }).click();
     assert.equal(await page.locator('#page-deals .kanban-card').count(), 1);
     assert.match(await page.locator('#page-deals .kanban-card').innerText(), /Implantação Arkos Estética/);
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await syncMockWorkspace(page);
+    await reloadReady(page);
     await goTo(page, 'Negócios');
     assert.equal(await page.locator('#page-deals .kanban-board').isVisible(), true);
     assert.equal((await stateFrom(page)).ui.viewModesByUser['u-admin'].deals, 'kanban');
@@ -621,7 +781,8 @@ async function createLead(page, name) {
     await page.getByPlaceholder('Buscar em leads...').fill('Larissa');
     await page.getByRole('button', { name: 'Kanban', exact: true }).click();
     assert.equal(await page.locator('#page-leads .kanban-card').count(), 1);
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await syncMockWorkspace(page);
+    await reloadReady(page);
     await goTo(page, 'Leads');
     assert.equal(await page.locator('#page-leads .kanban-board').isVisible(), true);
     assert.equal(await page.locator('#page-leads .kanban-card').count(), 1);
@@ -732,7 +893,8 @@ async function createLead(page, name) {
 
   await run('DEMO-07 recarga preserva alterações no navegador', async page => {
     await createLead(page, 'Lead Persistente');
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await syncMockWorkspace(page);
+    await reloadReady(page);
     await goTo(page, 'Leads');
     assert.equal(await page.locator('#page-leads .entity-link').filter({ hasText: 'Lead Persistente' }).count(), 1);
     assert.ok((await stateFrom(page)).leads.some(lead => lead.name === 'Lead Persistente'));
@@ -1203,7 +1365,8 @@ async function createLead(page, name) {
     const valuesBefore = configured.deals.map(deal => deal.customFields[0].value);
     const individualVisibilityBefore = configured.deals.map(deal => [...deal.visibleCustomFieldKeys]);
     await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await setMockWorkspace(page, configured);
+    await reloadReady(page);
 
     await goTo(page, 'Negócios');
     const manage = page.getByRole('button', { name: 'Gerenciar campos' });
@@ -1265,7 +1428,8 @@ async function createLead(page, name) {
     const valuesBefore = configured.deals.map(deal => deal.customFields[0].value);
     const visibilityBefore = configured.deals.map(deal => [...deal.visibleCustomFieldKeys]);
     await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await setMockWorkspace(page, configured);
+    await reloadReady(page);
 
     await goTo(page, 'Negócios');
     const [firstDeal, secondDeal] = (await stateFrom(page)).deals;
@@ -1322,7 +1486,8 @@ async function createLead(page, name) {
     configured.deals[0].visibleCustomFieldKeys = [schema.key];
     configured.currentUserId = 'u-paula';
     await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await setMockWorkspace(page, configured);
+    await reloadReady(page);
 
     await goTo(page, 'Negócios');
     const firstDeal = (await stateFrom(page)).deals[0];
@@ -1356,7 +1521,8 @@ async function createLead(page, name) {
       deal.visibleCustomFieldKeys = [...new Set([...(deal.visibleCustomFieldKeys || []), ...schemas.map(field => field.key)])];
     });
     await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await setMockWorkspace(page, configured);
+    await reloadReady(page);
 
     await goTo(page, 'Negócios');
     const firstDeal = (await stateFrom(page)).deals[0];
@@ -1593,7 +1759,7 @@ async function createLead(page, name) {
 
   await run('edge case recupera localStorage corrompido', async page => {
     await page.evaluate(key => localStorage.setItem(key, '{invalid-json'), STORAGE_KEY);
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await reloadReady(page);
     const recovered = await stateFrom(page);
     assert.ok(recovered.leads.length >= 5);
     assert.equal(recovered.currentUserId, 'u-admin');

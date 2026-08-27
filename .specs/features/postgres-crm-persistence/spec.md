@@ -154,26 +154,26 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
 | DBP-01 | P1: Banco normalizado | Execute | In progress (T1, T3-T4 complete) |
-| DBP-02 | P1: Banco normalizado | Execute | In progress (T5, T7 complete) |
-| DBP-03 | P1: Banco normalizado | Execute | In progress (T5-T8 complete) |
+| DBP-02 | P1: Banco normalizado | Execute | In progress (T5, T7, T9 complete) |
+| DBP-03 | P1: Banco normalizado | Execute | In progress (T5-T9 complete) |
 | DBP-04 | P1: Banco normalizado | Execute | In progress (T5, T7-T8 complete) |
-| DBP-05 | P1: Banco normalizado | Execute | In progress (T7-T8 complete) |
+| DBP-05 | P1: Banco normalizado | Execute | Complete (T7-T9) |
 | DBP-06 | P1: Banco normalizado | Execute | In progress (T5, T8 complete) |
-| DBP-07 | P1: Fonte principal | Execute | In progress (T8 complete) |
+| DBP-07 | P1: Fonte principal | Execute | Complete (T8-T9) |
 | DBP-08 | P1: Fonte principal | Execute | In progress (T7-T8 complete) |
 | DBP-09 | P1: Fonte principal | Execute | In progress (T8 complete) |
 | DBP-10 | P1: Fonte principal | Execute | In progress (T7-T8 complete) |
 | DBP-11 | P1: Fonte principal | Execute | In progress (T2, T6-T8 complete) |
 | DBP-12 | P1: Fonte principal | Execute | In progress (T3, T6-T7 complete) |
 | DBP-13 | P1: Fonte principal | Execute | In progress (T3, T6-T8 complete) |
-| DBP-14 | P1: Compatibilidade | Execute | In progress (T3, T5-T6 complete) |
+| DBP-14 | P1: Compatibilidade | Execute | Complete (T3, T5-T6, T9) |
 | DBP-15 | P1: Compatibilidade | Execute | In progress (T3, T5-T6 complete) |
-| DBP-16 | P1: Compatibilidade | Design | Complete |
+| DBP-16 | P1: Compatibilidade | Execute | In progress (T9 complete) |
 | DBP-17 | P1: Compatibilidade | Design | Complete |
 | DBP-18 | P1: Compatibilidade | Execute | In progress (T4, T7 complete) |
 | DBP-19 | P1: Falhas visíveis | Execute | In progress (T1-T2, T8 complete) |
 | DBP-20 | P1: Falhas visíveis | Execute | In progress (T1-T2, T8 complete) |
-| DBP-21 | P1: Falhas visíveis | Design | Complete |
+| DBP-21 | P1: Falhas visíveis | Execute | Complete (T9) |
 | DBP-22 | P1: Falhas visíveis | Design | Complete |
 | DBP-23 | P1: Falhas visíveis | Execute | In progress (T2, T8 complete) |
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-workspace-ready="false" data-workspace-writable="false">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -72,7 +72,12 @@
 
     .main { min-width: 0; }
     .demo-banner { min-height: 38px; display: flex; justify-content: center; align-items: center; gap: 9px; padding: 8px 18px; color: #4b3500; background: #fff5cb; border-bottom: 1px solid #f7df88; font-size: 12px; font-weight: 650; text-align: center; }
+    .demo-banner[data-status="degraded"] { color: #912018; background: var(--red-100); border-bottom-color: #fecdca; }
+    .demo-banner[data-status="ready"] { color: #05603a; background: var(--green-100); border-bottom-color: #a6f4c5; }
     .demo-dot { width: 7px; height: 7px; border-radius: 50%; background: #f79009; box-shadow: 0 0 0 4px rgba(247,144,9,.13); }
+    .demo-banner[data-status="degraded"] .demo-dot { background: var(--red-600); box-shadow: 0 0 0 4px rgba(217,45,32,.13); }
+    .demo-banner[data-status="ready"] .demo-dot { background: var(--green-600); box-shadow: 0 0 0 4px rgba(3,152,85,.13); }
+    .demo-banner .button { min-height: 27px; padding: 3px 8px; font-size: 11px; }
     .topbar { height: 72px; display: flex; align-items: center; gap: 16px; padding: 0 28px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--slate-200); backdrop-filter: blur(9px); }
     .mobile-menu { display: none; width: 38px; height: 38px; border: 1px solid var(--slate-300); border-radius: 9px; background: white; }
     .page-heading { min-width: 0; }
@@ -195,6 +200,12 @@
 
     dialog { width: min(620px, calc(100% - 28px)); max-height: calc(100vh - 40px); padding: 0; border: 0; border-radius: 14px; color: var(--navy-900); box-shadow: 0 25px 60px rgba(16,24,40,.25); }
     dialog::backdrop { background: rgba(10,16,32,.58); backdrop-filter: blur(2px); }
+    .bootstrap-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin-top: 17px; }
+    .bootstrap-count { padding: 11px; border: 1px solid var(--slate-200); border-radius: 9px; background: var(--slate-50); text-align: center; }
+    .bootstrap-count b { display: block; color: var(--navy-900); font-size: 19px; }
+    .bootstrap-count span { color: var(--slate-500); font-size: 11px; }
+    .bootstrap-access { margin: 16px 0 0; padding: 11px 12px; border-radius: 9px; color: #4b3500; background: var(--amber-100); font-size: 12px; }
+    .bootstrap-error { margin: 12px 0 0; color: var(--red-600); font-size: 12px; font-weight: 650; }
     .drawer-overlay { position: fixed; inset: 0; z-index: 80; visibility: hidden; opacity: 0; background: rgba(10,16,32,.32); transition: .2s ease; }
     .drawer-overlay.open { visibility: visible; opacity: 1; }
     .entity-drawer { position: fixed; z-index: 81; inset: 0 0 0 auto; width: min(560px, 100vw); display: flex; flex-direction: column; visibility: hidden; transform: translateX(100%); background: white; box-shadow: -24px 0 60px rgba(16,24,40,.2); transition: .22s ease; }
@@ -309,6 +320,7 @@
       .filter-controls { grid-template-columns: 1fr; }
       .kanban-board { min-height: 480px; }
       .user-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .bootstrap-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 560px) {
       .demo-banner { font-size: 11px; }
@@ -342,12 +354,12 @@
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
         <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
       </nav>
-      <div class="sidebar-note"><strong>Protótipo local</strong><br>As alterações ficam apenas neste navegador e podem ser restauradas.</div>
+      <div class="sidebar-note"><strong>Ambiente local</strong><br>Dados confirmados usam o PostgreSQL; preferências transitórias permanecem neste navegador.</div>
     </aside>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <main class="main">
-      <div class="demo-banner"><span class="demo-dot"></span>Ambiente de demonstração — dados fictícios, sem banco de dados e sem integração com o Bitrix24</div>
+      <div class="demo-banner" id="workspaceStatus" data-status="loading"><span class="demo-dot"></span><span id="workspaceBanner">Conectando ao workspace...</span><button type="button" class="button small" id="bootstrapOpen" data-action="open-bootstrap" hidden>Inicializar banco</button></div>
       <header class="topbar">
         <button class="mobile-menu" id="mobileMenu" aria-label="Abrir menu">☰</button>
         <div class="page-heading"><h1 id="topTitle">Visão geral</h1><p id="topSubtitle">Acompanhe os principais indicadores comerciais</p></div>
@@ -372,6 +384,17 @@
       </div>
     </main>
   </div>
+
+  <dialog id="bootstrapDialog">
+    <div class="modal-head"><div><h3>Inicializar o PostgreSQL</h3><p class="hint">Confirme a migração única dos dados exibidos neste navegador.</p></div></div>
+    <div class="modal-body">
+      <p>O banco está vazio. Estes registros serão validados e persistidos em uma única transação:</p>
+      <div class="bootstrap-counts" id="bootstrapCounts"></div>
+      <p class="bootstrap-access" id="bootstrapAccess"></p>
+      <p class="bootstrap-error" id="bootstrapError" role="alert"></p>
+    </div>
+    <div class="modal-foot"><button type="button" class="button" data-close="bootstrapDialog">Aguardar</button><button type="button" class="button primary" id="bootstrapConfirm" data-action="confirm-bootstrap">Confirmar migração</button></div>
+  </dialog>
 
   <dialog id="entityDialog">
     <form id="entityForm">
@@ -492,6 +515,8 @@
     'use strict';
 
     const STORAGE_KEY = 'smart-crm-demo-v1';
+    const CONFIRMED_CACHE_KEY = 'smart-crm-confirmed-v1';
+    const READ_ONLY_WARNING = 'Banco indisponível. Alterações bloqueadas.';
     const leadStages = ['Em contato', 'Lead descartado', 'Lead convertido'];
     const dealStages = [
       'Em Contato', 'Orçamento Proposta Preço', 'Orçamentos enviados',
@@ -634,6 +659,9 @@
     });
 
     let state = loadState();
+    let workspaceVersion = 0;
+    let workspaceWritable = false;
+    let workspaceInitialized = false;
     let activeView = 'dashboard';
     function defaultUiState(users) {
       const ui = { filtersByUser: {}, savedFilters: [], viewModesByUser: {}, dashboardScopeByUser: {} };
@@ -746,6 +774,135 @@
     }
 
     function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    function extractDurableState(source = state) {
+      const durable = clone(source);
+      delete durable.currentUserId;
+      durable.ui ||= {};
+      delete durable.ui.filtersByUser;
+      return durable;
+    }
+    function mergeDurableState(durable, local = state) {
+      const merged = clone(durable);
+      const localUserId = local?.currentUserId;
+      merged.currentUserId = (merged.users || []).some(user => user.id === localUserId) ? localUserId : merged.users?.[0]?.id;
+      merged.ui ||= {};
+      merged.ui.filtersByUser = clone(local?.ui?.filtersByUser || {});
+      return normalizeState(merged);
+    }
+    function writeConfirmedCache(version, durable) {
+      localStorage.setItem(CONFIRMED_CACHE_KEY, JSON.stringify({ version, state: extractDurableState(durable) }));
+    }
+    function readConfirmedCache() {
+      try {
+        const cached = JSON.parse(localStorage.getItem(CONFIRMED_CACHE_KEY));
+        if (Number.isInteger(cached?.version) && cached.version >= 1 && Array.isArray(cached.state?.users) && Array.isArray(cached.state?.leads) && Array.isArray(cached.state?.deals)) return cached;
+      } catch (_) { /* invalid confirmed cache is ignored */ }
+      return null;
+    }
+    function setWorkspaceAccess(ready, writable, message, status) {
+      workspaceWritable = writable;
+      document.documentElement.dataset.workspaceReady = String(ready);
+      document.documentElement.dataset.workspaceWritable = String(writable);
+      document.getElementById('workspaceBanner').textContent = message;
+      document.getElementById('workspaceStatus').dataset.status = status;
+      document.getElementById('bootstrapOpen').hidden = !(ready && !writable && !workspaceInitialized && status === 'loading');
+    }
+    function workspaceCounts(source) {
+      return {
+        users: source.users.length,
+        leads: source.leads.length,
+        contacts: source.contacts.length,
+        companies: source.companies.length,
+        deals: source.deals.length,
+        quotes: source.deals.reduce((total, deal) => total + (deal.quotes || []).length, 0),
+        notifications: source.notifications.length,
+        customFields: Object.values(source.customFieldSchemas || {}).reduce((total, fields) => total + fields.length, 0)
+      };
+    }
+    function syncBootstrapAccess() {
+      const dialog = document.getElementById('bootstrapDialog');
+      if (!dialog.open) return;
+      const admin = currentUser()?.role === 'Administrador';
+      document.getElementById('bootstrapConfirm').disabled = !admin;
+      document.getElementById('bootstrapAccess').textContent = admin
+        ? `Confirmação autorizada para ${currentUser().name} · Administrador.`
+        : `Somente um Administrador pode confirmar. Perfil atual: ${currentUser()?.name || 'indisponível'}.`;
+    }
+    function openBootstrapDialog() {
+      const counts = workspaceCounts(extractDurableState());
+      const labels = { users: 'Usuários', leads: 'Leads', contacts: 'Contatos', companies: 'Empresas', deals: 'Negócios', quotes: 'Orçamentos', notifications: 'Notificações', customFields: 'Campos personalizados' };
+      document.getElementById('bootstrapCounts').innerHTML = Object.entries(counts).map(([key, value]) => `<div class="bootstrap-count"><b>${value}</b><span>${labels[key]}</span></div>`).join('');
+      document.getElementById('bootstrapError').textContent = '';
+      const dialog = document.getElementById('bootstrapDialog');
+      if (!dialog.open) dialog.showModal();
+      syncBootstrapAccess();
+    }
+    async function responseJson(response) {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error?.message || `HTTP ${response.status}`);
+      return payload;
+    }
+    async function initializeWorkspace() {
+      setWorkspaceAccess(false, false, 'Conectando ao workspace...', 'loading');
+      const localCandidate = state;
+      try {
+        const payload = await responseJson(await fetch('/api/workspace', { headers: { Accept: 'application/json' } }));
+        workspaceVersion = payload.version || 0;
+        if (payload.initialized) {
+          if (!payload.state) throw new Error('Workspace inicializado sem estado.');
+          state = mergeDurableState(payload.state, localCandidate);
+          workspaceInitialized = true;
+          writeConfirmedCache(workspaceVersion, payload.state);
+          saveState();
+          setWorkspaceAccess(true, true, 'Ambiente de demonstração — dados fictícios persistidos no PostgreSQL local.', 'ready');
+          render();
+          return;
+        }
+        workspaceInitialized = false;
+        state = normalizeState(localCandidate);
+        saveState();
+        setWorkspaceAccess(true, false, 'Banco vazio. Confirme a migração inicial para liberar alterações.', 'loading');
+        render();
+        openBootstrapDialog();
+      } catch (_) {
+        const cached = readConfirmedCache();
+        workspaceVersion = cached?.version || 0;
+        state = cached ? mergeDurableState(cached.state, localCandidate) : normalizeState(seedState());
+        workspaceInitialized = Boolean(cached);
+        saveState();
+        setWorkspaceAccess(true, false, READ_ONLY_WARNING, 'degraded');
+        render();
+      }
+    }
+    async function confirmBootstrap() {
+      if (currentUser()?.role !== 'Administrador') return;
+      const button = document.getElementById('bootstrapConfirm');
+      const error = document.getElementById('bootstrapError');
+      button.disabled = true;
+      button.textContent = 'Migrando...';
+      error.textContent = '';
+      try {
+        const payload = await responseJson(await fetch('/api/workspace/bootstrap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ state: extractDurableState() })
+        }));
+        workspaceVersion = payload.version;
+        state = mergeDurableState(payload.state, state);
+        workspaceInitialized = true;
+        writeConfirmedCache(workspaceVersion, payload.state);
+        saveState();
+        document.getElementById('bootstrapDialog').close();
+        setWorkspaceAccess(true, true, 'Ambiente de demonstração — dados fictícios persistidos no PostgreSQL local.', 'ready');
+        render();
+        toast('Dados iniciais persistidos no PostgreSQL.');
+      } catch (failure) {
+        error.textContent = `Não foi possível inicializar o banco. ${failure.message}`;
+        syncBootstrapAccess();
+      } finally {
+        button.textContent = 'Confirmar migração';
+      }
+    }
     function currentUser() { return state.users.find(user => user.id === state.currentUserId) || state.users[0]; }
     function userName(id) { return state.users.find(user => user.id === id)?.name || 'Sem responsável'; }
     function initials(name) { return String(name || '?').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase(); }
@@ -1353,6 +1510,7 @@
       document.getElementById('page-notifications').innerHTML = notificationsHTML();
       document.getElementById('page-admin').innerHTML = usersAdminHTML();
       showView(activeView, false);
+      syncBootstrapAccess();
     }
 
     function showView(view, closeMobile = true) {
@@ -2103,7 +2261,7 @@
 
     function resetDemo() {
       if (!confirm('Restaurar todos os dados fictícios e descartar suas alterações locais?')) return;
-      state = normalizeState(seedState()); saveState(); activeView = 'dashboard'; render(); toast('Dados de demonstração restaurados.');
+      state = mergeDurableState(extractDurableState(normalizeState(seedState())), state); saveState(); activeView = 'dashboard'; render(); toast('Dados de demonstração restaurados.');
     }
 
     function toggleSidebar(open) {
@@ -2111,11 +2269,27 @@
       document.getElementById('sidebarOverlay').classList.toggle('open', open);
     }
 
+    const durableActions = new Set([
+      'new', 'add-custom-field', 'hide-custom-field', 'manage-fields', 'save-field-visibility',
+      'create-custom-field', 'new-user', 'edit-user', 'resend-invite', 'user-status',
+      'open-bitrix-import', 'save-filter', 'delete-saved-filter', 'set-view-mode',
+      'request-stage', 'undo-stage', 'delete', 'convert', 'discard', 'quote',
+      'read', 'read-all', 'reset'
+    ]);
+    function requireWritableWorkspace() {
+      if (workspaceWritable) return true;
+      toast(document.documentElement.dataset.workspaceReady === 'true' ? READ_ONLY_WARNING : 'Aguarde a inicialização do workspace.');
+      return false;
+    }
+
     document.addEventListener('click', event => {
       const button = event.target.closest('button');
       if (!button) return;
       if (button.dataset.view) { showView(button.dataset.view); return; }
       const action = button.dataset.action;
+      if (action === 'confirm-bootstrap') { confirmBootstrap(); return; }
+      if (action === 'open-bootstrap') { openBootstrapDialog(); return; }
+      if (durableActions.has(action) && !requireWritableWorkspace()) return;
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
       if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
@@ -2163,18 +2337,21 @@
       if (event.target.id === 'customFieldType') document.getElementById('customFieldOptionsWrap').hidden = !['select', 'multiselect'].includes(event.target.value);
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }
       if (event.target.name === 'filter-operator' && event.target.closest('#filterDialog')) { syncFilterDraftFromPanel(); renderFilterPanel(); }
-      if (event.target.dataset.stageControl) requestStageChange(event.target.dataset.entity, event.target.dataset.stageControl, event.target.value);
+      if (event.target.dataset.stageControl) {
+        if (!requireWritableWorkspace()) { render(); return; }
+        requestStageChange(event.target.dataset.entity, event.target.dataset.stageControl, event.target.value);
+      }
     });
 
     document.getElementById('profileSelect').addEventListener('change', event => {
       state.currentUserId = event.target.value; saveState(); render(); toast(`Perfil alterado para ${currentUser().name} · ${currentUser().role}.`);
     });
-    document.getElementById('entityForm').addEventListener('submit', event => { event.preventDefault(); saveEntity(event.currentTarget); });
-    document.getElementById('drawerForm').addEventListener('submit', event => { event.preventDefault(); saveEntity(event.currentTarget); });
-    document.getElementById('quoteForm').addEventListener('submit', event => { event.preventDefault(); saveQuote(event.currentTarget); });
-    document.getElementById('bitrixImportForm').addEventListener('submit', event => { event.preventDefault(); importBitrixSample(event.currentTarget); });
+    document.getElementById('entityForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveEntity(event.currentTarget); });
+    document.getElementById('drawerForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveEntity(event.currentTarget); });
+    document.getElementById('quoteForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveQuote(event.currentTarget); });
+    document.getElementById('bitrixImportForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) importBitrixSample(event.currentTarget); });
     document.getElementById('filterForm').addEventListener('submit', event => { event.preventDefault(); applyFilterPanel(); });
-    document.getElementById('userForm').addEventListener('submit', event => { event.preventDefault(); saveUser(event.currentTarget); });
+    document.getElementById('userForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveUser(event.currentTarget); });
     document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));
     document.getElementById('sidebarOverlay').addEventListener('click', () => toggleSidebar(false));
     document.getElementById('entityDrawerOverlay').addEventListener('click', () => closeEntityDrawer());
@@ -2186,6 +2363,7 @@
     });
 
     render();
+    initializeWorkspace();
   </script>
 </body>
 </html>

@@ -291,6 +291,8 @@ T11  T12  T13  T14
 
 ### T9: Initialize the browser from API or confirmed cache
 
+**Status**: Complete
+
 **What**: Replace synchronous local initialization with API load, confirmed bootstrap dialog/counts, durable/transient merge and read-only fallback.
 **Where**: `app/static/index.html`
 **Depends on**: T8
