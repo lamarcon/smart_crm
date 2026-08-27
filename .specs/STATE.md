@@ -29,10 +29,10 @@
 ## Handoff
 
 - **Feature**: Persistência do Smart CRM no PostgreSQL / `.specs/features/postgres-crm-persistence`
-- **Phase / Task**: Execute aprovado; lote 1, T11 concluída, T12 pendente
-- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11
+- **Phase / Task**: Execute aprovado; lote 1, T12 concluída, T13 pendente
+- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12
 - **In-progress** (file:line): none
-- **Next step**: Executar T12 para conectar a API FastAPI ao PostgreSQL no Compose.
+- **Next step**: Executar T13 para verificar de forma determinística schema, contagens, mutações, reinícios e recuperação.
 - **Blockers**: none
-- **Uncommitted files**: `compose.yaml`, `scripts/verify_demo.py` (T12-T13 já validadas como dependências do build gate)
+- **Uncommitted files**: `scripts/verify_demo.py` (T13 já validada como dependência do build gate)
 - **Branch**: main

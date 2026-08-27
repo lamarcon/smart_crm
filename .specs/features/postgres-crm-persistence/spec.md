@@ -170,9 +170,9 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | DBP-15 | P1: Compatibilidade | Execute | Complete (T3, T5-T6, T10) |
 | DBP-16 | P1: Compatibilidade | Execute | Complete (T9-T10) |
 | DBP-17 | P1: Compatibilidade | Execute | Complete (T10) |
-| DBP-18 | P1: Compatibilidade | Execute | In progress (T4, T7, T11 complete) |
-| DBP-19 | P1: Falhas visíveis | Execute | In progress (T1-T2, T8, T11 complete) |
-| DBP-20 | P1: Falhas visíveis | Execute | In progress (T1-T2, T8, T11 complete) |
+| DBP-18 | P1: Compatibilidade | Execute | In progress (T4, T7, T11-T12 complete) |
+| DBP-19 | P1: Falhas visíveis | Execute | In progress (T1-T2, T8, T11-T12 complete) |
+| DBP-20 | P1: Falhas visíveis | Execute | In progress (T1-T2, T8, T11-T12 complete) |
 | DBP-21 | P1: Falhas visíveis | Execute | Complete (T9) |
 | DBP-22 | P1: Falhas visíveis | Execute | Complete (T10) |
 | DBP-23 | P1: Falhas visíveis | Execute | In progress (T2, T8 complete) |

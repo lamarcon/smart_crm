@@ -375,6 +375,8 @@ T11  T12  T13  T14
 
 ### T12: Wire API and PostgreSQL in Compose
 
+**Status**: Complete
+
 **What**: Add database URL, dependency health, test-mode control and restart-safe service configuration without replacing the named PostgreSQL volume.
 **Where**: `compose.yaml`
 **Depends on**: T11
