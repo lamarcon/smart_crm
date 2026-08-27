@@ -428,6 +428,8 @@ T11  T12  T13  T14
 
 ### T14: Document the persistent test workflow
 
+**Status**: Complete
+
 **What**: Update local instructions, first migration confirmation, DB inspection, backup/reset cautions, failure messages and remaining limitations.
 **Where**: `README.md`
 **Depends on**: T13

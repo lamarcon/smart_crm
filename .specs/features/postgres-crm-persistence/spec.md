@@ -154,16 +154,16 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
 | DBP-01 | P1: Banco normalizado | Execute | Complete (T1, T3-T4, T11, T13) |
-| DBP-02 | P1: Banco normalizado | Execute | In progress (T5, T7, T9 complete) |
+| DBP-02 | P1: Banco normalizado | Execute | Complete (T5, T7, T9, T14) |
 | DBP-03 | P1: Banco normalizado | Execute | Complete (T5-T9, T13) |
-| DBP-04 | P1: Banco normalizado | Execute | In progress (T5, T7-T8 complete) |
+| DBP-04 | P1: Banco normalizado | Execute | Complete (T5, T7-T8) |
 | DBP-05 | P1: Banco normalizado | Execute | Complete (T7-T9) |
-| DBP-06 | P1: Banco normalizado | Execute | In progress (T5, T8 complete) |
+| DBP-06 | P1: Banco normalizado | Execute | Complete (T5, T8) |
 | DBP-07 | P1: Fonte principal | Execute | Complete (T8-T9) |
 | DBP-08 | P1: Fonte principal | Execute | Complete (T7-T8, T10) |
 | DBP-09 | P1: Fonte principal | Execute | Complete (T8, T10) |
 | DBP-10 | P1: Fonte principal | Execute | Complete (T7-T8, T10) |
-| DBP-11 | P1: Fonte principal | Execute | In progress (T2, T6-T8 complete) |
+| DBP-11 | P1: Fonte principal | Execute | Complete (T2, T6-T8) |
 | DBP-12 | P1: Fonte principal | Execute | Complete (T3, T6-T7, T10) |
 | DBP-13 | P1: Fonte principal | Execute | Complete (T3, T6-T8, T10) |
 | DBP-14 | P1: Compatibilidade | Execute | Complete (T3, T5-T6, T9) |
