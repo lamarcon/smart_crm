@@ -152,6 +152,48 @@ async function reloadReady(page, options = {}) {
   await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
 }
 
+async function assertCanonicalRehydration(page) {
+  const sourceApi = apiByPage.get(page);
+  const expected = clone(sourceApi.state);
+
+  await reloadReady(page);
+  assert.deepEqual(durableState(await stateFrom(page)), expected, 'recarga não reidratou o estado canônico');
+
+  const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  try {
+    const independent = await context.newPage();
+    const mirrorApi = {
+      initialized: true,
+      version: sourceApi.version,
+      state: expected,
+      loadFailure: false,
+      writeFailure: false,
+      writeGate: null,
+      assertSynchronized: true,
+      deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
+    };
+    apiByPage.set(independent, mirrorApi);
+    await context.route('**/api/workspace**', async route => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() === 'GET' && url.pathname === '/api/workspace') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ initialized: true, version: mirrorApi.version, state: mirrorApi.state })
+        });
+      }
+      return route.fulfill({ status: 405 });
+    });
+    await independent.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+    await independent.locator('#workspaceBanner').waitFor();
+    await independent.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+    assert.deepEqual(durableState(await stateFrom(independent)), expected, 'contexto independente não reidratou o estado canônico');
+  } finally {
+    await context.close();
+  }
+}
+
 async function setMockWorkspace(page, nextState) {
   const api = apiByPage.get(page);
   api.state = durableState(nextState);
@@ -507,11 +549,15 @@ async function createLead(page, name, options = {}) {
     assert.equal(await page.locator('#page-leads .entity-link').filter({ hasText: 'Lead CRUD Editado' }).count(), 1);
     assert.doesNotMatch(await page.locator('#entityDrawer').getAttribute('class'), /open/);
 
+    await assertCanonicalRehydration(page);
+    await goTo(page, 'Leads');
+
     page.once('dialog', dialog => dialog.accept());
     row = page.locator('#page-leads tbody tr').filter({ hasText: 'Lead CRUD Editado' });
     await row.getByTitle('Excluir').click();
     assert.equal(await page.getByText('Lead CRUD Editado', { exact: true }).count(), 0);
     assert.equal(Number(await page.locator('#leadNavCount').innerText()), initialCount);
+    await assertCanonicalRehydration(page);
   });
 
   await run('DRAWER-01 abre os quatro cadastros pelo nome sem lápis', async page => {
@@ -747,6 +793,10 @@ async function createLead(page, name, options = {}) {
     assert.ok(state.ui.savedFilters[0].filter.visibleFields.includes('stage'));
     assert.equal(Number.isNaN(Date.parse(state.ui.savedFilters[0].updatedAt)), false);
 
+    await assertCanonicalRehydration(page);
+    await goTo(page, 'Leads');
+    await page.getByRole('button', { name: /Filtros/ }).click();
+
     await panel.getByRole('button', { name: 'Redefinir' }).click();
     assert.deepEqual(await panel.locator('[data-filter-field]').evaluateAll(rows => rows.map(row => row.dataset.filterField)), ['name', 'stage', 'responsibleId', 'createdAt']);
     assert.deepEqual(await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').evaluate(select => [...select.selectedOptions].map(option => option.value)), []);
@@ -805,6 +855,7 @@ async function createLead(page, name, options = {}) {
     assert.equal(await page.locator('#page-deals .kanban-board').isVisible(), true);
     assert.equal((await stateFrom(page)).ui.viewModesByUser['u-admin'].deals, 'kanban');
     assert.equal(await page.locator('#page-deals .kanban-card').count(), 1);
+    await assertCanonicalRehydration(page);
   });
 
   await run('BOARD-02 representa a etapa em barra segmentada na Lista', async page => {
@@ -862,6 +913,7 @@ async function createLead(page, name, options = {}) {
     await page.getByRole('button', { name: 'Desfazer' }).click();
     state = await stateFrom(page);
     assert.equal(state.deals.find(deal => deal.id === 'N-16312').stage, 'Orçamentos enviados');
+    await assertCanonicalRehydration(page);
   });
 
   await run('BOARD-06 protege Faturando e o Desfazer restaura responsável', async page => {
@@ -1084,6 +1136,7 @@ async function createLead(page, name, options = {}) {
     assert.equal(deal.responsibleId, source.responsibleId);
     assert.deepEqual(deal.assistants, source.assistants);
     assert.equal(deal.team, 'Vendas CMS');
+    await assertCanonicalRehydration(page);
   });
 
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {
@@ -1108,6 +1161,7 @@ async function createLead(page, name, options = {}) {
     assert.equal(deal.team, 'Faturamento');
     assert.ok(state.notifications.some(note => note.userId === 'u-billing' && note.text === 'Responsabilidade alterada automaticamente.' && note.detail.includes(dealId)));
     assert.ok(state.notifications.some(note => note.userId === 'u-admin' && note.text === 'Automação de Faturamento executada.' && note.detail.includes(dealId)));
+    await assertCanonicalRehydration(page);
   });
 
   await run('DEMO-13 calcula orçamento e aceita PDF opcional', async page => {
@@ -1136,6 +1190,7 @@ async function createLead(page, name, options = {}) {
     deal = state.deals.find(item => item.company === 'Open Analítica');
     assert.equal(deal.quotes.at(-1).total, 100);
     assert.equal(deal.quotes.at(-1).pdf, 'proposta-teste.pdf');
+    await assertCanonicalRehydration(page);
   });
 
   await run('QUOTE-01 gerencia orçamentos dentro do painel lateral do Negócio', async page => {
@@ -1301,6 +1356,7 @@ async function createLead(page, name, options = {}) {
     assert.equal(edited.customFields.find(field => field.label === 'Cargo (2)').value, 'Decisora final');
     assert.equal(edited.customFields.find(field => field.label === 'Campo vazio').value, '');
     assert.equal(edited.visibleCustomFieldKeys.includes('bitrix:campo%20vazio:1'), true);
+    await assertCanonicalRehydration(page);
   });
 
   await run('BITRIX-02 reimporta pelo ID sem criar duplicata', async page => {
@@ -1752,6 +1808,7 @@ async function createLead(page, name, options = {}) {
       number: ['Valor exato', 'Maior que', 'Menor que', 'Entre'], money: ['Valor exato', 'Maior que', 'Menor que', 'Entre'],
       date: ['Qualquer data', 'Data exata', 'Antes de', 'Depois de', 'Entre'], boolean: ['É um de'], select: ['É um de'], multiselect: ['É um de']
     });
+    await assertCanonicalRehydration(page);
   });
 
   await run('ADM-03 Administrador convida edita e controla acesso de funcionários', async page => {
@@ -1835,6 +1892,7 @@ async function createLead(page, name, options = {}) {
     assert.equal(await page.locator('[data-admin-nav]:visible').count(), 0);
     await page.evaluate(() => showView('admin'));
     assert.equal(await page.locator('#topTitle').innerText(), 'Visão geral');
+    await assertCanonicalRehydration(page);
   });
 
   await run('BITRIX-02 rejeita arquivos inválidos e mantém a importação parcial', async page => {

@@ -199,3 +199,35 @@ def test_hidden_fields_and_preferences_round_trip(repository) -> None:
     loaded = repo.read_active().model_dump(by_alias=True, exclude_none=True)
     assert loaded["moduleFieldSettings"] == original["moduleFieldSettings"]
     assert loaded["ui"] == original["ui"]
+
+
+def test_combined_workflow_state_rehydrates_in_new_repository_session(repository) -> None:
+    repo, _session = repository
+    original = sample_state()
+    original["users"].append(
+        {"id": "u-3", "name": "Convidada", "email": "convidada@test", "jobTitle": "Vendas", "role": "Vendedor", "team": "Vendas", "status": "Pendente", "invitedAt": "2026-08-26T12:30:00Z"}
+    )
+    original["leads"][0]["name"] = "Lead criado e editado"
+    original["leads"][0]["stage"] = "Lead convertido"
+    original["deals"][0]["stageHistory"].extend(
+        [
+            {"from": "Em Contato", "to": "Negociação Revisão", "at": "2026-08-26T12:31:00Z", "byId": "u-1"},
+            {"from": "Negociação Revisão", "to": "Em Contato", "at": "2026-08-26T12:32:00Z", "byId": "u-1"},
+        ]
+    )
+    original["notifications"].append(
+        {"id": "NT-2", "userId": "u-1", "text": "Automação executada", "detail": "N-1", "time": "Agora", "read": False}
+    )
+    deal_field = {"key": "workflow:contract", "label": "Contrato", "type": "text", "position": 0}
+    original["customFieldSchemas"]["deals"] = [deal_field]
+    original["deals"][0]["customFields"] = [{**deal_field, "value": "CTR-900"}]
+    original["deals"][0]["visibleCustomFieldKeys"] = [deal_field["key"]]
+
+    persist(repo, original)
+
+    fresh_session = Session(bind=repo.session.get_bind(), expire_on_commit=False)
+    try:
+        rehydrated = WorkspaceRepository(fresh_session).read_active().model_dump(by_alias=True, exclude_none=True)
+    finally:
+        fresh_session.close()
+    assert rehydrated == original

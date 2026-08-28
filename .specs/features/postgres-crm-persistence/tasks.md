@@ -496,6 +496,8 @@ T11  T12  T13  T14
 
 ### T17: Cover the durable workflow rehydration matrix
 
+**Status**: Complete
+
 **What**: Re-open the durable results of create/edit, convert, stage/undo, quote, CSV, users, notifications, fields and preferences after reload and in an independent browser context.
 **Where**: `tests/ui-prototype.spec.cjs`, `tests/backend/test_repository.py`
 **Depends on**: T16
@@ -503,9 +505,9 @@ T11  T12  T13  T14
 
 **Done when**:
 
-- [ ] Every listed durable flow has a post-reload or independent-context assertion against canonical API state.
-- [ ] A real repository session round-trips the combined durable aggregate.
-- [ ] Full gate passes.
+- [x] Every listed durable flow has a post-reload or independent-context assertion against canonical API state.
+- [x] A real repository session round-trips the combined durable aggregate.
+- [x] Full gate passes.
 
 **Tests**: integration, e2e
 **Gate**: full
