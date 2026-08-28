@@ -515,6 +515,8 @@ T11  T12  T13  T14
 
 ### T18: Cover simultaneous workspace saves
 
+**Status**: Complete
+
 **What**: Race two saves using the same version and prove exactly one winner, one typed conflict, one version increment and one complete winning state.
 **Where**: `tests/backend/test_workspace_service.py`
 **Depends on**: T17
@@ -522,9 +524,9 @@ T11  T12  T13  T14
 
 **Done when**:
 
-- [ ] Two simultaneous saves return one success and one `WorkspaceConflict`.
-- [ ] The persisted version increments exactly once and matches one whole candidate state.
-- [ ] Quick gate passes.
+- [x] Two simultaneous saves return one success and one `WorkspaceConflict`.
+- [x] The persisted version increments exactly once and matches one whole candidate state.
+- [x] Quick gate passes.
 
 **Tests**: integration
 **Gate**: quick

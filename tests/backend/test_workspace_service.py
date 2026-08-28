@@ -5,6 +5,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 from alembic import command
@@ -116,6 +117,39 @@ def test_save_with_current_version_increments_exactly_once(service) -> None:
     changed["leads"][0]["name"] = "Alterado"
     result = workspace.save(1, WorkspaceState.model_validate(changed))
     assert (result.version, result.state.leads[0]["name"]) == (2, "Alterado")
+
+
+def test_simultaneous_saves_have_one_complete_winner_and_one_conflict(service) -> None:
+    workspace, _database = service
+    workspace.bootstrap(state())
+    candidates = []
+    for suffix in ("A", "B"):
+        candidate = state_data()
+        candidate["leads"][0]["name"] = f"Lead candidato {suffix}"
+        candidate["companies"][0]["name"] = f"Empresa candidata {suffix}"
+        candidate["contacts"][0]["company"] = candidate["companies"][0]["name"]
+        candidate["deals"][0]["company"] = candidate["companies"][0]["name"]
+        candidates.append(WorkspaceState.model_validate(candidate))
+    start = Barrier(2)
+
+    def attempt(candidate: WorkspaceState) -> tuple[str, int, str]:
+        start.wait()
+        try:
+            result = workspace.save(1, candidate)
+            return "saved", result.version, result.state.leads[0]["name"]
+        except WorkspaceConflict as error:
+            return "conflict", error.current_version, ""
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(attempt, candidates))
+
+    assert sorted(outcome[0] for outcome in outcomes) == ["conflict", "saved"]
+    assert [outcome[1] for outcome in outcomes] == [2, 2]
+    winning_name = next(outcome[2] for outcome in outcomes if outcome[0] == "saved")
+    loaded = workspace.load()
+    expected = candidates[0] if winning_name.endswith("A") else candidates[1]
+    assert loaded.version == 2
+    assert loaded.state.model_dump(by_alias=True, exclude_none=True) == expected.model_dump(by_alias=True, exclude_none=True)
 
 
 def test_stale_save_returns_current_version_and_keeps_database_unchanged(service) -> None:
