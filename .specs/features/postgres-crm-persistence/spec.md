@@ -161,7 +161,7 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | DBP-06 | P1: Banco normalizado | Execute | Complete (T5, T8) |
 | DBP-07 | P1: Fonte principal | Execute | Complete (T8-T9) |
 | DBP-08 | P1: Fonte principal | Execute | Complete (T7-T8, T10) |
-| DBP-09 | P1: Fonte principal | Execute | Needs fix (Verifier: temporal confirmation evidence) |
+| DBP-09 | P1: Fonte principal | Execute | Complete (T8, T10, T16) |
 | DBP-10 | P1: Fonte principal | Execute | Complete (T7-T8, T10) |
 | DBP-11 | P1: Fonte principal | Execute | Complete (T2, T6-T8) |
 | DBP-12 | P1: Fonte principal | Execute | Complete (T3, T6-T7, T10) |

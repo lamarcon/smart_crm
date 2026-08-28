@@ -58,7 +58,7 @@ async function openFresh(options = {}) {
     await context.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: options.preloadState });
   }
   const page = await context.newPage();
-  const api = { initialized: false, version: 0, state: null, loadFailure: Boolean(options.loadFailure), writeFailure: false, assertSynchronized: false, deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] } };
+  const api = { initialized: false, version: 0, state: null, loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false, deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] } };
   apiByPage.set(page, api);
   await context.route('**/api/workspace**', async route => {
     const request = route.request();
@@ -93,6 +93,11 @@ async function openFresh(options = {}) {
     if ((request.method() === 'PUT' && url.pathname === '/api/workspace') || (request.method() === 'POST' && url.pathname === '/api/workspace/reset')) {
       if (api.writeFailure) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Banco de dados indisponível.', errorId: 'mock-write-failure' } }) });
+      }
+      if (api.writeGate) {
+        const gate = api.writeGate;
+        api.writeGate = null;
+        await gate;
       }
       const payload = request.postDataJSON();
       if (payload.version !== api.version) {
@@ -291,6 +296,29 @@ async function createLead(page, name, options = {}) {
     assert.equal(await secondPage.locator('#page-dashboard').getByText('Lead confirmado pela API').count(), 1);
     assert.equal((await stateFrom(secondPage)).leads.some(lead => lead.name === 'Lead confirmado pela API'), true);
     await secondContext.close();
+  });
+
+  await run('DBP-09 só confirma visualmente depois da versão persistida', async page => {
+    const api = apiByPage.get(page);
+    const beforeVersion = api.version;
+    const beforeCache = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), CONFIRMED_CACHE_KEY);
+    let releaseWrite;
+    api.writeGate = new Promise(resolve => { releaseWrite = resolve; });
+
+    await createLead(page, 'Lead aguardando confirmação', { waitForSaved: false });
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting === 'true');
+
+    assert.equal(api.version, beforeVersion);
+    assert.equal(await page.getByText('Lead criado com sucesso.', { exact: true }).count(), 0);
+    assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), CONFIRMED_CACHE_KEY), beforeCache);
+
+    releaseWrite();
+    await page.getByText('Lead criado com sucesso.', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting === 'false');
+
+    assert.equal(api.version, beforeVersion + 1);
+    assert.equal((await page.evaluate(key => JSON.parse(localStorage.getItem(key)), CONFIRMED_CACHE_KEY)).version, beforeVersion + 1);
+    assert.equal(api.state.leads.some(lead => lead.name === 'Lead aguardando confirmação'), true);
   });
 
   await run('DBP-16 mantém busca e perfil locais sem incrementar a versão', async page => {

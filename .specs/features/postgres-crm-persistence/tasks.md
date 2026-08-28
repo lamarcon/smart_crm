@@ -477,6 +477,8 @@ T11  T12  T13  T14
 
 ### T16: Prove confirmation follows persistence
 
+**Status**: Complete
+
 **What**: Delay one workspace write and assert that version, confirmed cache and success toast remain unchanged until the server response is released.
 **Where**: `tests/ui-prototype.spec.cjs`
 **Depends on**: T15
@@ -484,9 +486,9 @@ T11  T12  T13  T14
 
 **Done when**:
 
-- [ ] The test observes an in-flight PUT without a success confirmation or confirmed-cache advance.
-- [ ] Releasing the response increments the version once and only then exposes the success toast/cache.
-- [ ] Full gate passes.
+- [x] The test observes an in-flight PUT without a success confirmation or confirmed-cache advance.
+- [x] Releasing the response increments the version once and only then exposes the success toast/cache.
+- [x] Full gate passes.
 
 **Tests**: e2e
 **Gate**: full

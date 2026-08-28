@@ -29,10 +29,10 @@
 ## Handoff
 
 - **Feature**: Persistência do Smart CRM no PostgreSQL / `.specs/features/postgres-crm-persistence`
-- **Phase / Task**: Verifier 1 reprovou; T15 concluída, T16 pendente
-- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15
+- **Phase / Task**: Verifier 1 reprovou; T16 concluída, T17 pendente
+- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16
 - **In-progress** (file:line): none
-- **Next step**: Executar T16 para provar que a confirmação visual ocorre somente após a resposta persistida.
-- **Blockers**: DBP-09, DBP-14, DBP-17 e o edge de save concorrente sem evidência completa; whitespace do range.
-- **Uncommitted files**: none
+- **Next step**: Executar T17 para reabrir a matriz completa de fluxos duráveis após recarga e em contexto independente.
+- **Blockers**: DBP-14, DBP-17 e o edge de save concorrente sem evidência completa; whitespace do range.
+- **Uncommitted files**: tests/ui-prototype.spec.cjs, .specs metadata
 - **Branch**: main
