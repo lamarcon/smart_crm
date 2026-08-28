@@ -68,6 +68,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: validation.md authorization edge (authorization)
 - last seen: 2026-08-25T20:07:21Z
 
+### L-010 - Validate database constraints against every enum-like value emitted by the UI using a real persistence round-trip.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `persistence` · harmful: 0
+- features: postgres-crm-persistence
+- evidence: validation.md:DBP-14 (persistence)
+- last seen: 2026-08-28T13:47:10Z
+
+### L-011 - Delay persistence responses in UI tests and assert confirmations remain absent until the confirmed version arrives.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `ui-persistence` · harmful: 0
+- features: postgres-crm-persistence
+- evidence: validation.md:DBP-09 (ui-persistence)
+- last seen: 2026-08-28T13:47:10Z
+
+### L-012 - For durable workflow matrices, verify each mutation after reload and in an independent browser context.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `ui-persistence` · harmful: 0
+- features: postgres-crm-persistence
+- evidence: validation.md:DBP-17 (ui-persistence)
+- last seen: 2026-08-28T13:47:10Z
+
+### L-013 - Test optimistic concurrency with simultaneous saves at the same version, not only sequential stale writes.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `persistence` · harmful: 0
+- features: postgres-crm-persistence
+- evidence: validation.md:concurrent-save-edge (persistence)
+- last seen: 2026-08-28T13:47:10Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

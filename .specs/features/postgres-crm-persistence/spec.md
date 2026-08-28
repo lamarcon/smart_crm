@@ -161,15 +161,15 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | DBP-06 | P1: Banco normalizado | Execute | Complete (T5, T8) |
 | DBP-07 | P1: Fonte principal | Execute | Complete (T8-T9) |
 | DBP-08 | P1: Fonte principal | Execute | Complete (T7-T8, T10) |
-| DBP-09 | P1: Fonte principal | Execute | Complete (T8, T10) |
+| DBP-09 | P1: Fonte principal | Execute | Needs fix (Verifier: temporal confirmation evidence) |
 | DBP-10 | P1: Fonte principal | Execute | Complete (T7-T8, T10) |
 | DBP-11 | P1: Fonte principal | Execute | Complete (T2, T6-T8) |
 | DBP-12 | P1: Fonte principal | Execute | Complete (T3, T6-T7, T10) |
 | DBP-13 | P1: Fonte principal | Execute | Complete (T3, T6-T8, T10) |
-| DBP-14 | P1: Compatibilidade | Execute | Complete (T3, T5-T6, T9) |
+| DBP-14 | P1: Compatibilidade | Execute | Needs fix (Verifier: UI status domain mismatch) |
 | DBP-15 | P1: Compatibilidade | Execute | Complete (T3, T5-T6, T10) |
 | DBP-16 | P1: Compatibilidade | Execute | Complete (T9-T10) |
-| DBP-17 | P1: Compatibilidade | Execute | Complete (T10) |
+| DBP-17 | P1: Compatibilidade | Execute | Needs fix (Verifier: incomplete rehydration matrix) |
 | DBP-18 | P1: Compatibilidade | Execute | Complete (T4, T7, T11-T13) |
 | DBP-19 | P1: Falhas visíveis | Execute | Complete (T1-T2, T8, T11-T13) |
 | DBP-20 | P1: Falhas visíveis | Execute | Complete (T1-T2, T8, T11-T13) |

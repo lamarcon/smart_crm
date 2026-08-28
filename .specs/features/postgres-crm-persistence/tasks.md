@@ -453,6 +453,92 @@ T11  T12  T13  T14
 **Gate**: build
 **Commit**: `docs(readme): explain postgres-backed crm`
 
+### Verification Fix Tasks
+
+### T15: Align persisted user statuses with the UI
+
+**What**: Expand the PostgreSQL user-status domain to every value emitted by the UI and prove all values round-trip through a real migrated schema.
+**Where**: `app/models.py`, `migrations/versions/`, `tests/backend/test_models.py`, `tests/backend/test_migrations.py`, `tests/backend/test_repository.py`, `scripts/verify_demo.py`
+**Depends on**: T14
+**Requirement**: DBP-01, DBP-14
+
+**Done when**:
+
+- [ ] Metadata and the current Alembic head accept `Ativo`, `Pendente`, `Inativo` and `Cancelado`.
+- [ ] A real repository round-trip preserves each status exactly.
+- [ ] Migration upgrade/downgrade and Compose head verification use the new revision.
+- [ ] Quick gate passes.
+
+**Tests**: integration
+**Gate**: quick
+**Commit**: `fix(db): align persisted user statuses`
+
+### T16: Prove confirmation follows persistence
+
+**What**: Delay one workspace write and assert that version, confirmed cache and success toast remain unchanged until the server response is released.
+**Where**: `tests/ui-prototype.spec.cjs`
+**Depends on**: T15
+**Requirement**: DBP-09
+
+**Done when**:
+
+- [ ] The test observes an in-flight PUT without a success confirmation or confirmed-cache advance.
+- [ ] Releasing the response increments the version once and only then exposes the success toast/cache.
+- [ ] Full gate passes.
+
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(ui): prove persisted confirmation order`
+
+### T17: Cover the durable workflow rehydration matrix
+
+**What**: Re-open the durable results of create/edit, convert, stage/undo, quote, CSV, users, notifications, fields and preferences after reload and in an independent browser context.
+**Where**: `tests/ui-prototype.spec.cjs`, `tests/backend/test_repository.py`
+**Depends on**: T16
+**Requirement**: DBP-14, DBP-17
+
+**Done when**:
+
+- [ ] Every listed durable flow has a post-reload or independent-context assertion against canonical API state.
+- [ ] A real repository session round-trips the combined durable aggregate.
+- [ ] Full gate passes.
+
+**Tests**: integration, e2e
+**Gate**: full
+**Commit**: `test(ui): cover durable workflow rehydration`
+
+### T18: Cover simultaneous workspace saves
+
+**What**: Race two saves using the same version and prove exactly one winner, one typed conflict, one version increment and one complete winning state.
+**Where**: `tests/backend/test_workspace_service.py`
+**Depends on**: T17
+**Requirement**: DBP-08, DBP-10
+
+**Done when**:
+
+- [ ] Two simultaneous saves return one success and one `WorkspaceConflict`.
+- [ ] The persisted version increments exactly once and matches one whole candidate state.
+- [ ] Quick gate passes.
+
+**Tests**: integration
+**Gate**: quick
+**Commit**: `test(api): cover concurrent workspace saves`
+
+### T19: Close feature-range whitespace hygiene
+
+**What**: Remove the two whitespace errors reported across the feature commit range without changing behavior.
+**Where**: `migrations/versions/be40ea4d21ad_create_normalized_crm_schema.py`, `pyproject.toml`
+**Depends on**: T18
+
+**Done when**:
+
+- [ ] `git diff --check 23c42c0..HEAD` reports no whitespace errors.
+- [ ] Build gate passes.
+
+**Tests**: none - hygiene only
+**Gate**: build
+**Commit**: `style(repo): clear persistence whitespace errors`
+
 ---
 
 ## Phase Execution Map

@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 10,
+  "next_id": 14,
   "lessons": [
     {
       "id": "L-001",
@@ -166,6 +166,78 @@
       ],
       "created": "2026-08-25T20:07:21Z",
       "last_seen": "2026-08-25T20:07:21Z"
+    },
+    {
+      "id": "L-010",
+      "key": "ac_gap::validate database constraints against every enum like value emitted by the ui using a real persistence round trip",
+      "text": "Validate database constraints against every enum-like value emitted by the UI using a real persistence round-trip.",
+      "signal": "ac_gap",
+      "scope": "persistence",
+      "status": "candidate",
+      "features": [
+        "postgres-crm-persistence"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md:DBP-14 (persistence)"
+      ],
+      "created": "2026-08-28T13:47:10Z",
+      "last_seen": "2026-08-28T13:47:10Z"
+    },
+    {
+      "id": "L-011",
+      "key": "ac_gap::delay persistence responses in ui tests and assert confirmations remain absent until the confirmed version arrives",
+      "text": "Delay persistence responses in UI tests and assert confirmations remain absent until the confirmed version arrives.",
+      "signal": "ac_gap",
+      "scope": "ui-persistence",
+      "status": "candidate",
+      "features": [
+        "postgres-crm-persistence"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md:DBP-09 (ui-persistence)"
+      ],
+      "created": "2026-08-28T13:47:10Z",
+      "last_seen": "2026-08-28T13:47:10Z"
+    },
+    {
+      "id": "L-012",
+      "key": "ac_gap::for durable workflow matrices verify each mutation after reload and in an independent browser context",
+      "text": "For durable workflow matrices, verify each mutation after reload and in an independent browser context.",
+      "signal": "ac_gap",
+      "scope": "ui-persistence",
+      "status": "candidate",
+      "features": [
+        "postgres-crm-persistence"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md:DBP-17 (ui-persistence)"
+      ],
+      "created": "2026-08-28T13:47:10Z",
+      "last_seen": "2026-08-28T13:47:10Z"
+    },
+    {
+      "id": "L-013",
+      "key": "ac_gap::test optimistic concurrency with simultaneous saves at the same version not only sequential stale writes",
+      "text": "Test optimistic concurrency with simultaneous saves at the same version, not only sequential stale writes.",
+      "signal": "ac_gap",
+      "scope": "persistence",
+      "status": "candidate",
+      "features": [
+        "postgres-crm-persistence"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md:concurrent-save-edge (persistence)"
+      ],
+      "created": "2026-08-28T13:47:10Z",
+      "last_seen": "2026-08-28T13:47:10Z"
     }
   ]
 }
