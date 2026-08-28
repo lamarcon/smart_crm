@@ -95,3 +95,16 @@ def test_custom_values_are_jsonb_and_required_query_indexes_exist() -> None:
         "ix_custom_values_record",
         "ix_external_fields_record",
     }.issubset(index_names)
+
+
+def test_user_status_constraint_accepts_every_ui_status() -> None:
+    constraints = {
+        constraint.name: str(constraint.sqltext)
+        for constraint in Base.metadata.tables["crm_users"].constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    status_constraint = constraints["ck_crm_users_valid_status"]
+    assert all(
+        f"'{status}'" in status_constraint
+        for status in ("Ativo", "Pendente", "Inativo", "Cancelado")
+    )

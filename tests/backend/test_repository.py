@@ -88,6 +88,31 @@ def test_insert_and_read_are_deep_equal_for_durable_state(repository) -> None:
     assert repo.read_active().model_dump(by_alias=True, exclude_none=True) == original
 
 
+def test_every_ui_user_status_round_trips_through_postgres(repository) -> None:
+    repo, _session = repository
+    original = sample_state()
+    original["users"].extend(
+        [
+            {"id": "u-3", "name": "Carla", "email": "carla@test", "jobTitle": "Vendas", "role": "Vendedor", "team": "Vendas", "status": "Inativo", "invitedAt": None},
+            {"id": "u-4", "name": "Dora", "email": "dora@test", "jobTitle": "Vendas", "role": "Vendedor", "team": "Vendas", "status": "Cancelado", "invitedAt": None},
+        ]
+    )
+    original["users"][1]["status"] = "Pendente"
+
+    persist(repo, original)
+
+    loaded_statuses = {
+        user["id"]: user["status"]
+        for user in repo.read_active().model_dump(by_alias=True, exclude_none=True)["users"]
+    }
+    assert loaded_statuses == {
+        "u-1": "Ativo",
+        "u-2": "Pendente",
+        "u-3": "Inativo",
+        "u-4": "Cancelado",
+    }
+
+
 def test_every_table_family_receives_rows(repository) -> None:
     repo, session = repository
     persist(repo, sample_state())

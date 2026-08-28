@@ -457,6 +457,8 @@ T11  T12  T13  T14
 
 ### T15: Align persisted user statuses with the UI
 
+**Status**: Complete
+
 **What**: Expand the PostgreSQL user-status domain to every value emitted by the UI and prove all values round-trip through a real migrated schema.
 **Where**: `app/models.py`, `migrations/versions/`, `tests/backend/test_models.py`, `tests/backend/test_migrations.py`, `tests/backend/test_repository.py`, `scripts/verify_demo.py`
 **Depends on**: T14

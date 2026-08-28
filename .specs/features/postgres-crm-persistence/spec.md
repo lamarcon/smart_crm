@@ -153,7 +153,7 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DBP-01 | P1: Banco normalizado | Execute | Complete (T1, T3-T4, T11, T13) |
+| DBP-01 | P1: Banco normalizado | Execute | Complete (T1, T3-T4, T11, T13, T15) |
 | DBP-02 | P1: Banco normalizado | Execute | Complete (T5, T7, T9, T14) |
 | DBP-03 | P1: Banco normalizado | Execute | Complete (T5-T9, T13) |
 | DBP-04 | P1: Banco normalizado | Execute | Complete (T5, T7-T8) |
@@ -166,7 +166,7 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 | DBP-11 | P1: Fonte principal | Execute | Complete (T2, T6-T8) |
 | DBP-12 | P1: Fonte principal | Execute | Complete (T3, T6-T7, T10) |
 | DBP-13 | P1: Fonte principal | Execute | Complete (T3, T6-T8, T10) |
-| DBP-14 | P1: Compatibilidade | Execute | Needs fix (Verifier: UI status domain mismatch) |
+| DBP-14 | P1: Compatibilidade | Execute | In progress (T15 status domain complete; T17 matrix pending) |
 | DBP-15 | P1: Compatibilidade | Execute | Complete (T3, T5-T6, T10) |
 | DBP-16 | P1: Compatibilidade | Execute | Complete (T9-T10) |
 | DBP-17 | P1: Compatibilidade | Execute | Needs fix (Verifier: incomplete rehydration matrix) |

@@ -77,7 +77,10 @@ class CrmUser(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "crm_users"
     __table_args__ = (
         UniqueConstraint("workspace_id", "email"),
-        CheckConstraint("status IN ('Ativo', 'Convidado', 'Inativo')", name="valid_status"),
+        CheckConstraint(
+            "status IN ('Ativo', 'Pendente', 'Inativo', 'Cancelado', 'Convidado')",
+            name="valid_status",
+        ),
         Index("ix_crm_users_workspace_active", "workspace_id", "deleted_at"),
     )
 

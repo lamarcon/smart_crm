@@ -18,7 +18,7 @@ PORT = int(os.environ.get("SMART_CRM_PORT", "8080"))
 BASE_URL = f"http://127.0.0.1:{PORT}"
 DB_NAME = os.environ.get("SMART_CRM_DB_NAME", "smartcrm_test")
 DB_USER = os.environ.get("SMART_CRM_DB_USER", "smartcrm")
-EXPECTED_HEAD = "be40ea4d21ad"
+EXPECTED_HEAD = "9f7a2c31d5e8"
 
 
 class Checks:
