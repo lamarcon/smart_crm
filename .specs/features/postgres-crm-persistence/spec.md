@@ -6,11 +6,11 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 
 ## Goals
 
-- [ ] Persistir em tabelas normalizadas os dados comerciais e configurações duráveis existentes no protótipo.
-- [ ] Migrar de forma controlada e atômica o estado atual do navegador quando o banco estiver vazio.
-- [ ] Carregar e salvar alterações pela API, com controle de concorrência e sem confirmações falsas.
-- [ ] Preservar os fluxos, campos personalizados, vínculos e testes atuais da interface.
-- [ ] Comprovar persistência após recarga, recriação do container da aplicação e reinício do PostgreSQL.
+- [x] Persistir em tabelas normalizadas os dados comerciais e configurações duráveis existentes no protótipo.
+- [x] Migrar de forma controlada e atômica o estado atual do navegador quando o banco estiver vazio.
+- [x] Carregar e salvar alterações pela API, com controle de concorrência e sem confirmações falsas.
+- [x] Preservar os fluxos, campos personalizados, vínculos e testes atuais da interface.
+- [x] Comprovar persistência após recarga, recriação do container da aplicação e reinício do PostgreSQL.
 
 ## Out of Scope
 
@@ -153,29 +153,29 @@ O PostgreSQL local está saudável, mas contém apenas uma tabela técnica. Todo
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DBP-01 | P1: Banco normalizado | Execute | Complete (T1, T3-T4, T11, T13, T15) |
-| DBP-02 | P1: Banco normalizado | Execute | Complete (T5, T7, T9, T14) |
-| DBP-03 | P1: Banco normalizado | Execute | Complete (T5-T9, T13) |
-| DBP-04 | P1: Banco normalizado | Execute | Complete (T5, T7-T8) |
-| DBP-05 | P1: Banco normalizado | Execute | Complete (T7-T9) |
-| DBP-06 | P1: Banco normalizado | Execute | Complete (T5, T8) |
-| DBP-07 | P1: Fonte principal | Execute | Complete (T8-T9) |
-| DBP-08 | P1: Fonte principal | Execute | Complete (T7-T8, T10, T18) |
-| DBP-09 | P1: Fonte principal | Execute | Complete (T8, T10, T16) |
-| DBP-10 | P1: Fonte principal | Execute | Complete (T7-T8, T10, T18) |
-| DBP-11 | P1: Fonte principal | Execute | Complete (T2, T6-T8) |
-| DBP-12 | P1: Fonte principal | Execute | Complete (T3, T6-T7, T10) |
-| DBP-13 | P1: Fonte principal | Execute | Complete (T3, T6-T8, T10) |
-| DBP-14 | P1: Compatibilidade | Execute | Complete (T3, T5-T6, T10, T15, T17) |
-| DBP-15 | P1: Compatibilidade | Execute | Complete (T3, T5-T6, T10) |
-| DBP-16 | P1: Compatibilidade | Execute | Complete (T9-T10) |
-| DBP-17 | P1: Compatibilidade | Execute | Complete (T9-T10, T17) |
-| DBP-18 | P1: Compatibilidade | Execute | Complete (T4, T7, T11-T13) |
-| DBP-19 | P1: Falhas visíveis | Execute | Complete (T1-T2, T8, T11-T13) |
-| DBP-20 | P1: Falhas visíveis | Execute | Complete (T1-T2, T8, T11-T13) |
-| DBP-21 | P1: Falhas visíveis | Execute | Complete (T9) |
-| DBP-22 | P1: Falhas visíveis | Execute | Complete (T10) |
-| DBP-23 | P1: Falhas visíveis | Execute | Complete (T2, T8, T13) |
+| DBP-01 | P1: Banco normalizado | Validate | Verified (T1, T3-T4, T11, T13, T15) |
+| DBP-02 | P1: Banco normalizado | Validate | Verified (T5, T7, T9, T14) |
+| DBP-03 | P1: Banco normalizado | Validate | Verified (T5-T9, T13) |
+| DBP-04 | P1: Banco normalizado | Validate | Verified (T5, T7-T8) |
+| DBP-05 | P1: Banco normalizado | Validate | Verified (T7-T9) |
+| DBP-06 | P1: Banco normalizado | Validate | Verified (T5, T8) |
+| DBP-07 | P1: Fonte principal | Validate | Verified (T8-T9) |
+| DBP-08 | P1: Fonte principal | Validate | Verified (T7-T8, T10, T18) |
+| DBP-09 | P1: Fonte principal | Validate | Verified (T8, T10, T16) |
+| DBP-10 | P1: Fonte principal | Validate | Verified (T7-T8, T10, T18) |
+| DBP-11 | P1: Fonte principal | Validate | Verified (T2, T6-T8) |
+| DBP-12 | P1: Fonte principal | Validate | Verified (T3, T6-T7, T10) |
+| DBP-13 | P1: Fonte principal | Validate | Verified (T3, T6-T8, T10) |
+| DBP-14 | P1: Compatibilidade | Validate | Verified (T3, T5-T6, T10, T15, T17) |
+| DBP-15 | P1: Compatibilidade | Validate | Verified (T3, T5-T6, T10) |
+| DBP-16 | P1: Compatibilidade | Validate | Verified (T9-T10) |
+| DBP-17 | P1: Compatibilidade | Validate | Verified (T9-T10, T17) |
+| DBP-18 | P1: Compatibilidade | Validate | Verified (T4, T7, T11-T13) |
+| DBP-19 | P1: Falhas visíveis | Validate | Verified (T1-T2, T8, T11-T13) |
+| DBP-20 | P1: Falhas visíveis | Validate | Verified (T1-T2, T8, T11-T13) |
+| DBP-21 | P1: Falhas visíveis | Validate | Verified (T9) |
+| DBP-22 | P1: Falhas visíveis | Validate | Verified (T10) |
+| DBP-23 | P1: Falhas visíveis | Validate | Verified (T2, T8, T13) |
 
 **Coverage:** 23 total, 0 pending design, 0 unmapped.
 

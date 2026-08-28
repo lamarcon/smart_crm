@@ -29,10 +29,10 @@
 ## Handoff
 
 - **Feature**: Persistência do Smart CRM no PostgreSQL / `.specs/features/postgres-crm-persistence`
-- **Phase / Task**: Verifier 1 reprovou; correções T15-T19 concluídas, reverificação independente pendente
-- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19
+- **Phase / Task**: Validate concluído — PASS independente em `.specs/features/postgres-crm-persistence/validation.md`
+- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, Validate
 - **In-progress** (file:line): none
-- **Next step**: Executar a segunda validação independente, incluindo gate completo e discrimination sensor.
+- **Next step**: Feature concluída; iniciar uma nova especificação para qualquer expansão de escopo.
 - **Blockers**: none
-- **Uncommitted files**: migrations/versions/be40ea4d21ad_create_normalized_crm_schema.py, pyproject.toml, .specs metadata
+- **Uncommitted files**: none
 - **Branch**: main

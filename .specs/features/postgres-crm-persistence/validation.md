@@ -1,22 +1,22 @@
 # Persistência do Smart CRM no PostgreSQL - Validation
 
-**Result**: FAIL ❌
+**Result**: PASS ✅
 **Date**: 2026-08-28
-**Spec**: `.specs/features/postgres-crm-persistence/spec.md`
-**Diff range**: `23c42c0..23c664c`
-**Verified HEAD**: `23c664cb6aa303f0ef5931e76612c8e4bbc24650`
+**Spec**: .specs/features/postgres-crm-persistence/spec.md
+**Diff range**: 23c42c0..917fe7d
+**Verified HEAD**: 917fe7d2cbad490f9e9ac163032cbc2fdb89d624
 **Verifier**: independent sub-agent (author ≠ verifier)
 
 ---
 
 ## Summary
 
-O build gate e o sensor passaram, mas a feature não atende integralmente a spec. O modelo e a migração aceitam apenas `Ativo`, `Convidado` e `Inativo`, enquanto a interface grava `Pendente` e `Cancelado`. Esses fluxos passam no Playwright porque a suíte intercepta toda a API e não exerce a constraint PostgreSQL. DBP-09 e DBP-17 também não possuem a evidência temporal/cross-context exigida. O edge case de duas gravações simultâneas não foi testado.
+A implementação atende os 23 critérios de aceitação e os 6 edge cases. Os cinco gaps anteriores foram fechados: status/head migrado, ordem temporal de confirmação/cache, reidratação por reload/contexto independente/sessão real, saves simultâneos e whitespace.
 
-**Spec-anchored check**: 20/23 ACs com resultado exato comprovado; 3 gaps; 0 spec-precision gaps.
-**Edge cases**: 5/6 comprovados; 1 gap.
-**Sensor**: 3/3 mutantes mortos.
-**Gate**: 78 backend + 64 UI + 47 Compose = 189 checks aprovados; 0 falhas; 0 skips.
+**Spec-anchored check**: 23/23 ACs com o resultado exato da spec; 0 gaps; 0 spec-precision gaps.
+**Edge cases**: 6/6 comprovados.
+**Gate**: 82 backend + 65 UI + 47 Compose = 194 checks aprovados; 0 falhas; 0 skips.
+**Sensor outcome**: 3/3 mutantes mortos; 0 sobreviventes; isolamento confirmado.
 
 ---
 
@@ -24,99 +24,101 @@ O build gate e o sensor passaram, mas a feature não atende integralmente a spec
 
 | Task | Status | Notes |
 | --- | --- | --- |
-| T1 | ✅ Done | Runtime declarado; compile e gates executados. |
-| T2 | ✅ Done | Boundary de sessão, rollback e health cobertos. |
-| T3 | ⚠️ Partial | `app/models.py:80` define domínio de status incompatível com a interface. |
-| T4 | ⚠️ Partial | `migrations/versions/be40ea4d21ad_create_normalized_crm_schema.py:118` materializa a constraint incompatível. |
-| T5 | ✅ Done | Contrato e referências cobertos, mas não protegem o domínio de status do banco. |
-| T6 | ⚠️ Partial | Round-trip geral passa somente com usuários `Ativo`; `Pendente`/`Cancelado` falham na constraint. |
-| T7 | ✅ Done | Versão, conflito, rollback, reset e restore cobertos. |
-| T8 | ✅ Done | Rotas, erros, limite e health cobertos. |
-| T9 | ✅ Done | Bootstrap, DB-wins e fallback read-only cobertos. |
-| T10 | ⚠️ Partial | Fluxo de usuários quebra no PostgreSQL; DBP-09/17 carecem de prova completa. |
-| T11 | ✅ Done | Imagem construída e aceita pelo gate Compose. |
-| T12 | ✅ Done | Compose válido; volume preservado; serviços saudáveis. |
-| T13 | ✅ Done | Aceitação Compose terminou com 47 checks e preservou o volume. |
-| T14 | ✅ Done | Workflow persistente documentado. |
+| T1 | ✅ Done | Runtime e compile gate. |
+| T2 | ✅ Done | Sessão, rollback e health. |
+| T3 | ✅ Done | Modelo normalizado e constraints. |
+| T4 | ✅ Done | Migração do zero, ciclo, idempotência e probe. |
+| T5 | ✅ Done | Contrato, referências e contagens. |
+| T6 | ✅ Done | Round-trip, reconciliação e soft delete. |
+| T7 | ✅ Done | Serviço versionado e concorrência. |
+| T8 | ✅ Done | HTTP, limite, 503 e errorId. |
+| T9 | ✅ Done | Bootstrap, DB-wins e fallback. |
+| T10 | ✅ Done | Mutações duráveis, rollback e recovery. |
+| T11 | ✅ Done | Imagem aceita no Compose. |
+| T12 | ✅ Done | Compose válido e volume preservado. |
+| T13 | ✅ Done | 47 checks Compose. |
+| T14 | ✅ Done | Workflow documentado. |
+| T15 | ✅ Done | Status/head/round-trip real. |
+| T16 | ✅ Done | Ordem versão/cache/toast. |
+| T17 | ✅ Done | Reload/contexto/sessão real. |
+| T18 | ✅ Done | Dois saves simultâneos. |
+| T19 | ✅ Done | git diff --check verde. |
 
 ---
 
 ## Spec-Anchored Acceptance Criteria
 
-| AC | Spec-defined outcome | `file:line` + assertion expression | Result |
+| AC | Spec-defined outcome | file:line + assertion expression | Status |
 | --- | --- | --- | --- |
-| DBP-01 | Migrações versionadas criam todas as tabelas normalizadas e workspace de controle. | `tests/backend/test_models.py:33` — `assert set(Base.metadata.tables) == EXPECTED_TABLES`; `tests/backend/test_migrations.py:55-57` — `assert set(Base.metadata.tables).issubset(tables)`, `assert tuple(workspace) == ("default", 0, None)`, `assert ... == "be40ea4d21ad"`. | ✅ PASS |
-| DBP-02 | Bootstrap confirmado persiste o agregado validado atomicamente no banco vazio. | `tests/backend/test_workspace_service.py:82-84` — `assert result.version == 1`, `assert result.counts... == {...}`, `assert result.state... == state_data()`; `tests/ui-prototype.spec.cjs:218-234` — dialog/Admin/contagens e `assert.equal(api.version, 1)`. | ✅ PASS |
-| DBP-03 | Bootstrap retorna 201 e contagens exatas dos oito grupos. | `tests/backend/test_api.py:187-189` — `assert response.status_code == 201`, `assert response.json() == {"version": 1, "counts": COUNTS, "state": STATE_DATA}`; `tests/backend/test_schemas.py:112` — igualdade exata das contagens. | ✅ PASS |
-| DBP-04 | Referência inválida retorna 422 e não deixa dados parciais. | `tests/backend/test_api.py:215-217` — 422, path e mensagem exatos; `tests/backend/test_workspace_service.py:196-197` — `assert error.value.path == "leads[0].responsibleId"`, `assert workspace.load().initialized is False`. | ✅ PASS |
-| DBP-05 | Segundo bootstrap retorna 409 e não altera o workspace. | `tests/backend/test_api.py:199-201` — 409 e `currentVersion == 7`; `tests/backend/test_workspace_service.py:92-93` — conflito na versão 1 e `assert workspace.load().version == 1`. | ✅ PASS |
-| DBP-06 | Corpo acima de 25 MB retorna 413 antes da transação/serviço. | `tests/backend/test_api.py:229-231` e `:243-245` — `assert response.status_code == 413`, código `payload_too_large`, `assert service.calls == []`. | ✅ PASS |
-| DBP-07 | Interface carrega estado/versão da API antes de liberar alterações. | `tests/ui-prototype.spec.cjs:243-245` — `assert.equal(loaded.leads[0].name, canonical.leads[0].name)` e writable `true`; `:219` comprova writable `false` antes do bootstrap. | ✅ PASS |
-| DBP-08 | Save válido é atômico e incrementa a versão exatamente uma vez. | `tests/backend/test_workspace_service.py:118` — `assert (result.version, result.state.leads[0]["name"]) == (2, "Alterado")`; `:212-215` — exceção intermediária mantém `(version, company) == (1, "Empresa")`. | ✅ PASS |
-| DBP-09 | Confirmação visual aparece somente após a nova versão persistida. | **No evidence.** O teste rotulado DBP-09 em `tests/ui-prototype.spec.cjs:270-277` só observa versão/estado depois de uma resposta imediata; não segura o PUT nem afirma ausência de toast antes da resposta. A implementação ordena versão/cache/render/toast em `app/static/index.html:901-912`, mas evidence-or-zero exige assert comportamental. | ❌ GAP |
-| DBP-10 | Versão antiga retorna 409 com versão atual e não altera o banco. | `tests/backend/test_workspace_service.py:127-130` — conflito, `current_version == 2` e nome canônico `Lead`; `tests/backend/test_api.py:271-272` — 409 e `currentVersion == 8`. | ✅ PASS |
-| DBP-11 | Falha parcial faz rollback e retorna errorId sem dados parciais. | `tests/backend/test_workspace_service.py:212-215` — falha forçada mantém versão 1 e empresa `Empresa`; `tests/backend/test_api.py:403-407` — 500, `persistence_error`, UUID v4 no log e segredo ausente da resposta. | ✅ PASS |
-| DBP-12 | Exclusão preenche `deleted_at`, oculta ativo e preserva vínculos. | `tests/backend/test_repository.py:123-124` — `deleted_at is not None` e lista ativa `['L-1']`; `:145-146` — assistente e dois campos externos permanecem; `tests/ui-prototype.spec.cjs:342-343` — versão +1 e vínculo do assistente no excluído. | ✅ PASS |
-| DBP-13 | Restore limpa exclusão e recupera vínculos. | `tests/backend/test_repository.py:135` — `deleted_at is None`; `tests/backend/test_workspace_service.py:159-160` — versão 3 e `("L-1", ["u-2"])`; `tests/ui-prototype.spec.cjs:351-352` — versão +2 e assistente restaurado. | ✅ PASS |
-| DBP-14 | Migração/recarga preserva por valor todos os módulos, usuários e vínculos. | A evidência positiva `tests/backend/test_repository.py:88` (`assert ... == original`) usa apenas status `Ativo`. O domínio real contradiz o fluxo: `app/models.py:80` e `migrations/...py:118` aceitam somente `Ativo/Convidado/Inativo`, enquanto `tests/ui-prototype.spec.cjs:1742-1744` e `:1787-1788` exigem `Pendente` e `Cancelado`. O mock da UI não toca o banco. | ❌ FAIL |
-| DBP-15 | Presets, Lista/Kanban e configurações de campos persistem no escopo correto. | `tests/backend/test_repository.py:175-176` — igualdade exata de `moduleFieldSettings` e `ui`; `tests/ui-prototype.spec.cjs:714-720` — nome/user/scope/filtro/data do preset; `:778` — preferência `deals == 'kanban'`. | ✅ PASS |
-| DBP-16 | Browser mantém somente cache confirmado e estado transitório local. | `tests/ui-prototype.spec.cjs:303-307` — versão inalterada, perfil/filtro locais e ausência de `currentUserId`/`filtersByUser` na API; `:255-257` — cache confirmado read-only com aviso exato. | ✅ PASS |
-| DBP-17 | Todos os fluxos listados sobrevivem a recarga e outro contexto. | **No complete evidence.** `tests/ui-prototype.spec.cjs:291-292` prova segundo contexto apenas para criação de Lead e `:1020-1024` prova recarga apenas desse fluxo. Conversão (`:1052-1058`), etapa (`:826-836`), orçamento (`:1095-1110`), CSV (`:1191-1244`) e campos (`:1687-1704`) não são reabertos em outro contexto após cada ação. | ❌ GAP |
-| DBP-18 | Recriação da aplicação e restart do PostgreSQL preservam contagens/valores. | `scripts/verify_demo.py:429-435` — versão e marcador após recriar CRM; `:444-446` — versão após restart PostgreSQL; `:468-473` — versão e marcador após recuperação. Gate executado: 47/47. | ✅ PASS |
-| DBP-19 | `/health` com banco retorna 200, `status: ok`, `database: ok`. | `tests/backend/test_api.py:137-138` — status 200 e JSON exato; `scripts/verify_demo.py:363-364` — os mesmos valores em Compose. | ✅ PASS |
-| DBP-20 | `/health` sem banco retorna 503, `degraded/unavailable`. | `tests/backend/test_api.py:150-151` — status 503 e JSON exato; `scripts/verify_demo.py:449-455` — payload degradado em Compose com PostgreSQL parado. | ✅ PASS |
-| DBP-21 | Falha de carga usa cache válido read-only e aviso exato. | `tests/ui-prototype.spec.cjs:255-259` — valor vem do cache, banner `Banco indisponível. Alterações bloqueadas.`, writable `false` e modal de criação não abre; `:264-267` cobre fallback seed sem cache. | ✅ PASS |
-| DBP-22 | Falha de gravação restaura estado confirmado e mostra mensagem exata. | `tests/ui-prototype.spec.cjs:316-320` — mensagem exata, igualdade profunda com estado anterior, versão inalterada e cache na versão anterior. | ✅ PASS |
-| DBP-23 | Erro de persistência registra e devolve o mesmo errorId. | `tests/backend/test_api.py:385-389` — 503, UUID v4 e `errorId in caplog.text`; `scripts/verify_demo.py:456-460` — errorId presente na resposta e nos logs Compose. | ✅ PASS |
+| DBP-01 | Migrações versionadas criam todas as tabelas e workspace no head atual. | tests/backend/test_models.py:33 — assert set(Base.metadata.tables) == EXPECTED_TABLES; tests/backend/test_migrations.py:55-57 — tabelas presentes, workspace == ("default", 0, None), head == "9f7a2c31d5e8". | ✅ PASS |
+| DBP-02 | Bootstrap confirmado valida e persiste atomicamente no banco vazio. | tests/backend/test_workspace_service.py:83-85 — versão 1, contagens e estado exatos; :230-231 — referência inválida mantém initialized is False; tests/ui-prototype.spec.cjs:265-280 — Admin gate e api.version == 1. | ✅ PASS |
+| DBP-03 | Bootstrap retorna 201 e oito contagens exatas. | tests/backend/test_api.py:187-188 — status_code == 201 e JSON exato; tests/ui-prototype.spec.cjs:281 — deepEqual das oito contagens. | ✅ PASS |
+| DBP-04 | Registro/vínculo/campo inválido retorna 422 sem dados parciais. | tests/backend/test_api.py:215-217 — 422, path e mensagem exatos; tests/backend/test_workspace_service.py:230-231 — mesmo path e workspace não inicializado. | ✅ PASS |
+| DBP-05 | Segundo bootstrap retorna 409 sem alterar dados. | tests/backend/test_api.py:199-201 — 409/currentVersion 7; tests/backend/test_workspace_service.py:93-94 — conflito na versão 1 e load.version == 1. | ✅ PASS |
+| DBP-06 | Corpo acima de 25 MB retorna 413 antes da transação. | tests/backend/test_api.py:229-231 e :243-245 — 413, payload_too_large e service.calls == [] para Content-Length e stream. | ✅ PASS |
+| DBP-07 | UI carrega estado/versão da API antes de liberar alterações. | tests/ui-prototype.spec.cjs:265-266 — writable false antes; :291-292 — valor canônico e writable true depois. | ✅ PASS |
+| DBP-08 | Save válido é atômico e incrementa exatamente um. | tests/backend/test_workspace_service.py:119 — (version, name) == (2, "Alterado"); :146-152 — um save, versão final 2 e estado inteiro do vencedor; :249 — falha mantém (1, "Empresa"). | ✅ PASS |
+| DBP-09 | Confirmação visual/cache somente após nova versão persistida. | tests/ui-prototype.spec.cjs:353-355 — com PUT retido: versão igual, toast count 0 e cache anterior; :357-363 — após resposta: toast, versão/cache +1 e Lead na API. | ✅ PASS |
+| DBP-10 | Versão antiga retorna 409/currentVersion sem alterar banco. | tests/backend/test_workspace_service.py:163-164 — current_version == 2 e nome permanece Lead; tests/backend/test_api.py:271-272 — 409/currentVersion 8; tests/ui-prototype.spec.cjs:400-401 — canônico presente e candidato ausente. | ✅ PASS |
+| DBP-11 | Falha parcial reverte e retorna errorId sem dados parciais. | tests/backend/test_workspace_service.py:246-249 — exceção forçada e (version, company) == (1, "Empresa"); tests/backend/test_api.py:403-406 — 500/persistence_error/UUID v4/mesmo ID no log. | ✅ PASS |
+| DBP-12 | Exclusão preenche deleted_at, oculta ativo e preserva vínculos. | tests/backend/test_repository.py:148-149 — deleted_at is not None e lista ativa; :170-171 — filhos preservados; tests/ui-prototype.spec.cjs:412-413 — versão +1 e assistente preservada no excluído. | ✅ PASS |
+| DBP-13 | Restore limpa deleted_at e recupera vínculos. | tests/backend/test_repository.py:160 — deleted_at is None; tests/backend/test_workspace_service.py:193-194 — versão 3 e ("L-1", ["u-2"]); tests/ui-prototype.spec.cjs:421-422 — versão +2 e assistente restaurada. | ✅ PASS |
+| DBP-14 | Migração/recarga preserva todos os módulos, valores, status e vínculos. | tests/backend/test_repository.py:88 — agregado deep-equal; :108-113 — Ativo/Pendente/Inativo/Cancelado exatos; :233 — nova sessão rehydrated == original; tests/backend/test_schemas.py:104-106 — vazios/Bitrix/settings exatos. | ✅ PASS |
+| DBP-15 | Presets, Lista/Kanban e configuração de campos persistem no escopo correto. | tests/backend/test_repository.py:200-201 — settings/ui deep-equal; tests/ui-prototype.spec.cjs:788-796 — preset user/scope/filtro/data + reidratação; :853-858 — Kanban após reload/contexto. | ✅ PASS |
+| DBP-16 | Navegador mantém apenas cache confirmado e estado transitório. | tests/ui-prototype.spec.cjs:373-377 — versão igual, perfil/filtro locais, currentUserId e filtersByUser ausentes da API; :302-304 — cache read-only e aviso exato. | ✅ PASS |
+| DBP-17 | Todos os fluxos listados sobrevivem a reload e contexto independente. | tests/ui-prototype.spec.cjs:160 e :191 — helper exige deepEqual após reload e em contexto independente; chamadas após criar/editar :552, converter :1139, etapa/undo :916, orçamento :1193, CSV :1359, campos :1811, preferências :796/:858, notificações :1164 e usuários :1895; tests/backend/test_repository.py:228-233 — nova sessão PostgreSQL. | ✅ PASS |
+| DBP-18 | Recriação da app/restart do PostgreSQL preservam contagens e valores. | scripts/verify_demo.py:430-435 — versão/marcador após recriar CRM; :439-446 — probe/versão após restart; :469-478 — versão/marcador/probe após recuperação. | ✅ PASS |
+| DBP-19 | /health com DB retorna 200 e ok/ok. | tests/backend/test_api.py:137-138 — 200 e JSON exato; scripts/verify_demo.py:363-364 — mesmos valores no Compose. | ✅ PASS |
+| DBP-20 | /health sem DB retorna 503 e degraded/unavailable. | tests/backend/test_api.py:150-151 — 503 e JSON exato; scripts/verify_demo.py:449-455 — payload exato com PostgreSQL parado. | ✅ PASS |
+| DBP-21 | Carga falha com cache válido: read-only e aviso exato. | tests/ui-prototype.spec.cjs:302-306 — valor do cache, banner exato, writable false e modal fechado; :311-314 — seed read-only sem cache. | ✅ PASS |
+| DBP-22 | Gravação falha: restaura último confirmado e mostra mensagem exata. | tests/ui-prototype.spec.cjs:385-390 — espera "Não foi possível salvar no banco.", estado deep-equal, versão e cache inalterados. | ✅ PASS |
+| DBP-23 | Erro de persistência registra/devolve o mesmo errorId. | tests/backend/test_api.py:385-388 — 503, UUID v4 e errorId in caplog.text; scripts/verify_demo.py:456-460 — ID na resposta e nos logs Compose. | ✅ PASS |
 
-**Status**: ❌ 20/23 ACs matched; 3 gaps; 0 spec-precision gaps.
+**Coverage status**: ✅ 23/23 ACs matched; 0 gaps; 0 spec-precision gaps.
 
 ---
 
 ## Edge Cases
 
-| Edge case | Evidence | Result |
+| Edge case | Evidence | Status |
 | --- | --- | --- |
-| Banco vazio sem local válido oferece seed para confirmação. | `tests/ui-prototype.spec.cjs:210-234` — novo contexto, dialog visível, escrita bloqueada, Admin confirma e contagens exatas chegam à API. | ✅ PASS |
-| Dois navegadores salvam a mesma versão simultaneamente; só um vence. | **No evidence.** `tests/backend/test_workspace_service.py:96-109` testa concorrência apenas de bootstrap. `:121-130` testa save obsoleto de forma sequencial, não duas gravações concorrentes. | ❌ GAP |
-| Campo personalizado oculto globalmente preserva valor sem reaparecer. | `tests/ui-prototype.spec.cjs:1504-1523` — hidden key gravada, valores/visibilidade individuais idênticos e campo ausente do drawer. | ✅ PASS |
-| Bitrix adicional vazio preserva definição e valor vazio. | `tests/backend/test_schemas.py:104-106` — `['', False, []]`, headers e settings exatos; `tests/ui-prototype.spec.cjs:1204-1227` — header `Campo vazio` e custom value `''`. | ✅ PASS |
-| Referência inexistente retorna 422 com path inválido. | `tests/backend/test_api.py:215-217` — status, path e mensagem exatos. | ✅ PASS |
-| Restaurar demo substitui massa em transação, versão +1 e preserva esquema. | `tests/backend/test_workspace_service.py:139-140` — versão 2 e estado substituído; `tests/ui-prototype.spec.cjs:1033-1035` — massa exatamente restaurada; `tests/backend/test_migrations.py:55-57` comprova esquema/head. | ✅ PASS |
-
----
-
-## Discrimination Sensor
-
-O sensor usou worktree destacado em `test-results/postgres-mutant`, nunca `git stash`. O scratch foi removido ao final. O porcelain real era vazio antes e permaneceu vazio depois.
-
-| Mutation | Scratch file:line | Description | Discriminating assertion | Result |
-| --- | --- | --- | --- | --- |
-| M1 | `app/services/workspace.py:122` | `workspace.version += 1` → `+= 2`. | `tests/backend/test_workspace_service.py:118` esperava `(2, 'Alterado')`; `:139` esperava versão 2. | ✅ Killed (2 failed) |
-| M2 | `app/repositories/workspace.py:219` | Inverteu soft delete: `id not in present` → `id in present`. | `tests/backend/test_repository.py:123` esperava `deleted_at is not None`. | ✅ Killed (1 failed, 1 passed) |
-| M3 | `app/main.py:37` | Limite 25 MB → 26 MB. | `tests/backend/test_api.py:229` e `:243` esperavam 413; receberam 422. | ✅ Killed (2 failed) |
-
-**Sensor depth**: lightweight, 3 mutações de alto risco.
-**Sensor outcome**: 3/3 killed — PASS ✅.
-**Isolation**: baseline real `git status --porcelain=v1 --untracked-files=all` = vazio; após cleanup = vazio.
+| Banco vazio sem local válido oferece seed para confirmação. | tests/ui-prototype.spec.cjs:265-281 — diálogo/bloqueio, Admin confirma, versão 1 e contagens exatas. | ✅ PASS |
+| Dois navegadores salvam a mesma versão; um vence, outro conflita. | tests/backend/test_workspace_service.py:146-152 — outcomes conflict/saved, versão 2 e estado completo do vencedor. | ✅ PASS |
+| Campo oculto global preserva valores sem reaparecer. | tests/ui-prototype.spec.cjs:1589-1602 — chave oculta, valores/visibilidade deep-equal e campo/opção ausentes. | ✅ PASS |
+| Bitrix adicional vazio preserva definição e valor. | tests/backend/test_schemas.py:104-106 — ["", False, []], Bitrix/settings exatos; tests/ui-prototype.spec.cjs:1353-1358 — valor vazio e visibility key preservados. | ✅ PASS |
+| Referência inexistente retorna 422 com path. | tests/backend/test_api.py:215-217 — 422, path leads[0].responsibleId e mensagem exata. | ✅ PASS |
+| Restaurar demo substitui massa, versão +1 e preserva schema. | tests/backend/test_workspace_service.py:173-174 — versão 2/estado substituído; tests/backend/test_migrations.py:55-57 — tabelas/head; tests/ui-prototype.spec.cjs:1107-1116 — massa restaurada. | ✅ PASS |
 
 ---
 
 ## Gate Check
 
-- **Build commands**: `python -m compileall -q app`; `docker compose config --quiet`; `python -m pytest tests/backend -q`; `SMART_CRM_TEST_URL=http://127.0.0.1:8090/ pnpm test`; `python scripts/verify_demo.py`.
-- **Environment adaptation**: o runtime Windows não expunha `python`/`node` no PATH elevado. Os mesmos módulos/comandos foram executados com os binários já instalados do runtime Codex. Pytest usou `--basetemp` fora do worktree por permissão do `%TEMP%`.
+- **Commands**: python -m compileall -q app; docker compose config --quiet; python -m pytest tests/backend -q; SMART_CRM_TEST_URL=http://127.0.0.1:8090/ pnpm test; python scripts/verify_demo.py.
 - **Compile**: PASS.
 - **Compose config**: PASS.
-- **Backend**: 78 passed, 0 failed, 0 skipped; 1 warning Pydantic.
-- **UI**: 64 passed, 0 failed, servidor temporário 8090 encerrado após o gate.
-- **Compose acceptance**: 47 passed, 0 failed; volume preservado; serviços terminaram healthy.
-- **Aggregate**: 189 passed, 0 failed, 0 skipped.
-- **Test count before feature**: 55 UI, 0 backend = 55.
-- **Test count after feature**: 64 UI + 78 backend = 142.
-- **Delta**: +87 testes automatizados; o verifier Compose contém 47 checks adicionais.
-- **Integrity**: nenhum teste removido; UI 55 → 64; nenhum skip/disable encontrado.
-- **Initial harness retries**: descartadas da contagem final. Falharam antes de asserts por alias de Python/Node e permissão de `%TEMP%`; a execução canônica final passou.
+- **Backend**: 82 passed, 0 failed, 0 skipped; 1 warning Pydantic.
+- **UI**: 65 passed, 0 failed; API interceptada; servidor 127.0.0.1:8090 encerrado.
+- **Compose acceptance**: 47 passed, 0 failed; head 9f7a2c31d5e8; volume/probe preservados; serviços healthy.
+- **Aggregate**: 194 passed, 0 failed, 0 skipped.
+- **Before/after**: 55 UI + 0 backend → 65 UI + 82 backend = +92 testes; nenhum arquivo removido.
+- **Whitespace**: git diff --check 23c42c0..HEAD PASS.
+- **Environment**: binários Python/Node do runtime Codex; pytest com basetemp fora do worktree.
+
+---
+
+## Discrimination Sensor
+
+Worktree destacado em test-results/postgres-mutant; nunca git stash. Scratch removido. Porcelain real vazio antes e depois.
+
+| Mutation | Scratch file:line | Fault | Discriminating assertion | Status |
+| --- | --- | --- | --- | --- |
+| M1 | migrations/versions/9f7a2c31d5e8_align_crm_user_statuses.py:25 | Removeu Cancelado do head Alembic. | tests/backend/test_migrations.py:65-68 exigiu os quatro status e falhou. | ✅ Killed |
+| M2 | app/services/workspace.py:122 | Incremento += 1 → += 2. | tests/backend/test_workspace_service.py:147 esperava [2, 2], recebeu [3, 3]. | ✅ Killed |
+| M3 | app/static/index.html:901 | Flush de toast antes de aguardar PUT. | tests/ui-prototype.spec.cjs:354 esperava count 0, recebeu 1. | ✅ Killed |
+
+**Sensor depth**: lightweight, 3 mutações comportamentais de alto risco.
+**Sensor outcome**: 3/3 killed; 0 survived; PASS ✅.
+**Isolation**: git status --porcelain=v1 --untracked-files=all vazio antes/depois; somente o worktree real permanece.
 
 ---
 
@@ -124,78 +126,42 @@ O sensor usou worktree destacado em `test-results/postgres-mutant`, nunca `git s
 
 | Principle | Status | Evidence |
 | --- | --- | --- |
-| Minimum code / no unnecessary flexibility | ✅ | Componentes seguem o agregado versionado aprovado. |
-| Surgical changes / no scope creep | ✅ | Diff limitado à persistência, testes, Compose e documentação da feature. |
-| Matches patterns | ❌ | Domínio de status diverge entre UI (`Pendente`, `Cancelado`) e PostgreSQL (`Ativo`, `Convidado`, `Inativo`). |
-| Spec-anchored asserted values | ❌ | DBP-09 e DBP-17 não possuem asserts completos do resultado temporal/cross-context. |
-| Per-layer coverage expectation | ❌ | Playwright intercepta a API; nenhum teste real cobre os estados de usuário nem todos os fluxos em reload/segundo contexto. |
-| Every test claimed | ✅ | Testes novos mapeiam ACs, edge cases ou Done-when; regressão legada mapeia preservação dos fluxos. |
-| Test integrity | ✅ | Contagem aumentou; nenhum skip, deleção ou assert enfraquecido identificado. |
-| Documented guidelines | ✅ | Gates de `README.md` e `tasks.md` executados. |
-| Whitespace gate | ❌ | `git diff --check 23c42c0..23c664c` falha em `migrations/...py:4` (trailing whitespace) e `pyproject.toml:30` (blank line at EOF). |
+| Minimum code / no unnecessary flexibility | ✅ | Agregado versionado aprovado; correções T15–T19 focadas. |
+| Surgical changes / no scope creep | ✅ | Status, testes de ordem/rehidratação/concorrência, whitespace e artefatos TLC. |
+| Matches patterns | ✅ | Alembic, SQLAlchemy, pytest e Playwright seguem padrões existentes. |
+| Spec-anchored outcomes | ✅ | 23/23 ACs citam asserts dos valores/estados definidos. |
+| Per-layer coverage | ✅ | Schema/migration, repository/service, HTTP, browser e Compose exercitados. |
+| Every test claimed | ✅ | Testes novos mapeiam ACs e edge concorrente; regressão preservada. |
+| Test integrity | ✅ | 55 → 65 UI; 0 → 82 backend; sem remoção, skip ou disable. |
+| Whitespace/style | ✅ | git diff --check sem saída. |
+| Guidelines | ✅ | README.md, tasks.md e coding-principles.md aplicados. |
 
 ---
 
-## Fix Plans
+## Prior Gap Closure
 
-### Fix 1: Alinhar o domínio de status de usuário
-
-- **Root cause**: modelo/migração usam `Convidado`, enquanto a interface usa `Pendente` e `Cancelado`.
-- **Fix task**: criar nova revisão Alembic que substitua a constraint pelos valores efetivamente emitidos; alinhar o model; adicionar round-trip real para `Ativo`, `Pendente`, `Inativo` e `Cancelado`.
-- **Where**: `app/models.py:80`, nova revisão em `migrations/versions/`, testes de repositório/API.
-- **Priority**: Major.
-
-### Fix 2: Provar a ordem de confirmação DBP-09
-
-- **Root cause**: mock responde imediatamente; o teste não observa o intervalo antes da resposta.
-- **Fix task**: atrasar controladamente o PUT, afirmar ausência de toast/cache confirmado antes da liberação e afirmar nova versão + toast somente depois.
-- **Where**: `tests/ui-prototype.spec.cjs`.
-- **Priority**: Major.
-
-### Fix 3: Completar a matriz de persistência DBP-17
-
-- **Root cause**: somente criação de Lead é verificada em recarga e segundo contexto; os demais fluxos terminam no mesmo contexto e usam API mockada.
-- **Fix task**: exercitar criação, edição, conversão, etapa, orçamento, CSV e campos contra API/PostgreSQL reais; reabrir cada resultado após reload e em segundo contexto.
-- **Where**: testes e2e/integration de persistência.
-- **Priority**: Major.
-
-### Fix 4: Cobrir duas gravações simultâneas
-
-- **Root cause**: existe concorrência de bootstrap e conflito sequencial, mas não save concorrente com a mesma versão.
-- **Fix task**: disparar dois saves paralelos no mesmo schema e exigir um sucesso, um `WorkspaceConflict/currentVersion`, versão +1 e apenas o estado vencedor.
-- **Where**: `tests/backend/test_workspace_service.py`.
-- **Priority**: Major.
-
-### Fix 5: Limpar whitespace do range
-
-- **Root cause**: espaços finais no cabeçalho da migration e linha vazia final no `pyproject.toml`.
-- **Fix task**: remover apenas os dois desvios e exigir `git diff --check` verde.
-- **Priority**: Minor.
-
----
-
-## Requirement Traceability Update
-
-O verifier não alterou `spec.md`; esta tabela registra o estado recomendado.
-
-| Requirement | Previous | Verified state |
+| Prior gap | Evidence | Status |
 | --- | --- | --- |
-| DBP-01–08 | Complete | ✅ Verified |
-| DBP-09 | Complete | ❌ Needs Fix |
-| DBP-10–13 | Complete | ✅ Verified |
-| DBP-14 | Complete | ❌ Needs Fix |
-| DBP-15–16 | Complete | ✅ Verified |
-| DBP-17 | Complete | ❌ Needs Fix |
-| DBP-18–23 | Complete | ✅ Verified |
+| Status domain and migration head | tests/backend/test_models.py:107-110; test_migrations.py:57-68; test_repository.py:108-113. | ✅ Closed |
+| Temporal confirmation/cache order | tests/ui-prototype.spec.cjs:343-363; M3 morto. | ✅ Closed |
+| Reload + independent context + real session | tests/ui-prototype.spec.cjs:155-193 e chamadas em todos os fluxos; test_repository.py:228-233. | ✅ Closed |
+| Simultaneous saves | tests/backend/test_workspace_service.py:122-152; M2 morto. | ✅ Closed |
+| Whitespace | git diff --check 23c42c0..HEAD exit 0. | ✅ Closed |
+
+---
+
+## Requirement Traceability
+
+| Requirements | Verified state |
+| --- | --- |
+| DBP-01–DBP-23 | ✅ Verified |
+
+O verifier não alterou spec.md; a tabela registra somente o resultado independente.
 
 ---
 
 ## Final Assessment
 
-**Overall**: ❌ Not Ready.
-
-**What works**: schema/migration base, transações, versão otimista sequencial, soft delete/restore, limite 25 MB, health/degraded, cache read-only, rollback visual, persistência em recreação/restart e errorId correlacionado.
-
-**Blocking gaps**: domínio de status incompatível com o PostgreSQL; DBP-09 sem prova temporal; DBP-17 sem cobertura real completa; edge de save concorrente sem evidência.
-
-**Next step**: implementar Fixes 1–4, limpar whitespace e repetir o Verifier completo. O sensor atual não possui mutantes sobreviventes.
+**Overall**: ✅ Ready.
+**Gaps**: none.
+**Lessons**: clean PASS sem sinal; nenhuma lição registrada.
