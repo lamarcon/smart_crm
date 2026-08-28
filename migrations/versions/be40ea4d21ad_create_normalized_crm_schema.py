@@ -1,7 +1,7 @@
 """create normalized crm schema
 
 Revision ID: be40ea4d21ad
-Revises: 
+Revises:
 Create Date: 2026-08-26 17:42:59.818433
 """
 from typing import Sequence, Union

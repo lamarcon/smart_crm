@@ -29,10 +29,10 @@
 ## Handoff
 
 - **Feature**: Persistência do Smart CRM no PostgreSQL / `.specs/features/postgres-crm-persistence`
-- **Phase / Task**: Verifier 1 reprovou; T18 concluída, T19 pendente
-- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18
+- **Phase / Task**: Verifier 1 reprovou; correções T15-T19 concluídas, reverificação independente pendente
+- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19
 - **In-progress** (file:line): none
-- **Next step**: Executar T19 para limpar whitespace no range e rodar o gate de build completo.
-- **Blockers**: whitespace do range.
-- **Uncommitted files**: tests/backend/test_workspace_service.py, .specs metadata
+- **Next step**: Executar a segunda validação independente, incluindo gate completo e discrimination sensor.
+- **Blockers**: none
+- **Uncommitted files**: migrations/versions/be40ea4d21ad_create_normalized_crm_schema.py, pyproject.toml, .specs metadata
 - **Branch**: main

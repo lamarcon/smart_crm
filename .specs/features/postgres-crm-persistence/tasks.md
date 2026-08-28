@@ -534,14 +534,16 @@ T11  T12  T13  T14
 
 ### T19: Close feature-range whitespace hygiene
 
+**Status**: Complete
+
 **What**: Remove the two whitespace errors reported across the feature commit range without changing behavior.
 **Where**: `migrations/versions/be40ea4d21ad_create_normalized_crm_schema.py`, `pyproject.toml`
 **Depends on**: T18
 
 **Done when**:
 
-- [ ] `git diff --check 23c42c0..HEAD` reports no whitespace errors.
-- [ ] Build gate passes.
+- [x] `git diff --check 23c42c0..HEAD` reports no whitespace errors.
+- [x] Build gate passes.
 
 **Tests**: none - hygiene only
 **Gate**: build
