@@ -28,11 +28,11 @@
 
 ## Handoff
 
-- **Feature**: Persistência do Smart CRM no PostgreSQL / `.specs/features/postgres-crm-persistence`
-- **Phase / Task**: Validate concluído — PASS independente em `.specs/features/postgres-crm-persistence/validation.md`
-- **Completed**: Specify, Design, Tasks, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, Validate
+- **Feature**: Smart CRM MVP produtivo / `.specs/features/crm-mvp`
+- **Phase / Task**: Specify reconciliado com a base local; escolha da arquitetura produtiva pendente
+- **Completed**: Base local e persistência validadas; escopo produtivo especificado; baseline reconciliada
 - **In-progress** (file:line): none
-- **Next step**: Feature concluída; iniciar uma nova especificação para qualquer expansão de escopo.
-- **Blockers**: none
-- **Uncommitted files**: none
+- **Next step**: Confirmar a abordagem arquitetural e produzir `design.md`, depois `tasks.md`.
+- **Blockers**: decisão arquitetural do usuário antes de detalhar componentes
+- **Uncommitted files**: README.md, .specs/STATE.md, .specs/features/crm-mvp/context.md, .specs/features/crm-mvp/spec.md
 - **Branch**: main

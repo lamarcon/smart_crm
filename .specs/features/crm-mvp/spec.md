@@ -4,6 +4,22 @@
 
 O cliente depende do Bitrix24 Cloud Professional para Leads, Contatos, Empresas, Negócios, Pipelines, automações e captação pelo WordPress. O Smart CRM substituirá esse uso com um MVP funcional em Python e PostgreSQL, mantendo os dados e os fluxos essenciais sem reproduzir a complexidade completa do Bitrix24.
 
+## Delivery Baseline
+
+A aplicação local em `http://localhost:8080` está concluída e validada. Ela não é um rascunho pendente: entrega a interface navegável, os fluxos comerciais demonstrativos, a API FastAPI e a persistência PostgreSQL do workspace. As validações independentes estão registradas nas features `ui-prototype`, `ui-crm-workspace`, `postgres-crm-persistence` e nas features incrementais da interface.
+
+Os requisitos abaixo descrevem a evolução dessa base para uso produtivo com usuários e dados reais. Um requisito marcado como `Pending` não significa que o layout ou o fluxo local esteja ausente. Significa que a garantia produtiva correspondente ainda precisa de implementação ou evidência própria dentro desta feature guarda-chuva.
+
+| Área | Base local validada | Garantia produtiva ainda necessária |
+| --- | --- | --- |
+| Interface e cadastros | Layout, CRUD, vínculos, filtros, Lista/Kanban, dashboard e campos personalizados funcionam localmente. | APIs granulares, paginação por banco, auditoria por campo e autorização em toda consulta/mutação. |
+| Identidade e acesso | Perfis de Administrador, Gestor, Vendedor e Assistente são simulados na interface. | Login real, sessões seguras, credenciais e autorização obrigatória no servidor. |
+| Leads e Negócios | Pipelines, conversão, transições protegidas, desfazer e Faturamento funcionam no workspace local. | Regras transacionais no backend, idempotência das automações e trilha de auditoria produtiva. |
+| Orçamentos e notificações | Orçamentos, metadado de PDF e notificações internas são persistidos. | Itens/estados completos, armazenamento e download autorizado de PDFs e eventos de notificação no servidor. |
+| WordPress | Não integra o fluxo local atual. | Endpoint autenticado, idempotência por submissão, fila de falhas e reprocessamento administrativo. |
+| Bitrix24 | Importação CSV representativa preserva IDs e campos adicionais. | Inventário e migração integral de dados acessíveis, históricos, atividades, arquivos, reconciliação e relatório de exceções. |
+| Operação | Compose local, health checks, migrações e recuperação foram validados. | UAT com dados representativos, segurança operacional, backup/restore de corte, observabilidade e plano de desativação do Bitrix24. |
+
 ## Goals
 
 - [ ] Permitir o cadastro, consulta, edição, exclusão lógica e vinculação de Leads, Contatos, Empresas e Negócios.
@@ -285,7 +301,7 @@ O cliente depende do Bitrix24 Cloud Professional para Leads, Contatos, Empresas,
 | MIG-06 | P1: Migração | Design | Pending |
 | MIG-07 | P1: Migração | Design | Pending |
 
-**Coverage:** 55 requirements, 0 mapped to tasks, 55 pending design.
+**Coverage:** 55 requisitos produtivos, 0 mapeados a tarefas, 55 pendentes de Design produtivo. A base local reutilizável está documentada em `Delivery Baseline` e não será reconstruída.
 
 ---
 

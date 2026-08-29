@@ -2,13 +2,21 @@
 
 **Gathered:** 2026-08-17
 **Spec:** `.specs/features/crm-mvp/spec.md`
-**Status:** Ready for review
+**Status:** Ready for design
+**Reconciled:** 2026-08-29
 
 ---
 
 ## Feature Boundary
 
 O MVP substitui o uso essencial do Bitrix24 com Leads, Contatos, Empresas, Negócios, orçamentos, Pipelines fixas, automações predefinidas, notificações internas, captação pelo WordPress e migração dos dados acessíveis. A interface inicial usa listas. Tarefas e Projetos ficam adiados.
+
+### Existing validated baseline
+
+- A aplicação local, seu layout e seus fluxos demonstrativos estão concluídos.
+- FastAPI, SQLAlchemy, Alembic e PostgreSQL persistem o workspace comercial local.
+- O Design produtivo deve evoluir essa base sem reconstruir as capacidades já validadas.
+- Requisitos produtivos permanecem pendentes somente quando exigem garantias adicionais, como autenticação real, autorização no servidor, escala, auditoria, integração externa ou corte operacional.
 
 ---
 

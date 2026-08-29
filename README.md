@@ -2,6 +2,8 @@
 
 CRM em desenvolvimento para substituir o uso comercial atual do Bitrix24. O repositório contém as especificações do MVP de produção e um protótipo local navegável para validação antecipada do layout e dos fluxos.
 
+**Status da entrega local:** concluída e validada. O endereço `http://localhost:8080` executa a aplicação local funcional com API FastAPI e PostgreSQL. O trabalho pendente no `crm-mvp` corresponde à evolução produtiva para usuários e dados reais, não à conclusão do layout ou dos fluxos locais.
+
 ## Protótipo local
 
 O protótipo é uma demonstração funcional com dados fictícios. Ele inclui:
