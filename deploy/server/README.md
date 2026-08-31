@@ -9,10 +9,10 @@ homologação. O PostgreSQL, a migração Alembic e a aplicação são executado
 Crie o arquivo de ambiente fora do clone:
 
 ```bash
-sudo install -d -m 750 /etc/smart-crm
-sudo cp deploy/server/.env.server.example /etc/smart-crm/server.env
-sudo chmod 600 /etc/smart-crm/server.env
-sudo nano /etc/smart-crm/server.env
+sudo install -d -o "$USER" -g "$USER" -m 750 /etc/smart-crm
+cp deploy/server/.env.server.example /etc/smart-crm/server.env
+chmod 600 /etc/smart-crm/server.env
+nano /etc/smart-crm/server.env
 ```
 
 Gere `SMART_CRM_DB_PASSWORD` com:
@@ -61,9 +61,7 @@ docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml up -d
 curl --fail http://127.0.0.1:8080/health
 ```
 
-Consulte `RUNBOOK.md` para backup, restauração e rollback. Sempre substitua
-qualquer referência a `.env.server` daquele documento por
-`/etc/smart-crm/server.env` e mantenha `--env-file` nos comandos Compose.
+Consulte `RUNBOOK.md` para o procedimento completo de backup, restauração e rollback.
 
 ## Limite desta entrega
 

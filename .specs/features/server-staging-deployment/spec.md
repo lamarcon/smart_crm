@@ -85,4 +85,3 @@ The CRM needs a reproducible path from the Git repository to the current server.
 - [ ] PostgreSQL is unreachable from host/public ports and CRM listens only on loopback by default.
 - [ ] Missing/placeholder secrets and unsafe bindings are rejected before deployment.
 - [ ] Update and rollback preserve the database volume and include a pre-migration backup.
-

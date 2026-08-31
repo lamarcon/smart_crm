@@ -38,17 +38,18 @@ git rev-parse HEAD
 
 Registre o SHA exibido. Ele identifica a versão instalada e permite rollback do código.
 
-## Criar `.env.server`
+## Criar `/etc/smart-crm/server.env`
 
 ```bash
 cd /opt/smart-crm
+sudo install -d -o "$USER" -g "$USER" -m 750 /etc/smart-crm
 umask 077
-cp deploy/server/.env.server.example .env.server
+cp deploy/server/.env.server.example /etc/smart-crm/server.env
 DB_PASSWORD="$(openssl rand -hex 32)"
-sed -i "s/REPLACE_WITH_64_HEX_CHARACTERS/$DB_PASSWORD/" .env.server
+sed -i "s/REPLACE_WITH_64_HEX_CHARACTERS/$DB_PASSWORD/" /etc/smart-crm/server.env
 unset DB_PASSWORD
-chmod 600 .env.server
-grep -v '^SMART_CRM_DB_PASSWORD=' .env.server
+chmod 600 /etc/smart-crm/server.env
+grep -v '^SMART_CRM_DB_PASSWORD=' /etc/smart-crm/server.env
 ```
 
 O arquivo mantém estes defaults seguros:
@@ -65,8 +66,8 @@ O arquivo mantém estes defaults seguros:
 ## Validar sem iniciar containers
 
 ```bash
-python3 scripts/verify_server_config.py --env-file .env.server
-docker compose --env-file .env.server -f compose.server.yaml --profile tools config --quiet
+python3 scripts/verify_server_config.py --env-file /etc/smart-crm/server.env
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml --profile tools config --quiet
 ```
 
 Resultado esperado:
@@ -79,21 +80,21 @@ O gate rejeita senha placeholder, PostgreSQL publicado, CRM fora de loopback, mi
 
 ## Criar banco, tabelas e iniciar
 
-O PostgreSQL cria o banco/usuário a partir do `.env.server`. Não escreva `CREATE TABLE` manualmente. Alembic cria todas as tabelas e controla suas versões.
+O PostgreSQL cria o banco/usuário a partir do `/etc/smart-crm/server.env`. Não escreva `CREATE TABLE` manualmente. Alembic cria todas as tabelas e controla suas versões.
 
 ```bash
 cd /opt/smart-crm
-docker compose --env-file .env.server -f compose.server.yaml build --pull
-docker compose --env-file .env.server -f compose.server.yaml up -d postgres
-docker compose --env-file .env.server -f compose.server.yaml ps
-docker compose --env-file .env.server -f compose.server.yaml run --rm migrate
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml build --pull
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml up -d postgres
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml ps
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml run --rm migrate
 ```
 
 Somente se a migração terminar com código zero:
 
 ```bash
-docker compose --env-file .env.server -f compose.server.yaml up -d crm
-docker compose --env-file .env.server -f compose.server.yaml ps
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml up -d crm
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml ps
 curl --fail --silent --show-error http://127.0.0.1:8080/health
 ```
 
@@ -107,10 +108,10 @@ Conferir Alembic e tabelas:
 
 ```bash
 set -a
-. ./.env.server
+. /etc/smart-crm/server.env
 set +a
-docker compose --env-file .env.server -f compose.server.yaml exec -T crm alembic current
-docker compose --env-file .env.server -f compose.server.yaml exec -T postgres \
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml exec -T crm alembic current
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml exec -T postgres \
   psql -U "$SMART_CRM_DB_USER" -d "$SMART_CRM_DB_NAME" -c '\dt'
 unset SMART_CRM_DB_PASSWORD
 ```
@@ -160,16 +161,16 @@ Abra `http://127.0.0.1:8080` na máquina local.
 ## Operação e logs
 
 ```bash
-docker compose --env-file .env.server -f compose.server.yaml ps
-docker compose --env-file .env.server -f compose.server.yaml logs --tail 100 crm
-docker compose --env-file .env.server -f compose.server.yaml logs --tail 100 postgres
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml ps
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml logs --tail 100 crm
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml logs --tail 100 postgres
 curl --fail --silent --show-error http://127.0.0.1:8080/health
 ```
 
 Reiniciar o CRM preserva o volume:
 
 ```bash
-docker compose --env-file .env.server -f compose.server.yaml restart crm
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml restart crm
 ```
 
 Nunca execute `docker compose down -v`: `-v` apaga o PostgreSQL.
@@ -179,11 +180,11 @@ Nunca execute `docker compose down -v`: `-v` apaga o PostgreSQL.
 ```bash
 cd /opt/smart-crm
 set -a
-. ./.env.server
+. /etc/smart-crm/server.env
 set +a
 BACKUP_DIR="/var/backups/smart-crm/$(date -u +%Y%m%dT%H%M%SZ)"
 sudo install -d -o "$USER" -g "$USER" "$BACKUP_DIR"
-docker compose --env-file .env.server -f compose.server.yaml exec -T postgres \
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml exec -T postgres \
   pg_dump -U "$SMART_CRM_DB_USER" -d "$SMART_CRM_DB_NAME" --format=custom \
   > "$BACKUP_DIR/smartcrm.dump"
 git rev-parse HEAD > "$BACKUP_DIR/application.sha"
@@ -213,10 +214,10 @@ git fetch --prune origin
 git merge --ff-only origin/main
 NEW_SHA="$(git rev-parse HEAD)"
 echo "$NEW_SHA"
-python3 scripts/verify_server_config.py --env-file .env.server
-docker compose --env-file .env.server -f compose.server.yaml build --pull
-docker compose --env-file .env.server -f compose.server.yaml run --rm migrate
-docker compose --env-file .env.server -f compose.server.yaml up -d --no-deps crm
+python3 scripts/verify_server_config.py --env-file /etc/smart-crm/server.env
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml build --pull
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml run --rm migrate
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml up -d --no-deps crm
 curl --fail --silent --show-error http://127.0.0.1:8080/health
 ```
 
@@ -227,8 +228,8 @@ Se o schema continua compatível, volte somente a aplicação ao SHA registrado:
 ```bash
 cd /opt/smart-crm
 git switch --detach "$OLD_SHA"
-docker compose --env-file .env.server -f compose.server.yaml build
-docker compose --env-file .env.server -f compose.server.yaml up -d --no-deps crm
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml build
+docker compose --env-file /etc/smart-crm/server.env -f compose.server.yaml up -d --no-deps crm
 curl --fail --silent --show-error http://127.0.0.1:8080/health
 ```
 
@@ -259,7 +260,7 @@ Ainda bloqueado para produção real:
 ## Checklist
 
 - [ ] SHA implantado registrado.
-- [ ] `.env.server` com modo `600` e fora do Git.
+- [ ] `/etc/smart-crm/server.env` com modo `600` e fora do Git.
 - [ ] Verificador: `10 passed, 0 failed`.
 - [ ] PostgreSQL sem porta publicada.
 - [ ] Alembic no head e tabelas listadas.

@@ -1,7 +1,7 @@
 # Server Staging Deployment Context
 
-**Gathered:** 2026-08-31  
-**Spec:** `.specs/features/server-staging-deployment/spec.md`  
+**Gathered:** 2026-08-31
+**Spec:** `.specs/features/server-staging-deployment/spec.md`
 **Status:** Approved by direct user request
 
 ## Feature Boundary
