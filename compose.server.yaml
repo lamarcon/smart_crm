@@ -1,0 +1,73 @@
+name: smart-crm-server
+
+x-crm-image: &crm-image
+  build:
+    context: .
+  image: "smart-crm:${SMART_CRM_IMAGE_TAG:-server}"
+
+x-crm-environment: &crm-environment
+  SMART_CRM_DATABASE_URL: "postgresql+psycopg://${SMART_CRM_DB_USER:-smartcrm}:${SMART_CRM_DB_PASSWORD:?Set SMART_CRM_DB_PASSWORD in .env.server}@postgres:5432/${SMART_CRM_DB_NAME:-smartcrm}?connect_timeout=5&tcp_user_timeout=5000"
+  SMART_CRM_TEST_MODE: "0"
+
+x-crm-security: &crm-security
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m,mode=1777
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: "${SMART_CRM_DB_NAME:-smartcrm}"
+      POSTGRES_USER: "${SMART_CRM_DB_USER:-smartcrm}"
+      POSTGRES_PASSWORD: "${SMART_CRM_DB_PASSWORD:?Set SMART_CRM_DB_PASSWORD in .env.server}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  migrate:
+    <<: [*crm-image, *crm-security]
+    command: ["alembic", "upgrade", "head"]
+    environment: *crm-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: "no"
+    profiles: ["tools"]
+
+  crm:
+    <<: [*crm-image, *crm-security]
+    command:
+      - uvicorn
+      - app.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - "127.0.0.1"
+    environment: *crm-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${SMART_CRM_BIND_IP:-127.0.0.1}:${SMART_CRM_PORT:-8080}:8000"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
