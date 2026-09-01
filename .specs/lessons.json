@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 14,
+  "next_id": 15,
   "lessons": [
     {
       "id": "L-001",
@@ -238,6 +238,24 @@
       ],
       "created": "2026-08-28T13:47:10Z",
       "last_seen": "2026-08-28T13:47:10Z"
+    },
+    {
+      "id": "L-014",
+      "key": "ac_gap::require live host evidence for certificate authentication health and rollback before approving an infrastructure cutover",
+      "text": "Require live host evidence for certificate, authentication, health, and rollback before approving an infrastructure cutover.",
+      "signal": "ac_gap",
+      "scope": "deployment",
+      "status": "candidate",
+      "features": [
+        "windows-apache-deployment"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md:Interactive UAT (deployment)"
+      ],
+      "created": "2026-09-01T14:33:24Z",
+      "last_seen": "2026-09-01T14:33:24Z"
     }
   ]
 }

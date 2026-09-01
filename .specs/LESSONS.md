@@ -92,6 +92,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: validation.md:concurrent-save-edge (persistence)
 - last seen: 2026-08-28T13:47:10Z
 
+### L-014 - Require live host evidence for certificate, authentication, health, and rollback before approving an infrastructure cutover.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `deployment` · harmful: 0
+- features: windows-apache-deployment
+- evidence: validation.md:Interactive UAT (deployment)
+- last seen: 2026-09-01T14:33:24Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
