@@ -1,0 +1,53 @@
+# Smart CRM virtual host for Apache 2.4 on Windows.
+# Required modules: alias, auth_basic, authn_core, authn_file, authz_core,
+# headers, proxy, proxy_http, rewrite, socache_shmcb and ssl.
+# Include this file from httpd.conf only after replacing the expired certificate.
+
+<VirtualHost *:80>
+    ServerName sc2030.brbots.com
+
+    Alias "/.well-known/acme-challenge/" "C:/ProgramData/SmartCRM/acme-challenge/"
+    <Directory "C:/ProgramData/SmartCRM/acme-challenge">
+        Options None
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI} !^/\.well-known/acme-challenge/
+    RewriteRule ^ https://sc2030.brbots.com%{REQUEST_URI} [R=301,L,NE]
+
+    ErrorLog "logs/smart-crm-error.log"
+    CustomLog "logs/smart-crm-access.log" combined
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName sc2030.brbots.com
+
+    SSLEngine On
+    SSLProtocol -all +TLSv1.2 +TLSv1.3
+    SSLCertificateFile "C:/ProgramData/SmartCRM/tls/sc2030.brbots.com-fullchain.pem"
+    SSLCertificateKeyFile "C:/ProgramData/SmartCRM/tls/sc2030.brbots.com-privkey.pem"
+
+    ProxyRequests Off
+    ProxyPreserveHost On
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Host "sc2030.brbots.com"
+
+    ProxyPass "/" "http://127.0.0.1:8080/" connectiontimeout=5 timeout=60
+    ProxyPassReverse "/" "http://127.0.0.1:8080/"
+
+    LimitRequestBody 26214400
+    Header always set Strict-Transport-Security "max-age=31536000"
+
+    <Location "/">
+        AuthType Basic
+        AuthName "Smart CRM - homologacao privada"
+        AuthBasicProvider file
+        AuthUserFile "C:/ProgramData/SmartCRM/apache/.htpasswd-smart-crm"
+        Require valid-user
+    </Location>
+
+    ErrorLog "logs/smart-crm-error.log"
+    CustomLog "logs/smart-crm-access.log" combined
+</VirtualHost>
