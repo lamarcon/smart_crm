@@ -20,7 +20,12 @@ certificate-account operations or production-data release.
 
 ### Runtime and persistence
 
-- Install Python 3.12 and PostgreSQL 17 natively on Windows.
+- Reuse Python 3.11 from `C:/brbots/python/python.exe` and create an isolated
+  virtual environment for the CRM.
+- Install PostgreSQL 17 natively on `127.0.0.1:5433`, beside the existing
+  PostgreSQL 11 on port 5432.
+- Do not alter, restart, remove or reuse the PostgreSQL 11 instance for CRM
+  production data.
 - Bind PostgreSQL and Uvicorn to localhost only.
 - Use Alembic for all CRM table creation and schema changes.
 - Use a Windows Scheduled Task as SYSTEM for startup and failure restarts.
@@ -42,8 +47,9 @@ certificate-account operations or production-data release.
 
 - Apache installation path defaults to `C:/Apache24`; the runbook explains how
   to substitute the actual path.
-- PostgreSQL installation path defaults to
-  `C:/Program Files/PostgreSQL/17`; the runbook explains how to discover it.
+- PostgreSQL 17 installation path defaults to
+  `C:/Program Files/PostgreSQL/17`; the runbook explains how to discover it
+  and verifies that port 5433 is free before installation.
 - The existing Apache service account is retained and receives read-only access
   to the private key.
 

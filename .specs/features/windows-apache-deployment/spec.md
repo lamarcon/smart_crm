@@ -29,8 +29,8 @@ match this host.
 | --- | --- | --- | --- |
 | Public hostname | `sc2030.brbots.com` | Explicit user decision. | yes |
 | Server platform | Existing Windows host with Apache 2.4 | Explicit user decision and public endpoint evidence. | yes |
-| Application runtime | Native Python 3.12 bound to `127.0.0.1:8080` | Avoids an unconfirmed Linux-container runtime on Windows. | assumed |
-| Database runtime | Native PostgreSQL 17 bound to localhost | Matches the requested manual Windows installation. | assumed |
+| Application runtime | Existing Python 3.11 at `C:/brbots/python/python.exe`, with a project virtual environment bound to `127.0.0.1:8080` | Reuses the supported runtime already installed on the server. | yes |
+| Database runtime | Native PostgreSQL 17 on `127.0.0.1:5433`, installed beside the existing PostgreSQL 11 on port 5432 | Keeps the unsupported PostgreSQL 11 untouched while isolating the CRM on a supported database version. | yes |
 | Process supervision | Windows Scheduled Task running as SYSTEM with restart-on-failure | Uses a built-in Windows facility and avoids a third-party service wrapper. | assumed |
 | External access | Apache Basic Auth in front of the current anonymous CRM | Prevents public anonymous access during staging. | assumed |
 | Certificate files | PEM certificate chain and separate private key stored under `C:/ProgramData/SmartCRM/tls` | Keeps private material outside Git and follows Apache separation guidance. | assumed |
@@ -49,11 +49,12 @@ changing the host platform.
 
 **Acceptance Criteria**:
 
-1. WHEN the operator prepares the host THEN the installation procedure SHALL create a Python 3.12 virtual environment and install the locked project dependencies.
-2. WHEN the operator creates the PostgreSQL role and database THEN the procedure SHALL restrict PostgreSQL TCP listening to localhost and apply `alembic upgrade head` without manual `CREATE TABLE` statements.
+1. WHEN the operator prepares the host THEN the installation procedure SHALL verify Python 3.11 at `C:/brbots/python/python.exe`, create the project virtual environment from that executable and install the locked project dependencies.
+2. WHEN the operator creates the PostgreSQL role and database THEN the procedure SHALL run PostgreSQL 17 on `127.0.0.1:5433` and apply `alembic upgrade head` without manual `CREATE TABLE` statements.
 3. WHILE the CRM runtime is active the application SHALL listen only on `127.0.0.1:8080`.
 4. IF the external environment file is absent or its password is not exactly 64 hexadecimal characters THEN the startup script SHALL exit nonzero before starting Uvicorn.
 5. WHEN Windows starts THEN the Smart CRM scheduled task SHALL start the runtime as SYSTEM and configure at least five one-minute restart attempts.
+6. WHILE PostgreSQL 11 remains installed on port 5432 the installation procedure SHALL leave its service, configuration and data directory unchanged.
 
 **Independent Test**: Parse the PowerShell scripts, validate their security
 contract, and run the startup script with invalid fixtures without starting the
@@ -86,6 +87,7 @@ active certificate dates during server UAT, and confirm unauthenticated HTTPS is
 - IF `alembic upgrade head` exits nonzero THEN the installation procedure SHALL keep the old Apache virtual host active.
 - IF the renewed certificate and private key do not match THEN `httpd.exe -t` SHALL fail the pre-cutover gate and Apache SHALL not restart.
 - IF any secret or private key appears in Git status THEN the installation procedure SHALL stop before commit or push.
+- IF port 5433 is already occupied THEN the installation procedure SHALL stop before installing or configuring PostgreSQL 17.
 
 ## Requirement Traceability
 
@@ -103,8 +105,9 @@ active certificate dates during server UAT, and confirm unauthenticated HTTPS is
 | WAD-10 | Separate external TLS files | Execute | Implementing |
 | WAD-11 | Expired-certificate cutover block | Execute | Implementing |
 | WAD-12 | Rollback on failed health | Execute | Implementing |
+| WAD-13 | Preserve existing PostgreSQL 11 | Execute | Implementing |
 
-**Coverage:** 12 total, 12 mapped to the inline execution plan, 0 unmapped.
+**Coverage:** 13 total, 13 mapped to the inline execution plan, 0 unmapped.
 
 ## Success Criteria
 
