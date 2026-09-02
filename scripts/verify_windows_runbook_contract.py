@@ -20,12 +20,13 @@ def runbook_contract(text: str) -> int:
         ('git pull --ff-only origin main', "Instalação Git não é fast-forward-only."),
         ('C:\\brbots\\python\\python.exe', "Executável Python 3.11 existente ausente."),
         ('sys.version_info[:2] == (3, 11)', "Gate da versão Python 3.11 ausente."),
-        ('-m venv .venv', "Virtualenv Python 3.11 ausente."),
+        ('$python311 -m venv .venv', "Virtualenv não usa o executável Python 3.11 validado."),
         ('-m pip install .', "Instalação de dependências ausente."),
         ('C:\\ProgramData\\SmartCRM\\server.env', "Segredo externo ausente."),
         ("listen_addresses = 'localhost'", "PostgreSQL não está restrito ao localhost."),
         ('port = 5433', "PostgreSQL 17 não está isolado na porta 5433."),
         ('Get-NetTCPConnection -State Listen -LocalPort 5433', "Gate de conflito da porta 5433 ausente."),
+        ("throw 'Porta 5433 já está em uso.", "Conflito da porta 5433 não interrompe a instalação."),
         ('Não altere, reinicie ou remova o PostgreSQL 11.', "Proteção do PostgreSQL 11 ausente."),
         ('psql.exe" -h 127.0.0.1 -p 5433', "Criação do banco não aponta ao PostgreSQL 17 na porta 5433."),
         ('CREATE ROLE smartcrm LOGIN;', "Criação do papel PostgreSQL ausente."),
@@ -60,6 +61,7 @@ def runbook_contract(text: str) -> int:
         ('Restart-Service postgresql-x64-11', "Runbook reinicia o PostgreSQL 11."),
         ('Stop-Service postgresql-x64-11', "Runbook para o PostgreSQL 11."),
         ('Remove-Service postgresql-x64-11', "Runbook remove o PostgreSQL 11."),
+        ('Set-Service postgresql-x64-11', "Runbook altera o PostgreSQL 11."),
     ]
     for token, message in forbidden:
         if token in text:
@@ -68,7 +70,7 @@ def runbook_contract(text: str) -> int:
 
 
 def self_test(valid: str) -> None:
-    assert runbook_contract(valid) == 39
+    assert runbook_contract(valid) == 41
     mutations = [
         valid.replace("listen_addresses = 'localhost'", "listen_addresses = '*'"),
         valid.replace("-m alembic upgrade head", "-m alembic current"),
@@ -78,6 +80,9 @@ def self_test(valid: str) -> None:
         valid + "\nRestart-Service postgresql-x64-11\n",
         valid.replace('psql.exe" -h 127.0.0.1 -p 5433', 'psql.exe" -h 127.0.0.1 -p 5432'),
         valid.replace('-p $settings.SMART_CRM_DB_PORT', ''),
+        valid.replace('$python311 -m venv .venv', 'py -3.12 -m venv .venv'),
+        valid.replace("throw 'Porta 5433 já está em uso.", "Write-Warning 'Porta 5433 já está em uso."),
+        valid + "\nSet-Service postgresql-x64-11 -StartupType Disabled\n",
     ]
     for mutation in mutations:
         try:
@@ -86,7 +91,7 @@ def self_test(valid: str) -> None:
             pass
         else:
             raise AssertionError("Mutação insegura do runbook não detectada.")
-    print("windows runbook verifier self-test: PASS (8/8 killed)")
+    print("windows runbook verifier self-test: PASS (11/11 killed)")
 
 
 def main() -> int:
