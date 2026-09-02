@@ -93,7 +93,7 @@ active certificate dates during server UAT, and confirm unauthenticated HTTPS is
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| WAD-01 | Native Windows installation | Execute | Implementing |
+| WAD-01 | Native Windows installation | Execute | Verified |
 | WAD-02 | Local PostgreSQL and Alembic | Execute | Implementing |
 | WAD-03 | Loopback-only Uvicorn | Execute | Implementing |
 | WAD-04 | External secret rejection | Execute | Implementing |
