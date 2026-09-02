@@ -44,6 +44,7 @@ def runtime_contract(files: dict[str, str]) -> int:
         (task, '-RestartCount 10', "Política de reinício insuficiente."),
         (task, '-RestartInterval (New-TimeSpan -Minutes 1)', "Intervalo de reinício incorreto."),
         (example, 'SMART_CRM_DB_PASSWORD=REPLACE_WITH_64_HEX_CHARACTERS', "Placeholder de senha ausente."),
+        (example, 'SMART_CRM_DB_PORT=5433', "Exemplo não isola PostgreSQL 17 na porta 5433."),
         (example, 'SMART_CRM_BIND_IP=127.0.0.1', "Exemplo publica o CRM fora do loopback."),
     ]
     for text, token, message in checks:
@@ -63,7 +64,7 @@ def read_runtime_files() -> dict[str, str]:
 
 def self_test() -> None:
     valid = read_runtime_files()
-    assert runtime_contract(valid) == 15
+    assert runtime_contract(valid) == 16
     mutations = []
 
     public_bind = copy.deepcopy(valid)
@@ -85,6 +86,12 @@ def self_test() -> None:
     )
     mutations.append(user_task)
 
+    reused_pg11 = copy.deepcopy(valid)
+    reused_pg11["example"] = reused_pg11["example"].replace(
+        "SMART_CRM_DB_PORT=5433", "SMART_CRM_DB_PORT=5432"
+    )
+    mutations.append(reused_pg11)
+
     for mutation in mutations:
         try:
             runtime_contract(mutation)
@@ -92,7 +99,7 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError("Mutação insegura não detectada.")
-    print("windows runtime verifier self-test: PASS (3/3 killed)")
+    print("windows runtime verifier self-test: PASS (4/4 killed)")
 
 
 def main() -> int:

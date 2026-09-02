@@ -18,10 +18,16 @@ def runbook_contract(text: str) -> int:
     required = [
         ('sc2030.brbots.com', "Domínio de corte ausente."),
         ('git pull --ff-only origin main', "Instalação Git não é fast-forward-only."),
-        ('py -3.12 -m venv .venv', "Virtualenv Python 3.12 ausente."),
+        ('C:\\brbots\\python\\python.exe', "Executável Python 3.11 existente ausente."),
+        ('sys.version_info[:2] == (3, 11)', "Gate da versão Python 3.11 ausente."),
+        ('-m venv .venv', "Virtualenv Python 3.11 ausente."),
         ('-m pip install .', "Instalação de dependências ausente."),
         ('C:\\ProgramData\\SmartCRM\\server.env', "Segredo externo ausente."),
         ("listen_addresses = 'localhost'", "PostgreSQL não está restrito ao localhost."),
+        ('port = 5433', "PostgreSQL 17 não está isolado na porta 5433."),
+        ('Get-NetTCPConnection -State Listen -LocalPort 5433', "Gate de conflito da porta 5433 ausente."),
+        ('Não altere, reinicie ou remova o PostgreSQL 11.', "Proteção do PostgreSQL 11 ausente."),
+        ('psql.exe" -h 127.0.0.1 -p 5433', "Criação do banco não aponta ao PostgreSQL 17 na porta 5433."),
         ('CREATE ROLE smartcrm LOGIN;', "Criação do papel PostgreSQL ausente."),
         ('CREATE DATABASE smartcrm OWNER smartcrm', "Criação do banco ausente."),
         ('-m alembic upgrade head', "Migração Alembic ausente."),
@@ -35,6 +41,7 @@ def runbook_contract(text: str) -> int:
         ('curl.exe --user crm-homologacao https://sc2030.brbots.com/health', "Health HTTPS autenticado ausente."),
         ('{"status":"ok","database":"ok"}', "Payload saudável exato ausente."),
         ('pg_dump.exe', "Backup PostgreSQL ausente."),
+        ('-p $settings.SMART_CRM_DB_PORT', "Backup não usa a porta configurada do PostgreSQL 17."),
         ('git merge --ff-only origin/main', "Atualização Git não é fast-forward-only."),
         ('Stop-ScheduledTask -TaskName SmartCRM', "Parada controlada ausente."),
         ('Copy-Item "$backup\\httpd.conf"', "Rollback Apache ausente."),
@@ -50,6 +57,9 @@ def runbook_contract(text: str) -> int:
         ('SSLCertificateKeyFile "C:/Apps', "Runbook coloca chave dentro do clone."),
         ('git reset --hard', "Runbook contém reset destrutivo."),
         ('0.0.0.0:8080', "Runbook publica o runtime do CRM."),
+        ('Restart-Service postgresql-x64-11', "Runbook reinicia o PostgreSQL 11."),
+        ('Stop-Service postgresql-x64-11', "Runbook para o PostgreSQL 11."),
+        ('Remove-Service postgresql-x64-11', "Runbook remove o PostgreSQL 11."),
     ]
     for token, message in forbidden:
         if token in text:
@@ -58,12 +68,16 @@ def runbook_contract(text: str) -> int:
 
 
 def self_test(valid: str) -> None:
-    assert runbook_contract(valid) == 29
+    assert runbook_contract(valid) == 39
     mutations = [
         valid.replace("listen_addresses = 'localhost'", "listen_addresses = '*'"),
         valid.replace("-m alembic upgrade head", "-m alembic current"),
         valid.replace("x509 -checkend 604800", "x509 -noout"),
         valid.replace("git merge --ff-only origin/main", "git reset --hard origin/main"),
+        valid.replace("port = 5433", "port = 5432"),
+        valid + "\nRestart-Service postgresql-x64-11\n",
+        valid.replace('psql.exe" -h 127.0.0.1 -p 5433', 'psql.exe" -h 127.0.0.1 -p 5432'),
+        valid.replace('-p $settings.SMART_CRM_DB_PORT', ''),
     ]
     for mutation in mutations:
         try:
@@ -72,7 +86,7 @@ def self_test(valid: str) -> None:
             pass
         else:
             raise AssertionError("Mutação insegura do runbook não detectada.")
-    print("windows runbook verifier self-test: PASS (4/4 killed)")
+    print("windows runbook verifier self-test: PASS (8/8 killed)")
 
 
 def main() -> int:

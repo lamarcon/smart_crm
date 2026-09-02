@@ -19,7 +19,9 @@ Abra PowerShell como Administrador e confirme:
 
 ```powershell
 git --version
-py -3.12 --version
+$python311 = "C:\brbots\python\python.exe"
+& $python311 --version
+& $python311 -c "import sys; assert sys.version_info[:2] == (3, 11), sys.version"
 & "C:\Apache24\bin\httpd.exe" -v
 & "C:\Program Files\PostgreSQL\17\bin\psql.exe" --version
 ```
@@ -27,9 +29,24 @@ py -3.12 --version
 Instale, se estiverem ausentes:
 
 - Git for Windows;
-- Python 3.12 x64 com o Python Launcher;
-- PostgreSQL 17 x64;
+- Python 3.11 x64 já existente em `C:\brbots\python\python.exe`;
+- PostgreSQL 17 x64, instalado lado a lado na porta 5433;
+
+No instalador do PostgreSQL 17, use `C:\Program Files\PostgreSQL\17`
+como diretório do programa, um diretório de dados exclusivo da versão 17 e a porta
+5433. Não selecione o diretório de dados da versão 11. O novo serviço esperado é
+`postgresql-x64-17`.
 - Apache 2.4 com OpenSSL, já existente no servidor.
+
+Não altere, reinicie ou remova o PostgreSQL 11. Ele continua com serviço,
+configuração, diretório de dados e porta 5432 próprios. Antes de instalar o
+PostgreSQL 17, confirme que a porta escolhida está livre:
+
+```powershell
+if (Get-NetTCPConnection -State Listen -LocalPort 5433 -ErrorAction SilentlyContinue) {
+    throw 'Porta 5433 já está em uso. Pare e escolha outra porta exclusiva para o PostgreSQL 17.'
+}
+```
 
 Descubra o serviço e o caminho real do Apache antes de continuar:
 
@@ -81,13 +98,15 @@ Nunca use `git add .` no servidor.
 
 ```powershell
 Set-Location "C:\Apps\smart-crm"
-py -3.12 -m venv .venv
+$python311 = "C:\brbots\python\python.exe"
+& $python311 -c "import sys; assert sys.version_info[:2] == (3, 11), sys.version"
+& $python311 -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
 & ".\.venv\Scripts\python.exe" -m pip install .
 & ".\.venv\Scripts\python.exe" -m compileall -q app
 ```
 
-O projeto exige Python `>=3.12,<3.13`. Não use Python 3.13.
+O projeto exige Python `>=3.11,<3.13`. Use o Python 3.11 existente; não use Python 3.13.
 
 ## 5. Criar o segredo fora do Git
 
@@ -118,7 +137,7 @@ Edite `postgresql.conf` e mantenha somente conexões locais:
 
 ```text
 listen_addresses = 'localhost'
-port = 5432
+port = 5433
 password_encryption = 'scram-sha-256'
 ```
 
@@ -128,13 +147,19 @@ Em `pg_hba.conf`, coloque esta regra antes de regras mais amplas:
 host    smartcrm    smartcrm    127.0.0.1/32    scram-sha-256
 ```
 
-Reinicie o serviço encontrado na etapa 1:
+Reinicie somente o serviço novo do PostgreSQL 17. Não reinicie o serviço do PostgreSQL 11:
 
 ```powershell
 Restart-Service postgresql-x64-17
 ```
 
-Abra o SQL Shell (`psql`) como o administrador PostgreSQL e execute:
+Abra o cliente da instalação PostgreSQL 17 explicitamente na porta 5433:
+
+```powershell
+& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h 127.0.0.1 -p 5433 -U postgres -d postgres
+```
+
+No prompt do `psql`, execute:
 
 ```sql
 CREATE ROLE smartcrm LOGIN;
@@ -194,12 +219,13 @@ Confirme que PostgreSQL e Uvicorn não escutam em endereços públicos:
 
 ```powershell
 Get-NetTCPConnection -State Listen |
-    Where-Object LocalPort -In 5432,8080 |
+    Where-Object LocalPort -In 5432,5433,8080 |
     Select-Object LocalAddress, LocalPort, OwningProcess
 ```
 
-Ambas as portas devem mostrar somente `127.0.0.1` ou `::1`. No Firewall do
-Windows, mantenha regras públicas apenas para 80 e 443.
+As três portas devem mostrar somente `127.0.0.1` ou `::1`: 5432 para o
+PostgreSQL 11 existente, 5433 para o PostgreSQL 17 do CRM e 8080 para o CRM.
+No Firewall do Windows, mantenha regras públicas apenas para 80 e 443.
 
 ## 9. Renovar o certificado no PunchSalad
 
@@ -341,7 +367,7 @@ $settings = Get-Content "C:\ProgramData\SmartCRM\server.env" |
     ConvertFrom-StringData
 $env:PGPASSWORD = $settings.SMART_CRM_DB_PASSWORD
 & "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe" `
-    -h 127.0.0.1 -U smartcrm -d smartcrm -Fc `
+    -h 127.0.0.1 -p $settings.SMART_CRM_DB_PORT -U smartcrm -d smartcrm -Fc `
     -f "$backup\smartcrm.dump"
 if ($LASTEXITCODE -ne 0) { throw 'Backup PostgreSQL falhou.' }
 Remove-Item Env:PGPASSWORD

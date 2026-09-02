@@ -105,7 +105,7 @@ active certificate dates during server UAT, and confirm unauthenticated HTTPS is
 | WAD-10 | Separate external TLS files | Execute | Implementing |
 | WAD-11 | Expired-certificate cutover block | Execute | Implementing |
 | WAD-12 | Rollback on failed health | Execute | Implementing |
-| WAD-13 | Preserve existing PostgreSQL 11 | Execute | Implementing |
+| WAD-13 | Preserve existing PostgreSQL 11 | Execute | Verified |
 
 **Coverage:** 13 total, 13 mapped to the inline execution plan, 0 unmapped.
 
