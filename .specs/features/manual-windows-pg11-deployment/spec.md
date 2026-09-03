@@ -6,7 +6,7 @@ O Smart CRM precisa ser levado ao Windows Server 2016 sem depender de Git, inter
 
 ## Goals
 
-- [x] Gerar um ZIP autocontido que possa ser copiado e instalado offline em `C:\Apps\smart-crm`.
+- [x] Gerar um ZIP autocontido que possa ser copiado e instalado offline em `C:\brbots\apps\smart-crm`.
 - [x] Criar somente o usuário e o banco exclusivos do CRM no PostgreSQL 11 existente.
 - [x] Bloquear a publicação no Apache até a migração e o `/health` local passarem.
 

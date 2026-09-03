@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$AppRoot = "C:\Apps\smart-crm",
+    [string]$AppRoot = "C:\brbots\apps\smart-crm",
     [string]$EnvFile = "C:\ProgramData\SmartCRM\server.env",
     [string]$PsqlPath = "C:\Program Files\PostgreSQL\11\bin\psql.exe"
 )

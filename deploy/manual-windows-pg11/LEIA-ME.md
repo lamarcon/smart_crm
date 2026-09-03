@@ -13,14 +13,14 @@ Get-FileHash .\smart-crm-manual-pg11-*.zip -Algorithm SHA256
 Get-Content .\smart-crm-manual-pg11-*.zip.sha256
 ```
 
-Os hashes devem ser idênticos. Extraia o conteúdo interno diretamente em `C:\Apps\smart-crm`. A pasta deve conter `app`, `migrations`, `wheelhouse`, `alembic.ini`, `requirements-runtime.txt`, `MANIFEST.sha256` e `deploy`.
+Os hashes devem ser idênticos. Extraia o conteúdo interno diretamente em `C:\brbots\apps\smart-crm`. A pasta deve conter `app`, `migrations`, `wheelhouse`, `alembic.ini`, `requirements-runtime.txt`, `MANIFEST.sha256` e `deploy`.
 
 ## 2. Instalar offline
 
 Abra PowerShell como Administrador:
 
 ```powershell
-Set-Location C:\Apps\smart-crm
+Set-Location C:\brbots\apps\smart-crm
 Set-ExecutionPolicy -Scope Process Bypass
 & .\deploy\manual-windows-pg11\test-package-integrity.ps1
 & .\deploy\manual-windows-pg11\install-offline.ps1
@@ -76,7 +76,7 @@ Remove-Variable settings -ErrorAction SilentlyContinue
 ## 4. Criar tabelas e testar localmente
 
 ```powershell
-Set-Location C:\Apps\smart-crm
+Set-Location C:\brbots\apps\smart-crm
 & .\deploy\manual-windows-pg11\initialize-and-test.ps1
 ```
 

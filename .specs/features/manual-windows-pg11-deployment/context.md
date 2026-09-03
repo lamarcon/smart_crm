@@ -29,7 +29,7 @@ Entregar um arquivo compactado que o administrador copie para o Windows Server 2
 
 ### Agent's Discretion
 
-- Estrutura interna do ZIP, desde que ele possa ser extraído diretamente em `C:\Apps\smart-crm`.
+- Estrutura interna do ZIP, desde que ele possa ser extraído diretamente em `C:\brbots\apps\smart-crm`.
 - Formato do manifesto, desde que use SHA-256 e rejeite arquivo ausente ou adulterado.
 
 ### Declined / Undiscussed Gray Areas → Assumptions

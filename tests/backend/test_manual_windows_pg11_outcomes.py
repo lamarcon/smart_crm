@@ -159,3 +159,16 @@ def test_migration_failure_throws_before_publication_and_apache_is_absent():
     assert initialize.index("Assert-SmartCrmCommandSucceeded") < initialize.index("install-scheduled-task.ps1")
     assert "httpd.exe" not in initialize
     assert "Restart-Service" not in initialize
+
+def test_server_app_root_defaults_match_the_existing_brbots_directory():
+    expected = '[string]$AppRoot = "C:\\brbots\\apps\\smart-crm"'
+    deployment = PROJECT_ROOT / "deploy/manual-windows-pg11"
+    scripts = [
+        (deployment / name).read_text(encoding="utf-8")
+        for name in ("start-smart-crm.ps1", "initialize-and-test.ps1", "install-scheduled-task.ps1")
+    ]
+    readme = (deployment / "LEIA-ME.md").read_text(encoding="utf-8")
+
+    assert all(expected in script for script in scripts)
+    assert "C:\\brbots\\apps\\smart-crm" in readme
+    assert "C:\\Apps\\smart-crm" not in readme
