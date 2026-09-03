@@ -37,10 +37,10 @@
 ## Handoff
 
 - **Feature**: Implantação manual Windows/PostgreSQL 11 / `.specs/features/manual-windows-pg11-deployment`
-- **Phase / Task**: Pacote verificado; instalação e UAT no servidor pendentes
-- **Completed**: ZIP offline, SHA-256, 14 testes, 14/14 requisitos e 3/3 mutações detectadas
+- **Phase / Task**: Caminho do servidor corrigido; instalação offline aguardando saída do servidor
+- **Completed**: ZIP `357113f7`, SHA-256, caminho `C:\brbots\apps\smart-crm`, 15 testes e validação independente PASS
 - **In-progress** (file:line): none
-- **Next step**: Copiar o ZIP e o `.sha256` para o servidor, seguir as seções 1 a 4 de `LEIA-ME.md` e trazer a saída do gate local.
+- **Next step**: Executar `test-package-integrity.ps1` e `install-offline.ps1` em `C:\brbots\apps\smart-crm`, depois enviar a saída antes de criar o banco.
 - **Blockers**: execução na máquina de destino, senha administrativa do PostgreSQL, descoberta do caminho do Apache e renovação TLS
 - **Uncommitted files**: `.specs/features/crm-mvp/tasks.md` (preexistente, preservado)
 - **Branch**: main

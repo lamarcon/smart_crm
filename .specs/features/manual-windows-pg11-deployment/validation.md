@@ -3,8 +3,8 @@
 **Verdict**: PASS
 **Date**: 2026-09-03
 **Spec**: `.specs/features/manual-windows-pg11-deployment/spec.md`
-**Diff range**: `a9e44ee^..1968812`
-**Artifact**: `dist/smart-crm-manual-pg11-19688125.zip`
+**Diff range**: `b1c2979..357113f`
+**Artifact**: `dist/smart-crm-manual-pg11-357113f7.zip`
 **Verifier**: independent sub-agent (author != verifier)
 
 ---
@@ -13,6 +13,7 @@
 
 | Requirement | Spec-defined outcome | `file:line` + assertion | Result |
 | --- | --- | --- | --- |
+| Deployment path goal | The offline bundle is extracted and operated from `C:\brbots\apps\smart-crm`. | `.specs/features/manual-windows-pg11-deployment/spec.md:9` defines the exact path. `tests/backend/test_manual_windows_pg11_outcomes.py:164` defines the expected default, line 172 asserts it in all three server scripts, line 173 asserts it in the manual, and line 174 rejects the former path. | PASS |
 | MPG-01 | Commit-versioned ZIP and matching SHA-256. | `tests/backend/test_manual_windows_pg11_outcomes.py:53` asserts the ZIP name; lines 54-55 assert digest filename and exact content. | PASS |
 | MPG-02 | Complete runtime payload and compatible Windows CPython 3.11 x64 wheels. | `tests/backend/test_manual_windows_pg11_outcomes.py:58` through line 64 assert all payload classes and a `cp311-cp311-win_amd64` wheel. | PASS |
 | MPG-03 | No Git/spec/venv/tests/caches/TLS keys or secret `server.env` in ZIP. | `tests/backend/test_manual_windows_pg11_deployment.py:49` through line 50 and `tests/backend/test_manual_windows_pg11_outcomes.py:65` assert exclusions; `scripts/verify_manual_windows_pg11_deployment.py:66` rejects secret/key entries. | PASS |
@@ -28,21 +29,20 @@
 | MPG-13 | Existing role/database ownership is checked without recreation/deletion. | `tests/backend/test_manual_windows_pg11_deployment.py:88` reaches `scripts/verify_manual_windows_pg11_deployment.py:54`, which requires `\du smartcrm`, `\l smartcrm`, and the do-not-recreate/delete guidance. | PASS |
 | MPG-14 | Alembic failure blocks publication and leaves Apache unchanged. | `tests/backend/test_manual_windows_pg11_outcomes.py:156` through line 161 assert non-zero with the blocking message, pre-publication ordering, and no Apache mutation/restart. | PASS |
 
-**Status**: 14/14 criteria match the spec-defined outcome. No spec-precision gap remains.
+**Status**: The affected deployment-path goal and 14/14 numbered criteria match the spec-defined outcomes. No spec-precision gap remains.
 
 ## Discrimination Sensor
 
-The sensor ran in temporary worktree `.verify-manual-pg11-worktree` at `19688125`. The real tree was never mutated.
+The sensor ran in a temporary detached worktree at `357113f`. The real tree was never mutated.
 
 | Mutation | File:line | Description | Result |
 | --- | --- | --- | --- |
-| 1 | `scripts/build_manual_windows_pg11_bundle.py:115` | Disabled manifest mismatch rejection. | KILLED: 1 failed, 13 passed |
-| 2 | `deploy/manual-windows-pg11/deployment-policy.ps1:18` | Bypassed the missing IPv4 listener guard. | KILLED: 2 failed, 12 passed |
-| 3 | `deploy/manual-windows-pg11/deployment-policy.ps1:67` | Changed health acceptance from AND to OR. | KILLED: 2 failed, 12 passed |
+| 1 | `deploy/manual-windows-pg11/start-smart-crm.ps1:3` | Changed the default from `C:\brbots\apps\smart-crm` back to `C:\Apps\smart-crm`. | KILLED: `tests/backend/test_manual_windows_pg11_outcomes.py:172` failed, 1 targeted test failed as expected |
 
-**Sensor depth**: lightweight, three targeted behavior mutations.
-**Result**: 3/3 killed. PASS.
-**Isolation**: real-tree porcelain before and after cleanup was identical: `?? .specs/features/crm-mvp/tasks.md` and `?? .specs/features/manual-windows-pg11-deployment/validation.md`. Scratch removed.
+
+**Sensor depth**: lightweight, one targeted behavior mutation for the changed path.
+**Result**: 1/1 killed. PASS.
+**Isolation**: real-tree porcelain before and after cleanup was identical: `?? .specs/features/crm-mvp/tasks.md`. Scratch removed.
 
 ## Edge Cases
 
@@ -52,14 +52,15 @@ The sensor ran in temporary worktree `.verify-manual-pg11-worktree` at `19688125
 
 ## Gate Check
 
-- Dedicated gate: 14 passed, 0 failed, 0 skipped in 6.06s.
-- Feature tests: 0 before `a9e44ee^`; 14 after `1968812`; delta +14.
-- Python compile gate: PASS.
-- PowerShell parser gate: PASS for every deployment `.ps1`.
+- Dedicated gate: 15 passed, 0 failed, 0 skipped in 5.51s.
+- Environmental retry: the first run used the inaccessible global pytest temp directory and produced 9 passes plus 6 setup errors; the isolated `--basetemp` rerun passed all 15 tests.
+- Feature tests: 14 at `b1c2979`; 15 at `357113f`; delta +1.
+- PowerShell parser gate: PASS for all 6 deployment `.ps1` files.
 - Bundle verifier: PASS, 14/14 requirements.
 - Artifact: 46 entries, 20 wheels; binary wheels are `cp311-cp311-win_amd64` and the rest are universal.
-- External SHA-256: PASS, `ec8c0aeb34de17df08ff259ccda63db79cdcf5ee5a0b2fefaa4c0b53abb757bc`.
-- `git diff --check a9e44ee^..1968812`: PASS.
+- Bundle path check: PASS. The manual contains the new path 3 times, each of the 3 default-bearing scripts contains it once, and none contains `C:\Apps\smart-crm`.
+- External SHA-256: PASS, `99298d68f96deca121eb9a47280433104018894b2f8f07d7e4bb7242f46395ec`.
+- `git diff --check b1c2979..357113f`: PASS.
 
 ## Code Quality
 
@@ -67,8 +68,8 @@ The sensor ran in temporary worktree `.verify-manual-pg11-worktree` at `19688125
 | --- | --- |
 | Minimum code, surgical diff, no scope creep | PASS |
 | Matches project patterns | PASS |
-| Spec-anchored outcomes | PASS: 14/14 |
-| Non-shallow coverage | PASS: 3/3 mutants killed |
+| Spec-anchored outcomes | PASS: affected path goal plus 14/14 numbered criteria |
+| Non-shallow coverage | PASS: 1/1 path mutant killed |
 | Every test maps to a requirement or independent test | PASS |
 | Guidelines | `tlc-spec-driven/references/coding-principles.md` applied |
 
@@ -80,8 +81,8 @@ MPG-01 through MPG-14: Implementing -> Verified.
 
 **Overall**: PASS, ready for the destination-server UAT required by the spec.
 
-**Spec-anchored check**: 14/14.
-**Sensor**: 3/3 killed.
-**Gate**: 14 passed.
+**Spec-anchored check**: affected path goal plus 14/14 numbered criteria.
+**Sensor**: 1/1 killed.
+**Gate**: 15 passed.
 
-The offline artifact, integrity controls, runtime/database safety policies, migration/publication ordering, and local health gate are verified. Production readiness still depends on the explicitly out-of-scope UAT on the destination Windows Server.
+The source defaults, manual, specification context, and packaged artifact consistently use `C:\brbots\apps\smart-crm`; the former `C:\Apps\smart-crm` default is rejected by the dedicated test. The offline artifact, integrity controls, runtime/database safety policies, migration/publication ordering, and local health gate remain verified. Production readiness still depends on the explicitly out-of-scope UAT on the destination Windows Server.
