@@ -8,6 +8,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "deployment-policy.ps1")
 
 $allowedKeys = @(
     "SMART_CRM_DB_NAME", "SMART_CRM_DB_USER", "SMART_CRM_DB_PASSWORD",
@@ -63,7 +64,8 @@ $logPath = Join-Path $LogDirectory "smart-crm.log"
 
 Push-Location $AppRoot
 try {
-    & $python -m uvicorn app.main:create_app --factory --host "127.0.0.1" --port "8080" --proxy-headers --forwarded-allow-ips "127.0.0.1" *>> $logPath
+    $uvicornArguments = Get-SmartCrmUvicornArguments
+    & $python @uvicornArguments *>> $logPath
     exit $LASTEXITCODE
 }
 finally {

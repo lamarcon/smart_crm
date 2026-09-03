@@ -101,4 +101,3 @@ O Smart CRM precisa ser levado ao Windows Server 2016 sem depender de Git, inter
 - [ ] A instalação de dependências no servidor não exige acesso à internet.
 - [ ] Nenhum comando do kit altera o serviço ou o diretório de dados do PostgreSQL 11.
 - [ ] O Apache só entra no procedimento depois de migração e saúde local aprovadas.
-

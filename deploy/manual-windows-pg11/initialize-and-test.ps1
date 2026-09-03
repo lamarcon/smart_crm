@@ -7,6 +7,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "deployment-policy.ps1")
 
 & (Join-Path $PSScriptRoot "start-smart-crm.ps1") -AppRoot $AppRoot -EnvFile $EnvFile -ValidateOnly
 $settings = Get-Content -LiteralPath $EnvFile | Where-Object { $_ -and -not $_.StartsWith("#") } | Out-String | ConvertFrom-StringData
@@ -19,8 +20,9 @@ try {
 
     Push-Location $AppRoot
     try {
-        & ".\.venv\Scripts\python.exe" -m alembic upgrade head
-        if ($LASTEXITCODE -ne 0) { throw "Migracao Alembic falhou. Apache permanece inalterado." }
+        $alembicArguments = Get-SmartCrmAlembicUpgradeArguments
+        & ".\.venv\Scripts\python.exe" @alembicArguments
+        Assert-SmartCrmCommandSucceeded -ExitCode $LASTEXITCODE -FailureMessage "Migracao Alembic falhou. Apache permanece inalterado."
         & ".\.venv\Scripts\python.exe" -m alembic current
         if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel confirmar o head do Alembic." }
     }
@@ -29,7 +31,7 @@ try {
     & (Join-Path $PSScriptRoot "install-scheduled-task.ps1") -AppRoot $AppRoot
     Start-Sleep -Seconds 5
     $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health"
-    if ($health.status -ne "ok" -or $health.database -ne "ok") {
+    if (-not (Test-SmartCrmHealth -Health $health)) {
         throw "Health local invalido. Apache permanece inalterado."
     }
     Write-Output '{"status":"ok","database":"ok"}'

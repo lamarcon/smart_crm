@@ -141,15 +141,22 @@ def git_version(root: Path) -> str:
     ).strip()
 
 
-def build(root: Path, output_dir: Path, python: str = sys.executable) -> tuple[Path, Path]:
+def build(
+    root: Path,
+    output_dir: Path,
+    python: str = sys.executable,
+    *,
+    version: str | None = None,
+    wheel_downloader=download_windows_wheels,
+) -> tuple[Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    version = git_version(root)
+    version = version or git_version(root)
     archive = output_dir / f"smart-crm-manual-pg11-{version}.zip"
     digest_file = output_dir / f"{archive.name}.sha256"
     with tempfile.TemporaryDirectory(prefix="smart-crm-pg11-", dir=output_dir) as temp:
         staging = Path(temp)
         copy_runtime(root, staging)
-        download_windows_wheels(staging, python)
+        wheel_downloader(staging, python)
         write_manifest(staging)
         verify_manifest(staging)
         create_deterministic_zip(staging, archive)
