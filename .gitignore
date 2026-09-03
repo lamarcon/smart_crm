@@ -2,6 +2,7 @@ node_modules/
 .pnpm-store/
 test-results/
 playwright-report/
+dist/
 __pycache__/
 *.py[cod]
 .DS_Store
