@@ -26,13 +26,21 @@
 - **Date**: 2026-08-26
 - **Status**: active
 
+### AD-004
+- **Decision**: A primeira implantação no Windows Server reutilizará o PostgreSQL 11 existente em `127.0.0.1:5432`, com role e database exclusivos do Smart CRM e sem reconfigurar o serviço.
+- **Reason**: O usuário priorizou uma instalação manual rápida, aproveitando os runtimes já disponíveis e evitando uma nova instalação no servidor.
+- **Trade-off**: PostgreSQL 11 está fora de suporte e deverá ser atualizado após a estabilização; até lá, a exposição fica restrita ao loopback e o corte depende de UAT.
+- **Scope**: Implantação Windows manual, persistência de produção e procedimentos operacionais do Smart CRM até esta decisão ser supersedida.
+- **Date**: 2026-09-03
+- **Status**: active
+
 ## Handoff
 
-- **Feature**: Smart CRM MVP produtivo / `.specs/features/crm-mvp`
-- **Phase / Task**: Specify reconciliado com a base local; escolha da arquitetura produtiva pendente
-- **Completed**: Base local e persistência validadas; escopo produtivo especificado; baseline reconciliada
+- **Feature**: Implantação manual Windows/PostgreSQL 11 / `.specs/features/manual-windows-pg11-deployment`
+- **Phase / Task**: Pacote verificado; instalação e UAT no servidor pendentes
+- **Completed**: ZIP offline, SHA-256, 14 testes, 14/14 requisitos e 3/3 mutações detectadas
 - **In-progress** (file:line): none
-- **Next step**: Confirmar a abordagem arquitetural e produzir `design.md`, depois `tasks.md`.
-- **Blockers**: decisão arquitetural do usuário antes de detalhar componentes
-- **Uncommitted files**: README.md, .specs/STATE.md, .specs/features/crm-mvp/context.md, .specs/features/crm-mvp/spec.md
+- **Next step**: Copiar o ZIP e o `.sha256` para o servidor, seguir as seções 1 a 4 de `LEIA-ME.md` e trazer a saída do gate local.
+- **Blockers**: execução na máquina de destino, senha administrativa do PostgreSQL, descoberta do caminho do Apache e renovação TLS
+- **Uncommitted files**: `.specs/features/crm-mvp/tasks.md` (preexistente, preservado)
 - **Branch**: main

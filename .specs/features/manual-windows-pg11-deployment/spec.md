@@ -6,9 +6,9 @@ O Smart CRM precisa ser levado ao Windows Server 2016 sem depender de Git, inter
 
 ## Goals
 
-- [ ] Gerar um ZIP autocontido que possa ser copiado e instalado offline em `C:\Apps\smart-crm`.
-- [ ] Criar somente o usuário e o banco exclusivos do CRM no PostgreSQL 11 existente.
-- [ ] Bloquear a publicação no Apache até a migração e o `/health` local passarem.
+- [x] Gerar um ZIP autocontido que possa ser copiado e instalado offline em `C:\Apps\smart-crm`.
+- [x] Criar somente o usuário e o banco exclusivos do CRM no PostgreSQL 11 existente.
+- [x] Bloquear a publicação no Apache até a migração e o `/health` local passarem.
 
 ## Out of Scope
 
@@ -78,26 +78,26 @@ O Smart CRM precisa ser levado ao Windows Server 2016 sem depender de Git, inter
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| MPG-01 | P1: Copiar pacote | Execute | Implementing |
-| MPG-02 | P1: Copiar pacote | Execute | Implementing |
-| MPG-03 | P1: Copiar pacote | Execute | Implementing |
-| MPG-04 | P1: Copiar pacote | Execute | Implementing |
-| MPG-05 | P1: Instalar | Execute | Implementing |
-| MPG-06 | P1: Instalar | Execute | Implementing |
-| MPG-07 | P1: Instalar | Execute | Implementing |
-| MPG-08 | P1: Instalar | Execute | Implementing |
-| MPG-09 | P1: Instalar | Execute | Implementing |
-| MPG-10 | P1: Instalar | Execute | Implementing |
-| MPG-11 | P1: Instalar | Execute | Implementing |
-| MPG-12 | Edge case: PostgreSQL indisponível | Execute | Implementing |
-| MPG-13 | Edge case: objetos existentes | Execute | Implementing |
-| MPG-14 | Edge case: migração falhou | Execute | Implementing |
+| MPG-01 | P1: Copiar pacote | Execute | Verified |
+| MPG-02 | P1: Copiar pacote | Execute | Verified |
+| MPG-03 | P1: Copiar pacote | Execute | Verified |
+| MPG-04 | P1: Copiar pacote | Execute | Verified |
+| MPG-05 | P1: Instalar | Execute | Verified |
+| MPG-06 | P1: Instalar | Execute | Verified |
+| MPG-07 | P1: Instalar | Execute | Verified |
+| MPG-08 | P1: Instalar | Execute | Verified |
+| MPG-09 | P1: Instalar | Execute | Verified |
+| MPG-10 | P1: Instalar | Execute | Verified |
+| MPG-11 | P1: Instalar | Execute | Verified |
+| MPG-12 | Edge case: PostgreSQL indisponível | Execute | Verified |
+| MPG-13 | Edge case: objetos existentes | Execute | Verified |
+| MPG-14 | Edge case: migração falhou | Execute | Verified |
 
 **Coverage:** 14 total, 14 mapeados ao plano de execução, 0 não mapeados.
 
 ## Success Criteria
 
-- [ ] O ZIP e seu SHA-256 são gerados e o conteúdo passa no verificador de contrato.
-- [ ] A instalação de dependências no servidor não exige acesso à internet.
-- [ ] Nenhum comando do kit altera o serviço ou o diretório de dados do PostgreSQL 11.
-- [ ] O Apache só entra no procedimento depois de migração e saúde local aprovadas.
+- [x] O ZIP e seu SHA-256 são gerados e o conteúdo passa no verificador de contrato.
+- [x] A instalação de dependências no servidor não exige acesso à internet.
+- [x] Nenhum comando do kit altera o serviço ou o diretório de dados do PostgreSQL 11.
+- [x] O Apache só entra no procedimento depois de migração e saúde local aprovadas.
