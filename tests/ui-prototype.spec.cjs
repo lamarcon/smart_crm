@@ -631,16 +631,21 @@ async function createLead(page, name, options = {}) {
     assert.match(await companyRow.innerText(), /0 contatos/);
     assert.match(await companyRow.innerText(), /Nenhum contato/);
 
+    const workspace = await stateFrom(page);
+    workspace.deals.unshift({
+      ...workspace.deals[0],
+      id: 'N-EMPTY',
+      title: 'Negócio Sem Empresa e Contato',
+      company: '',
+      contact: '',
+      quotes: []
+    });
+    await setMockWorkspace(page, workspace);
+    await reloadReady(page);
     await goTo(page, 'Negócios');
-    await page.getByRole('button', { name: /Novo Negócio/ }).click();
-    dialog = page.locator('#entityDialog');
-    await dialog.getByLabel('Título do Negócio *').fill('Negócio Sem Contato');
-    await dialog.getByLabel('Empresa *').fill('Arkos Estética');
-    await dialog.getByLabel('Valor (R$) *').fill('100');
-    await dialog.getByLabel('Responsável *').selectOption('u-paula');
-    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
-    const noContactRow = page.locator('#page-deals tbody tr').filter({ hasText: 'Negócio Sem Contato' });
-    assert.match(await noContactRow.innerText(), /Contato\s+Não informado/);
+    const emptyRelationshipRow = page.locator('#page-deals tbody tr').filter({ hasText: 'Negócio Sem Empresa e Contato' });
+    assert.match(await emptyRelationshipRow.innerText(), /Empresa\s+Não informado/);
+    assert.match(await emptyRelationshipRow.innerText(), /Contato\s+Não informado/);
   });
 
   await run('DRAWER-01 abre os quatro cadastros pelo nome sem lápis', async page => {
