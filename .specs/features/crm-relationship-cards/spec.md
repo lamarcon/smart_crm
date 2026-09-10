@@ -6,8 +6,8 @@ O botão para criar Empresa gera uma entidade inválida e não abre o cadastro. 
 
 ## Goals
 
-- [ ] Permitir criar uma Empresa pela tela de Empresas e persistir o novo registro.
-- [ ] Exibir os vínculos entre Negócios, Contatos e Empresas nas listagens e no Kanban de Negócios.
+- [x] Permitir criar uma Empresa pela tela de Empresas e persistir o novo registro.
+- [x] Exibir os vínculos entre Negócios, Contatos e Empresas nas listagens e no Kanban de Negócios.
 
 ## Out of Scope
 
@@ -72,17 +72,17 @@ O botão para criar Empresa gera uma entidade inválida e não abre o cadastro. 
 | --- | --- | --- | --- |
 | CRREL-01 | P1: Criar Empresa | Execute | Verified |
 | CRREL-02 | P1: Criar Empresa | Execute | Verified |
-| CRREL-03 | P1: Visualizar vínculos | Execute | Implementing |
-| CRREL-04 | P1: Visualizar vínculos | Execute | Implementing |
-| CRREL-05 | P1: Visualizar vínculos | Execute | Implementing |
-| CRREL-06 | P1: Visualizar vínculos | Execute | Implementing |
-| CRREL-07 | P1: Visualizar vínculos | Execute | Implementing |
-| CRREL-08 | P1: Visualizar vínculos | Execute | Implementing |
+| CRREL-03 | P1: Visualizar vínculos | Execute | Verified |
+| CRREL-04 | P1: Visualizar vínculos | Execute | Verified |
+| CRREL-05 | P1: Visualizar vínculos | Execute | Verified |
+| CRREL-06 | P1: Visualizar vínculos | Execute | Verified |
+| CRREL-07 | P1: Visualizar vínculos | Execute | Verified |
+| CRREL-08 | P1: Visualizar vínculos | Execute | Verified |
 
 **Coverage:** 8 total, 8 mapped to inline execution steps, 0 unmapped.
 
 ## Success Criteria
 
-- [ ] Uma Empresa pode ser criada e continua presente após recarregar o workspace.
-- [ ] Lista e Kanban de Negócios exibem o contexto de Empresa e Contato sem erro para vínculos ausentes.
-- [ ] Listagens de Contatos e Empresas exibem suas relações cruzadas.
+- [x] Uma Empresa pode ser criada e continua presente após recarregar o workspace.
+- [x] Lista e Kanban de Negócios exibem o contexto de Empresa e Contato sem erro para vínculos ausentes.
+- [x] Listagens de Contatos e Empresas exibem suas relações cruzadas.

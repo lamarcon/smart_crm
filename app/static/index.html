@@ -152,6 +152,11 @@
     .entity-avatar { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; color: #1849a9; background: var(--blue-100); font-size: 11px; font-weight: 800; }
     .entity strong { display: block; color: var(--navy-800); font-size: 13px; }
     .entity small { display: block; margin-top: 2px; color: var(--slate-500); }
+    .relationship-summary { min-width: 220px; display: grid; gap: 6px; }
+    .relationship-line { display: grid; gap: 2px; }
+    .relationship-line > span { color: var(--navy-700); font-size: 12px; }
+    .relationship-line b { margin-right: 4px; }
+    .relationship-line small { color: var(--slate-500); font-size: 11px; }
     .entity-link { display: block; border: 0; padding: 0; color: var(--navy-800); background: transparent; font-weight: 750; text-align: left; }
     .entity-link:hover { color: #175cd3; text-decoration: underline; }
     .tag { display: inline-flex; align-items: center; gap: 5px; max-width: 190px; padding: 4px 8px; border-radius: 999px; color: #175cd3; background: var(--blue-100); font-size: 11px; font-weight: 700; white-space: nowrap; }
@@ -1458,6 +1463,46 @@
       return `<div class="stage-progress"><div class="stage-segments">${segments}</div><div class="stage-progress-label"><b>${escapeHTML(current)}</b> · etapa ${currentIndex + 1} de ${stages.length}</div></div>`;
     }
 
+    function normalizedRelationshipName(value) {
+      return String(value || '').trim().toLocaleLowerCase('pt-BR');
+    }
+
+    function relatedRecord(collection, value) {
+      const key = normalizedRelationshipName(value);
+      return key ? (state[collection] || []).find(item => normalizedRelationshipName(item.name) === key) : null;
+    }
+
+    function relationshipLabel(value) {
+      return String(value || '').trim() || 'Não informado';
+    }
+
+    function relationshipDetails(record, values, hasReference) {
+      if (!hasReference) return '';
+      if (!record) return 'Cadastro não localizado';
+      return values.map(value => String(value || '').trim()).filter(Boolean).join(' · ') || 'Cadastro sem detalhes';
+    }
+
+    function dealRelationshipsHTML(record) {
+      const companyName = relationshipLabel(record.company);
+      const contactName = relationshipLabel(record.contact);
+      const company = relatedRecord('companies', record.company);
+      const contact = relatedRecord('contacts', record.contact);
+      const companyDetails = relationshipDetails(company, [company?.city, company?.phone], normalizedRelationshipName(record.company));
+      const contactDetails = relationshipDetails(contact, [contact?.email, contact?.phone], normalizedRelationshipName(record.contact));
+      return `<div class="relationship-summary"><div class="relationship-line"><span><b>Empresa</b> ${escapeHTML(companyName)}</span>${companyDetails ? `<small>${escapeHTML(companyDetails)}</small>` : ''}</div><div class="relationship-line"><span><b>Contato</b> ${escapeHTML(contactName)}</span>${contactDetails ? `<small>${escapeHTML(contactDetails)}</small>` : ''}</div></div>`;
+    }
+
+    function contactCompanyHTML(record) {
+      const companyName = relationshipLabel(record.company);
+      const company = relatedRecord('companies', record.company);
+      const details = relationshipDetails(company, [company?.city, company?.phone], normalizedRelationshipName(record.company));
+      return `<div class="relationship-line"><span>${escapeHTML(companyName)}</span>${details ? `<small>${escapeHTML(details)}</small>` : ''}</div>`;
+    }
+
+    function contactsForCompany(companyName) {
+      const key = normalizedRelationshipName(companyName);
+      return key ? state.contacts.filter(contact => normalizedRelationshipName(contact.company) === key) : [];
+    }
     function renderKanban(scope, records) {
       const isLead = scope === 'leads';
       const stages = isLead ? leadStages : dealStages;
@@ -1466,9 +1511,9 @@
         const stageRecords = records.filter(record => record.stage === stage);
         const cards = stageRecords.map(record => {
           const title = isLead ? record.name : record.title;
-          const subtitle = isLead ? `${record.id} · ${record.company}` : `${record.id} · ${record.company} · ${money(record.amount)}`;
+          const subtitle = isLead ? `${record.id} · ${record.company}` : `${record.id} · ${money(record.amount)}`;
           const options = stages.map(option => `<option ${option === record.stage ? 'selected' : ''}>${escapeHTML(option)}</option>`).join('');
-          return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small><div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}">${options}</select>${!isLead ? `<div class="kanban-actions"><button class="button small" data-action="quote" data-id="${record.id}">Orçamento</button></div>` : ''}</article>`;
+          return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small>${!isLead ? dealRelationshipsHTML(record) : ''}<div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}">${options}</select>${!isLead ? `<div class="kanban-actions"><button class="button small" data-action="quote" data-id="${record.id}">Orçamento</button></div>` : ''}</article>`;
         }).join('');
         return `<section class="kanban-column" data-kanban-stage="${escapeHTML(stage)}"><div class="kanban-column-head"><span>${escapeHTML(stage)}</span><span class="kanban-count">${stageRecords.length}</span></div><div class="kanban-cards">${cards || '<p class="hint">Nenhum registro nesta etapa.</p>'}</div></section>`;
       }).join('')}</div>`;
@@ -1498,24 +1543,27 @@
 
     function contactsHTML() {
       const records = applyRecordFilters('contacts', state.contacts);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="contact" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.company)}</td><td>${escapeHTML(item.role)}</td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="contact" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="contact" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${contactCompanyHTML(item)}</td><td>${escapeHTML(item.role)}</td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="contact" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       return listShell('contacts', 'Contatos', 'Pessoas vinculadas a Empresas e Negócios.', rows ? `<table><thead><tr><th>Contato</th><th>Empresa</th><th>Cargo</th><th>Dados de contato</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Contato encontrado'), records.length);
     }
 
     function companiesHTML() {
       const records = applyRecordFilters('companies', state.companies);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="company" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${escapeHTML(item.segment)}</td><td>${escapeHTML(item.city)}</td><td>${escapeHTML(item.phone)}</td><td>${escapeHTML(userName(item.ownerId))}</td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="company" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
-      return listShell('companies', 'Empresas', 'Contas com histórico e vínculos comerciais.', rows ? `<table><thead><tr><th>Empresa</th><th>Segmento</th><th>Cidade</th><th>Telefone</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhuma Empresa encontrada'), records.length);
+      const rows = records.map(item => {
+        const contacts = contactsForCompany(item.name);
+        const contactNames = contacts.length ? contacts.map(contact => escapeHTML(contact.name)).join(', ') : 'Nenhum contato';
+        return `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="company" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td><b>${contacts.length} ${contacts.length === 1 ? 'contato' : 'contatos'}</b><br><small>${contactNames}</small></td><td>${escapeHTML(item.segment)}</td><td>${escapeHTML(item.city)}</td><td>${escapeHTML(item.phone)}</td><td>${escapeHTML(userName(item.ownerId))}</td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="company" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`;
+      }).join('');
+      return listShell('companies', 'Empresas', 'Contas com histórico e vínculos comerciais.', rows ? `<table><thead><tr><th>Empresa</th><th>Contatos</th><th>Segmento</th><th>Cidade</th><th>Telefone</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhuma Empresa encontrada'), records.length);
     }
 
     function dealsHTML() {
       const records = applyRecordFilters('deals', visibleDeals());
       if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com automações demonstrativas.', renderKanban('deals', records), records.length, dealStages);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(dealStages, item.stage, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
-      const table = rows ? `<table><thead><tr><th>Negócio</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(dealStages, item.stage, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const table = rows ? `<table><thead><tr><th>Negócio</th><th>Empresa e Contato</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
       return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com automações demonstrativas.', table, records.length, dealStages);
     }
-
     function notificationsHTML() {
       const records = state.notifications.filter(item => item.userId === state.currentUserId);
       return `<div class="page-toolbar"><div><h2>Notificações</h2><p>Avisos para ${escapeHTML(currentUser().name)}.</p></div><div class="toolbar-actions"><button class="button" data-action="read-all">✓ Marcar todas como lidas</button></div></div><div class="notice-list">${records.map(item => `<article class="notice ${item.read ? '' : 'unread'}"><span class="notice-icon">♢</span><div><p>${escapeHTML(item.text)}</p><small>${escapeHTML(item.detail)} · ${escapeHTML(item.time)}</small></div>${item.read ? '<span class="tag green">Lida</span>' : `<button class="button small" data-action="read" data-id="${item.id}">Marcar como lida</button>`}</article>`).join('') || emptyHTML('Nenhuma notificação para este perfil')}</div>`;

@@ -586,6 +586,63 @@ async function createLead(page, name, options = {}) {
     assert.equal(await page.locator('#page-companies tbody tr').filter({ hasText: 'Empresa Relacionada' }).count(), 1);
   });
 
+  await run('CRREL-03 e CRREL-04 mostram Empresa e Contato nos Negócios em Lista e Kanban', async page => {
+    await goTo(page, 'Negócios');
+    const linkedRow = page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' });
+    assert.match(await linkedRow.innerText(), /Empresa\s+Arkos Estética/);
+    assert.match(await linkedRow.innerText(), /São Paulo \/ SP · \(11\) 3456-7788/);
+    assert.match(await linkedRow.innerText(), /Contato\s+Ana Berclay/);
+    assert.match(await linkedRow.innerText(), /ana@arkos\.com\.br · \(11\) 3456-7788/);
+
+    const missingRow = page.locator('#page-deals tbody tr').filter({ hasText: 'Licenças Biocare' });
+    assert.match(await missingRow.innerText(), /Empresa\s+Biocare Farmacêutica\s+Cadastro não localizado/);
+    assert.match(await missingRow.innerText(), /Contato\s+João Vilela\s+Cadastro não localizado/);
+
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    const linkedCard = page.locator('#page-deals .kanban-card[data-id="N-16312"]');
+    assert.match(await linkedCard.innerText(), /Empresa\s+Arkos Estética/);
+    assert.match(await linkedCard.innerText(), /Contato\s+Ana Berclay/);
+  });
+
+  await run('CRREL-05 a CRREL-08 mostram vínculos de Contatos e Empresas e estados vazios', async page => {
+    await goTo(page, 'Contatos');
+    let contactRow = page.locator('#page-contacts tbody tr').filter({ hasText: 'Ana Berclay' });
+    assert.match(await contactRow.innerText(), /Arkos Estética/);
+
+    await page.getByRole('button', { name: /Novo Contato/ }).click();
+    let dialog = page.locator('#entityDialog');
+    await dialog.getByLabel('Nome completo *').fill('Contato Normalizado');
+    await dialog.getByLabel('Empresa *').fill('  arkos estética  ');
+    await dialog.getByLabel('E-mail *').fill('normalizado@teste.invalid');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+
+    await goTo(page, 'Empresas');
+    let companyRow = page.locator('#page-companies tbody tr').filter({ hasText: 'Arkos Estética' });
+    assert.match(await companyRow.innerText(), /2 contatos/);
+    assert.match(await companyRow.innerText(), /Ana Berclay/);
+    assert.match(await companyRow.innerText(), /Contato Normalizado/);
+
+    await page.getByRole('button', { name: /Novo Empresa/ }).click();
+    dialog = page.locator('#entityDialog');
+    await dialog.getByLabel('Razão / nome da Empresa *').fill('Empresa Sem Contatos');
+    await dialog.getByLabel('Responsável *').selectOption('u-vitor');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    companyRow = page.locator('#page-companies tbody tr').filter({ hasText: 'Empresa Sem Contatos' });
+    assert.match(await companyRow.innerText(), /0 contatos/);
+    assert.match(await companyRow.innerText(), /Nenhum contato/);
+
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: /Novo Negócio/ }).click();
+    dialog = page.locator('#entityDialog');
+    await dialog.getByLabel('Título do Negócio *').fill('Negócio Sem Contato');
+    await dialog.getByLabel('Empresa *').fill('Arkos Estética');
+    await dialog.getByLabel('Valor (R$) *').fill('100');
+    await dialog.getByLabel('Responsável *').selectOption('u-paula');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    const noContactRow = page.locator('#page-deals tbody tr').filter({ hasText: 'Negócio Sem Contato' });
+    assert.match(await noContactRow.innerText(), /Contato\s+Não informado/);
+  });
+
   await run('DRAWER-01 abre os quatro cadastros pelo nome sem lápis', async page => {
     const records = [
       ['Leads', 'Larissa Spinola', 'Editar Lead', 'Nome completo *', 'Larissa Spinola', 'L-1048'],
