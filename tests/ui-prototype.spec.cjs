@@ -560,6 +560,32 @@ async function createLead(page, name, options = {}) {
     await assertCanonicalRehydration(page);
   });
 
+  await run('CRREL-01 e CRREL-02 criam e persistem uma Empresa pela listagem', async page => {
+    await goTo(page, 'Empresas');
+    await page.getByRole('button', { name: /Novo Empresa/ }).click();
+    const dialog = page.locator('#entityDialog');
+    assert.equal(await dialog.getByRole('heading').innerText(), 'Novo Empresa');
+    await dialog.getByLabel('Razão / nome da Empresa *').fill('Empresa Relacionada');
+    await dialog.getByLabel('Cidade / UF').fill('Ribeirão Preto / SP');
+    await dialog.getByLabel('Segmento').fill('Tecnologia');
+    await dialog.getByLabel('Telefone').fill('(16) 3000-4000');
+    await dialog.getByLabel('Responsável *').selectOption('u-paula');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+
+    let company = (await stateFrom(page)).companies.find(item => item.name === 'Empresa Relacionada');
+    assert.match(company.id, /^E-\d+$/);
+    assert.deepEqual({ city: company.city, segment: company.segment, phone: company.phone, ownerId: company.ownerId }, {
+      city: 'Ribeirão Preto / SP', segment: 'Tecnologia', phone: '(16) 3000-4000', ownerId: 'u-paula'
+    });
+    assert.equal(await page.locator('#page-companies tbody tr').filter({ hasText: 'Empresa Relacionada' }).count(), 1);
+
+    await assertCanonicalRehydration(page);
+    await goTo(page, 'Empresas');
+    company = (await stateFrom(page)).companies.find(item => item.name === 'Empresa Relacionada');
+    assert.equal(company.name, 'Empresa Relacionada');
+    assert.equal(await page.locator('#page-companies tbody tr').filter({ hasText: 'Empresa Relacionada' }).count(), 1);
+  });
+
   await run('DRAWER-01 abre os quatro cadastros pelo nome sem lápis', async page => {
     const records = [
       ['Leads', 'Larissa Spinola', 'Editar Lead', 'Nome completo *', 'Larissa Spinola', 'L-1048'],

@@ -1476,6 +1476,7 @@
 
     function listShell(entity, title, description, body, count, stageOptions = []) {
       const plural = { leads: 'Lead', contacts: 'Contato', companies: 'Empresa', deals: 'Negócio' }[entity];
+      const singular = { leads: 'lead', contacts: 'contact', companies: 'company', deals: 'deal' }[entity];
       const filter = getFilterState(entity);
       const selectedStages = filter.criteria.stage?.value || [];
       const quickStage = selectedStages.length === 1 ? selectedStages[0] : 'Todos';
@@ -1484,7 +1485,7 @@
       const mode = stageOptions.length ? getViewMode(entity) : 'list';
       const viewSwitch = stageOptions.length ? `<div class="view-switch" aria-label="Modo de visualização"><button type="button" aria-label="Lista" class="${mode === 'list' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="list">☷ Lista</button><button type="button" aria-label="Kanban" class="${mode === 'kanban' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="kanban">▦ Kanban</button></div>` : '';
       const manageFields = currentUser().role === 'Administrador' ? `<button class="button" data-action="manage-fields" data-scope="${entity}">Gerenciar campos</button>` : '';
-      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}${manageFields}<button class="button primary" data-action="new" data-entity="${entity.slice(0, -1)}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados de demonstração</span></div></div>`;
+      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}${manageFields}<button class="button primary" data-action="new" data-entity="${singular}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados de demonstração</span></div></div>`;
     }
 
     function leadsHTML() {
