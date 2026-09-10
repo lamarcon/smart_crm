@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 15,
+  "next_id": 16,
   "lessons": [
     {
       "id": "L-001",
@@ -256,6 +256,24 @@
       ],
       "created": "2026-09-01T14:33:24Z",
       "last_seen": "2026-09-01T14:33:24Z"
+    },
+    {
+      "id": "L-015",
+      "key": "surviving_mutant::assert every independently rendered branch of compound empty value requirements",
+      "text": "Assert every independently rendered branch of compound empty-value requirements.",
+      "signal": "surviving_mutant",
+      "scope": "ui-tests",
+      "status": "candidate",
+      "features": [
+        "crm-relationship-cards"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/crm-relationship-cards/validation.md:53 (ui-tests)"
+      ],
+      "created": "2026-09-10T18:27:30Z",
+      "last_seen": "2026-09-10T18:27:30Z"
     }
   ]
 }

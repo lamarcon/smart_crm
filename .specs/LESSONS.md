@@ -98,6 +98,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: validation.md:Interactive UAT (deployment)
 - last seen: 2026-09-01T14:33:24Z
 
+### L-015 - Assert every independently rendered branch of compound empty-value requirements.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `ui-tests` · harmful: 0
+- features: crm-relationship-cards
+- evidence: .specs/features/crm-relationship-cards/validation.md:53 (ui-tests)
+- last seen: 2026-09-10T18:27:30Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
