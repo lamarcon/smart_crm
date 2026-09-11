@@ -47,11 +47,11 @@ A ficha esconde a aba Campos adicionais quando o registro não possui campos dis
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AVCF-01 | P1: Acessar Campos adicionais | Execute | Implemented |
-| AVCF-02 | P1: Acessar Campos adicionais | Execute | Implemented |
-| AVCF-03 | P1: Acessar Campos adicionais | Execute | Implemented |
-| AVCF-04 | P1: Acessar Campos adicionais | Execute | Implemented |
-| AVCF-05 | Edge case: módulo sem campos | Execute | Implemented |
+| AVCF-01 | P1: Acessar Campos adicionais | Execute | Verified |
+| AVCF-02 | P1: Acessar Campos adicionais | Execute | Verified |
+| AVCF-03 | P1: Acessar Campos adicionais | Execute | Verified |
+| AVCF-04 | P1: Acessar Campos adicionais | Execute | Verified |
+| AVCF-05 | Edge case: módulo sem campos | Execute | Verified |
 
 **Coverage:** 5 total, 5 mapped to inline execution, 0 unmapped.
 
