@@ -58,13 +58,13 @@ A interface publicada ainda se identifica como ambiente de demonstração e a fi
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| PCCP-01 | P1: Interface de produção | Execute | Implemented |
-| PCCP-02 | P1: Interface de produção | Execute | Implemented |
-| PCCP-03 | P1: Interface de produção | Execute | Implemented |
-| PCCP-04 | P1: Empresa vinculada | Execute | Implemented |
-| PCCP-05 | P1: Empresa vinculada | Execute | Implemented |
-| PCCP-06 | P1: Empresa vinculada | Execute | Implemented |
-| PCCP-07 | Edge case: nome normalizado | Execute | Implemented |
+| PCCP-01 | P1: Interface de produção | Execute | Verified |
+| PCCP-02 | P1: Interface de produção | Execute | Verified |
+| PCCP-03 | P1: Interface de produção | Execute | Verified |
+| PCCP-04 | P1: Empresa vinculada | Execute | Verified |
+| PCCP-05 | P1: Empresa vinculada | Execute | Verified |
+| PCCP-06 | P1: Empresa vinculada | Execute | Verified |
+| PCCP-07 | Edge case: nome normalizado | Execute | Verified |
 
 **Coverage:** 7 total, 7 mapped to inline execution steps, 0 unmapped.
 
