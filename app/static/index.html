@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101828">
-  <title>Smart CRM — Ambiente de demonstração</title>
+  <title>Smart CRM</title>
   <style>
     :root {
       --navy-950: #0a1020;
@@ -236,6 +236,15 @@
     .drawer-quote p { margin: 0; color: var(--slate-500); font-size: 11px; }
     .drawer-quote strong { color: var(--navy-900); font-size: 13px; }
     .drawer-quote .tag { align-self: end; justify-self: end; }
+    .drawer-company-summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--slate-200); }
+    .drawer-company-summary > h4 { margin: 0 0 10px; color: var(--slate-500); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+    .drawer-company-card { padding: 15px; border: 1px solid var(--slate-200); border-radius: 11px; background: var(--slate-50); }
+    .drawer-company-card strong { display: block; color: var(--navy-800); font-size: 15px; }
+    .drawer-company-card > span { display: block; margin-top: 4px; color: var(--slate-500); font-size: 12px; }
+    .drawer-company-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 13px; }
+    .drawer-company-meta div { display: grid; gap: 3px; }
+    .drawer-company-meta small { color: var(--slate-400); font-size: 10px; text-transform: uppercase; }
+    .drawer-company-meta span { color: var(--navy-700); font-size: 12px; }
     body.drawer-open { overflow: hidden; }
     .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 17px 20px; border-bottom: 1px solid var(--slate-200); }
     .modal-head h3 { margin: 0; font-size: 17px; }
@@ -363,7 +372,7 @@
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
         <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
       </nav>
-      <div class="sidebar-note"><strong>Ambiente local</strong><br>Dados confirmados usam o PostgreSQL; preferências transitórias permanecem neste navegador.</div>
+
     </aside>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
@@ -373,9 +382,9 @@
         <button class="mobile-menu" id="mobileMenu" aria-label="Abrir menu">☰</button>
         <div class="page-heading"><h1 id="topTitle">Visão geral</h1><p id="topSubtitle">Acompanhe os principais indicadores comerciais</p></div>
         <div class="top-actions">
-          <div class="profile-box" title="Alterne o usuário para simular as permissões">
+          <div class="profile-box" title="Alterne o usuário ativo">
             <div class="avatar" id="profileAvatar">AM</div>
-            <label class="sr-only" for="profileSelect">Perfil demonstrativo</label>
+            <label class="sr-only" for="profileSelect">Perfil de usuário</label>
             <select id="profileSelect"></select>
           </div>
           <button class="icon-button" data-view="notifications" aria-label="Notificações">♢<span class="badge-count" id="topNoticeCount">0</span></button>
@@ -429,7 +438,7 @@
       <div class="drawer-head"><div><h3 id="entityDrawerTitle">Editar registro</h3><p id="entityDrawerSubtitle">Altere os dados e salve para atualizar a lista.</p></div><button type="button" class="close-button" data-action="cancel-drawer" aria-label="Fechar painel">×</button></div>
       <div class="drawer-body">
         <div class="drawer-tabs" id="drawerTabs" role="tablist" aria-label="Seções do cadastro" hidden><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="info" aria-selected="true">Informações</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="custom" aria-selected="false">Campos adicionais</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="quotes" aria-selected="false">Orçamentos</button></div>
-        <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div></section>
+        <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div><section class="drawer-company-summary" id="drawerCompanySummary" aria-label="Empresa vinculada" hidden></section></section>
         <section id="drawerCustomPanel" role="tabpanel" hidden><div class="form-grid" id="drawerCustomFields"></div><div class="drawer-custom-add"><div class="field"><label for="drawerAddCustomField">Campo adicional para adicionar</label><select id="drawerAddCustomField"></select></div><button type="button" class="button small" data-action="add-custom-field">Adicionar campo</button></div></section>
         <section id="drawerQuotesPanel" role="tabpanel" hidden></section>
       </div>
@@ -502,7 +511,7 @@
 
   <dialog id="userDialog">
     <form id="userForm">
-      <div class="modal-head"><div><h3 id="userDialogTitle">Convidar funcionário</h3><p class="hint">Convite simulado neste ambiente local.</p></div><button type="button" class="close-button" data-close="userDialog" aria-label="Fechar formulário de usuário">×</button></div>
+      <div class="modal-head"><div><h3 id="userDialogTitle">Convidar funcionário</h3><p class="hint">Defina os dados e as permissões do funcionário.</p></div><button type="button" class="close-button" data-close="userDialog" aria-label="Fechar formulário de usuário">×</button></div>
       <div class="modal-body"><div class="form-grid">
         <div class="field"><label for="userName">Nome completo</label><input id="userName" name="name" required></div>
         <div class="field"><label for="userEmail">E-mail</label><input id="userEmail" name="email" type="email" required></div>
@@ -838,7 +847,9 @@
       document.documentElement.dataset.workspaceReady = String(ready);
       document.documentElement.dataset.workspaceWritable = String(writable);
       document.getElementById('workspaceBanner').textContent = message;
-      document.getElementById('workspaceStatus').dataset.status = status;
+      const workspaceStatus = document.getElementById('workspaceStatus');
+      workspaceStatus.dataset.status = status;
+      workspaceStatus.hidden = status === 'ready';
       document.getElementById('bootstrapOpen').hidden = !(ready && !writable && !workspaceInitialized && status === 'loading');
     }
     function workspaceCounts(source) {
@@ -951,7 +962,7 @@
           confirmedState = extractDurableState(payload.state);
           writeConfirmedCache(workspaceVersion, payload.state);
           saveState();
-          setWorkspaceAccess(true, true, 'Ambiente de demonstração — dados fictícios persistidos no PostgreSQL local.', 'ready');
+          setWorkspaceAccess(true, true, 'Workspace conectado.', 'ready');
           render();
           return;
         }
@@ -992,7 +1003,7 @@
         writeConfirmedCache(workspaceVersion, payload.state);
         saveState();
         document.getElementById('bootstrapDialog').close();
-        setWorkspaceAccess(true, true, 'Ambiente de demonstração — dados fictícios persistidos no PostgreSQL local.', 'ready');
+        setWorkspaceAccess(true, true, 'Workspace conectado.', 'ready');
         render();
         toast('Dados iniciais persistidos no PostgreSQL.');
       } catch (failure) {
@@ -1431,11 +1442,11 @@
       const dashboardFilterCount = activeFilterCount(`dashboard_${dashboard.scope}`);
       const scopeLabel = ({ all: 'Todos', leads: 'Leads', deals: 'Negócios' })[dashboard.scope];
       return `
-        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions">${currentUser().role === 'Administrador' ? '<button class="button" data-action="open-deleted">↺ Recuperar excluídos</button><button class="button" data-action="open-bitrix-import">⇩ Importar Bitrix</button>' : ''}<button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar demo</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
+        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions">${currentUser().role === 'Administrador' ? '<button class="button" data-action="open-deleted">↺ Recuperar excluídos</button><button class="button" data-action="open-bitrix-import">⇩ Importar Bitrix</button>' : ''}<button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar dados iniciais</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
         <div class="stats">
           <article class="stat" style="--stat-color:var(--blue-100)"><div class="stat-top"><span>Leads em contato</span><span class="stat-icon">◎</span></div><strong>${leads.filter(item => item.stage === 'Em contato').length}</strong><small><b>Dados locais</b> deste perfil</small></article>
           <article class="stat" style="--stat-color:var(--purple-100)"><div class="stat-top"><span>Negócios abertos</span><span class="stat-icon">◇</span></div><strong>${openDeals.length}</strong><small>${money(total)} em pipeline</small></article>
-          <article class="stat" style="--stat-color:var(--green-100)"><div class="stat-top"><span>Receita ganha</span><span class="stat-icon">↗</span></div><strong>${money(won)}</strong><small>Somente dados demonstrativos</small></article>
+          <article class="stat" style="--stat-color:var(--green-100)"><div class="stat-top"><span>Receita ganha</span><span class="stat-icon">↗</span></div><strong>${money(won)}</strong><small>Dados do conjunto visível</small></article>
           <article class="stat" style="--stat-color:var(--amber-100)"><div class="stat-top"><span>Conversão de Deals</span><span class="stat-icon">%</span></div><strong>${deals.length ? Math.round(wonDeals.length / deals.length * 100) : 0}%</strong><small>Negócios ganhos no conjunto visível</small></article>
         </div>
         <div class="grid-two">
@@ -1530,7 +1541,7 @@
       const mode = stageOptions.length ? getViewMode(entity) : 'list';
       const viewSwitch = stageOptions.length ? `<div class="view-switch" aria-label="Modo de visualização"><button type="button" aria-label="Lista" class="${mode === 'list' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="list">☷ Lista</button><button type="button" aria-label="Kanban" class="${mode === 'kanban' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="kanban">▦ Kanban</button></div>` : '';
       const manageFields = currentUser().role === 'Administrador' ? `<button class="button" data-action="manage-fields" data-scope="${entity}">Gerenciar campos</button>` : '';
-      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}${manageFields}<button class="button primary" data-action="new" data-entity="${singular}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados de demonstração</span></div></div>`;
+      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}${manageFields}<button class="button primary" data-action="new" data-entity="${singular}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados do workspace</span></div></div>`;
     }
 
     function leadsHTML() {
@@ -1559,10 +1570,10 @@
 
     function dealsHTML() {
       const records = applyRecordFilters('deals', visibleDeals());
-      if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com automações demonstrativas.', renderKanban('deals', records), records.length, dealStages);
+      if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com acompanhamento por etapas.', renderKanban('deals', records), records.length, dealStages);
       const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(dealStages, item.stage, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Negócio</th><th>Empresa e Contato</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
-      return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com automações demonstrativas.', table, records.length, dealStages);
+      return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com acompanhamento por etapas.', table, records.length, dealStages);
     }
     function notificationsHTML() {
       const records = state.notifications.filter(item => item.userId === state.currentUserId);
@@ -1633,7 +1644,7 @@
       const user = state.users.find(candidate => candidate.id === id && candidate.status === 'Pendente');
       if (!user) return false;
       user.invitedAt = nextIso(user.invitedAt);
-      saveState(); render(); toast(`Convite de ${user.name} reenviado na demonstração.`);
+      saveState(); render(); toast(`Convite de ${user.name} reenviado.`);
       return true;
     }
 
@@ -1647,7 +1658,7 @@
       return true;
     }
 
-    function emptyHTML(message) { return `<div class="empty"><div class="empty-icon">⌕</div><b>${escapeHTML(message)}</b><p>Tente ajustar a busca ou restaurar os dados de demonstração.</p></div>`; }
+    function emptyHTML(message) { return `<div class="empty"><div class="empty-icon">⌕</div><b>${escapeHTML(message)}</b><p>Tente ajustar a busca ou restaurar os dados iniciais.</p></div>`; }
 
     function render() {
       profileOptions();
@@ -1802,9 +1813,10 @@
       form.dataset.entity = entity;
       form.dataset.id = id;
       document.getElementById('entityDrawerTitle').textContent = `Editar ${entityLabel(entity)}`;
-      document.getElementById('entityDrawerSubtitle').textContent = `${id} · As alterações ficam somente neste navegador.`;
+      document.getElementById('entityDrawerSubtitle').textContent = `${id}`;
       const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
       document.getElementById('drawerFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
+      renderDrawerCompanySummary(entity, record);
       const hasCustomFields = moduleAvailableCustomFields(collection, record).length > 0;
       renderDrawerCustomFields(record);
       const customTab = document.querySelector('[data-drawer-tab="custom"]');
@@ -1822,6 +1834,25 @@
       drawer.querySelector('input, select')?.focus();
     }
 
+    function renderDrawerCompanySummary(entity, record) {
+      const summary = document.getElementById('drawerCompanySummary');
+      summary.hidden = entity !== 'contact';
+      if (summary.hidden) {
+        summary.innerHTML = '';
+        return;
+      }
+      const linkedName = String(record.company || '').trim();
+      if (!linkedName) {
+        summary.innerHTML = '<h4>Empresa vinculada</h4><div class="drawer-company-card"><strong>Nenhuma empresa vinculada</strong></div>';
+        return;
+      }
+      const company = relatedRecord('companies', linkedName);
+      if (!company) {
+        summary.innerHTML = '<h4>Empresa vinculada</h4><div class="drawer-company-card"><strong>' + escapeHTML(linkedName) + '</strong><span>Cadastro não localizado</span></div>';
+        return;
+      }
+      summary.innerHTML = '<h4>Empresa vinculada</h4><div class="drawer-company-card"><strong>' + escapeHTML(company.name) + '</strong><span>' + escapeHTML(company.segment || 'Segmento não informado') + '</span><div class="drawer-company-meta"><div><small>Cidade / UF</small><span>' + escapeHTML(company.city || 'Não informado') + '</span></div><div><small>Telefone</small><span>' + escapeHTML(company.phone || 'Não informado') + '</span></div></div></div>';
+    }
     function renderDrawerQuotes(deal) {
       const quotes = Array.isArray(deal?.quotes) ? deal.quotes : [];
       document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div><button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button></div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${money(quote.total)}</strong><span></span><span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
@@ -2000,7 +2031,7 @@
         ensureSchemaFields(state, collection, base);
         state[collection].unshift(base);
       }
-      notify(existing ? `${entityLabel(entity)} atualizado.` : `Novo ${entityLabel(entity)} criado.`, data.name || data.title || data.company || 'Registro demonstrativo');
+      notify(existing ? `${entityLabel(entity)} atualizado.` : `Novo ${entityLabel(entity)} criado.`, data.name || data.title || data.company || 'Registro');
       saveState();
       if (form.id === 'drawerForm') closeEntityDrawer(true);
       else document.getElementById('entityDialog').close();
@@ -2012,10 +2043,10 @@
     function collectionFor(entity) { return ({ lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' })[entity]; }
 
     function deleteEntity(entity, id) {
-      if (!confirm(`Excluir este ${entityLabel(entity)} apenas da demonstração?`)) return;
+      if (!confirm(`Excluir este ${entityLabel(entity)}?`)) return;
       const collection = collectionFor(entity);
       state[collection] = state[collection].filter(item => item.id !== id);
-      saveState(); render(); toast(`${entityLabel(entity)} removido da demonstração.`);
+      saveState(); render(); toast(`${entityLabel(entity)} removido.`);
     }
 
     let undoSnapshot = null;
@@ -2465,8 +2496,8 @@
     }
 
     function resetDemo() {
-      if (!confirm('Restaurar todos os dados fictícios e descartar suas alterações locais?')) return;
-      state = mergeDurableState(extractDurableState(normalizeState(seedState())), state); saveState({ reset: true }); activeView = 'dashboard'; render(); toast('Dados de demonstração restaurados.');
+      if (!confirm('Restaurar os dados iniciais e descartar suas alterações?')) return;
+      state = mergeDurableState(extractDurableState(normalizeState(seedState())), state); saveState({ reset: true }); activeView = 'dashboard'; render(); toast('Dados iniciais restaurados.');
     }
 
     function toggleSidebar(open) {

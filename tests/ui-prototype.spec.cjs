@@ -186,7 +186,7 @@ async function assertCanonicalRehydration(page) {
       return route.fulfill({ status: 405 });
     });
     await independent.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-    await independent.locator('#workspaceBanner').waitFor();
+    await independent.locator('#workspaceBanner').waitFor({ state: 'attached' });
     await independent.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
     assert.deepEqual(durableState(await stateFrom(independent)), expected, 'contexto independente não reidratou o estado canônico');
   } finally {
@@ -229,7 +229,7 @@ async function goTo(page, name) {
 }
 
 async function selectProfile(page, userId) {
-  await page.getByLabel('Perfil demonstrativo').selectOption(userId);
+  await page.getByLabel('Perfil de usuário').selectOption(userId);
 }
 
 async function visibleRows(page, entity) {
@@ -648,6 +648,46 @@ async function createLead(page, name, options = {}) {
     assert.match(await emptyRelationshipRow.innerText(), /Contato\s+Não informado/);
   });
 
+  await run('PCCP-04 a PCCP-07 mostram a Empresa vinculada na ficha do Contato', async page => {
+    let workspace = await stateFrom(page);
+    workspace.contacts.find(item => item.id === 'C-2281').company = '  arkos estética  ';
+    await setMockWorkspace(page, workspace);
+    await reloadReady(page);
+    await goTo(page, 'Contatos');
+    await page.getByRole('button', { name: 'Ana Berclay', exact: true }).click();
+
+    let companyCard = page.locator('#drawerCompanySummary');
+    await companyCard.waitFor({ state: 'visible' });
+    assert.equal(await companyCard.getAttribute('hidden'), null);
+    assert.match(await companyCard.innerText(), /empresa vinculada/i);
+    assert.match(await companyCard.innerText(), /Arkos Estética/);
+    assert.match(await companyCard.innerText(), /Médico e Hospitalar/);
+    assert.ok((await companyCard.innerText()).includes('São Paulo / SP'));
+    assert.ok((await companyCard.innerText()).includes('(11) 3456-7788'));
+    await page.getByRole('button', { name: 'Cancelar' }).click();
+
+    workspace = await stateFrom(page);
+    workspace.contacts.find(item => item.id === 'C-2281').company = 'Empresa sem cadastro';
+    await setMockWorkspace(page, workspace);
+    await reloadReady(page);
+    await goTo(page, 'Contatos');
+    await page.getByRole('button', { name: 'Ana Berclay', exact: true }).click();
+    companyCard = page.locator('#drawerCompanySummary');
+    await companyCard.waitFor({ state: 'visible' });
+    assert.match(await companyCard.innerText(), /Empresa sem cadastro/);
+    assert.match(await companyCard.innerText(), /Cadastro não localizado/);
+    await page.getByRole('button', { name: 'Cancelar' }).click();
+
+    workspace = await stateFrom(page);
+    workspace.contacts.find(item => item.id === 'C-2281').company = '';
+    await setMockWorkspace(page, workspace);
+    await reloadReady(page);
+    await goTo(page, 'Contatos');
+    await page.getByRole('button', { name: 'Ana Berclay', exact: true }).click();
+    companyCard = page.locator('#drawerCompanySummary');
+    await companyCard.waitFor({ state: 'visible' });
+    assert.match(await companyCard.innerText(), /Nenhuma empresa vinculada/);
+  });
   await run('DRAWER-01 abre os quatro cadastros pelo nome sem lápis', async page => {
     const records = [
       ['Leads', 'Larissa Spinola', 'Editar Lead', 'Nome completo *', 'Larissa Spinola', 'L-1048'],
@@ -661,7 +701,8 @@ async function createLead(page, name, options = {}) {
       await page.locator(`#page-${{ Leads: 'leads', Contatos: 'contacts', Empresas: 'companies', Negócios: 'deals' }[view]}`).getByRole('button', { name, exact: true }).click();
       const drawer = page.locator('#entityDrawer');
       assert.match(await drawer.getAttribute('class'), /open/);
-      assert.equal(await drawer.getByRole('heading').innerText(), title);
+      await drawer.locator('#entityDrawerTitle').waitFor({ state: 'visible' });
+      assert.equal(await drawer.locator('#entityDrawerTitle').innerText(), title);
       assert.equal(await drawer.getByLabel(fieldLabel).inputValue(), fieldValue);
       if (view === 'Contatos') {
         assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).count(), 0);
@@ -1197,7 +1238,7 @@ async function createLead(page, name, options = {}) {
     await createLead(page, 'Lead a Restaurar');
     await goTo(page, 'Visão geral');
     page.once('dialog', dialog => dialog.accept());
-    await page.getByRole('button', { name: /Restaurar demo/ }).click();
+    await page.getByRole('button', { name: /Restaurar dados iniciais/ }).click();
     const restored = await stateFrom(page);
     assert.deepEqual(restored, original);
     assert.ok(!restored.leads.some(lead => lead.name === 'Lead a Restaurar'));
@@ -1915,7 +1956,7 @@ async function createLead(page, name, options = {}) {
     assert.deepEqual({ name: juliana.name, email: juliana.email, jobTitle: juliana.jobTitle, team: juliana.team, role: juliana.role, status: juliana.status }, {
       name: 'Juliana Lima', email: 'juliana@teste.invalid', jobTitle: 'Consultora comercial', team: 'Vendas CMS', role: 'Vendedor', status: 'Pendente'
     });
-    assert.equal(await page.getByLabel('Perfil demonstrativo').locator('option[value="' + juliana.id + '"]').count(), 0);
+    assert.equal(await page.getByLabel('Perfil de usuário').locator('option[value="' + juliana.id + '"]').count(), 0);
 
     await page.getByRole('button', { name: 'Convidar funcionário' }).click();
     await dialog.getByLabel('Nome completo').fill('Juliana Duplicada');
@@ -1944,10 +1985,10 @@ async function createLead(page, name, options = {}) {
 
     await page.getByRole('button', { name: 'Simular aceitação de Juliana Lima' }).click();
     assert.equal((await stateFrom(page)).users.find(user => user.id === juliana.id).status, 'Ativo');
-    assert.equal(await page.getByLabel('Perfil demonstrativo').locator(`option[value="${juliana.id}"]`).count(), 1);
+    assert.equal(await page.getByLabel('Perfil de usuário').locator(`option[value="${juliana.id}"]`).count(), 1);
     await page.getByRole('button', { name: 'Desativar Juliana Lima' }).click();
     assert.equal((await stateFrom(page)).users.find(user => user.id === juliana.id).status, 'Inativo');
-    assert.equal(await page.getByLabel('Perfil demonstrativo').locator(`option[value="${juliana.id}"]`).count(), 0);
+    assert.equal(await page.getByLabel('Perfil de usuário').locator(`option[value="${juliana.id}"]`).count(), 0);
 
     await page.getByRole('button', { name: 'Convidar funcionário' }).click();
     await dialog.getByLabel('Nome completo').fill('Rafael Teste');
@@ -1959,7 +2000,7 @@ async function createLead(page, name, options = {}) {
     await page.getByRole('button', { name: 'Cancelar convite de Rafael Teste' }).click();
     const canceled = (await stateFrom(page)).users.find(user => user.email === 'rafael@teste.invalid');
     assert.equal(canceled.status, 'Cancelado');
-    assert.equal(await page.getByLabel('Perfil demonstrativo').locator(`option[value="${canceled.id}"]`).count(), 0);
+    assert.equal(await page.getByLabel('Perfil de usuário').locator(`option[value="${canceled.id}"]`).count(), 0);
 
     await page.getByRole('button', { name: 'Convidar funcionário' }).click();
     await dialog.getByLabel('Nome completo').fill('Rafael Reativado');
@@ -2037,12 +2078,21 @@ async function createLead(page, name, options = {}) {
     assert.match(await page.locator('#page-deals').innerText(), /Conferência fiscal interna/);
   });
 
-  await run('DEMO-15 mantém o aviso demonstrativo em todas as telas', async page => {
+  await run('PCCP-01 a PCCP-03 removem avisos de demonstração sem ocultar alertas operacionais', async page => {
     for (const destination of ['Visão geral', 'Leads', 'Contatos', 'Empresas', 'Negócios', 'Notificações']) {
       await goTo(page, destination);
-      const banner = page.getByText(/Ambiente de demonstração — dados fictícios/).first();
-      assert.equal(await banner.isVisible(), true);
+      assert.equal(await page.locator('#workspaceStatus').isVisible(), false);
+      assert.equal(await page.getByText('Ambiente local', { exact: true }).count(), 0);
+      assert.equal(await page.getByText(/demonstração|demonstrativos|dados fictícios|ambiente local/i).count(), 0);
     }
+    assert.equal(await page.title(), 'Smart CRM');
+
+    const unavailableView = await openFresh({ loadFailure: true });
+    const unavailable = unavailableView.page;
+    await unavailable.locator('#workspaceBanner').waitFor();
+    assert.equal(await unavailable.locator('#workspaceStatus').isVisible(), true);
+    assert.equal(await unavailable.locator('#workspaceBanner').innerText(), 'Banco indisponível. Alterações bloqueadas.');
+    await unavailableView.context.close();
   });
 
   await run('DEMO-16 preserva menu e ação principal em viewport móvel', async page => {
