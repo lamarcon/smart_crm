@@ -1817,13 +1817,13 @@
       const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
       document.getElementById('drawerFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
       renderDrawerCompanySummary(entity, record);
-      const hasCustomFields = moduleAvailableCustomFields(collection, record).length > 0;
+
       renderDrawerCustomFields(record);
       const customTab = document.querySelector('[data-drawer-tab="custom"]');
       const quotesTab = document.querySelector('[data-drawer-tab="quotes"]');
-      customTab.hidden = !hasCustomFields;
+      customTab.hidden = false;
       quotesTab.hidden = entity !== 'deal';
-      document.getElementById('drawerTabs').hidden = entity !== 'deal' && !hasCustomFields;
+      document.getElementById('drawerTabs').hidden = false;
       if (entity === 'deal') renderDrawerQuotes(record);
       setDrawerTab('info');
       drawerInitialValue = formSignature(form);
@@ -1928,10 +1928,10 @@
       settings.hiddenCustomFieldKeys = [...new Set([...hidden, key])];
       saveState();
       renderDrawerCustomFields(record);
-      const hasCustomFields = moduleAvailableCustomFields(collection, record).length > 0;
-      document.querySelector('[data-drawer-tab="custom"]').hidden = !hasCustomFields;
-      document.getElementById('drawerTabs').hidden = form.dataset.entity !== 'deal' && !hasCustomFields;
-      setDrawerTab(hasCustomFields ? drawerActiveTab : 'info');
+
+      document.querySelector('[data-drawer-tab="custom"]').hidden = false;
+      document.getElementById('drawerTabs').hidden = false;
+      setDrawerTab(drawerActiveTab);
       if (!wasDirty) drawerInitialValue = formSignature(form);
       toast(`Campo ${field.label} ocultado em todos os cadastros.`);
       return true;

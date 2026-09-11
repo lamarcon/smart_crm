@@ -704,9 +704,15 @@ async function createLead(page, name, options = {}) {
       await drawer.locator('#entityDrawerTitle').waitFor({ state: 'visible' });
       assert.equal(await drawer.locator('#entityDrawerTitle').innerText(), title);
       assert.equal(await drawer.getByLabel(fieldLabel).inputValue(), fieldValue);
+      const customFieldsTab = drawer.getByRole('tab', { name: 'Campos adicionais' });
+      assert.equal(await customFieldsTab.isVisible(), true);
       if (view === 'Contatos') {
-        assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).count(), 0);
+        await customFieldsTab.click();
+        assert.match(await drawer.locator('#drawerCustomPanel').innerText(), /Nenhum campo adicional visível\./);
+        assert.equal(await drawer.locator('#drawerAddCustomField').isDisabled(), true);
+        assert.equal(await drawer.getByRole('button', { name: 'Adicionar campo' }).isDisabled(), true);
       }
+      if (view === 'Negócios') assert.equal(await drawer.locator('#drawerTabs [role="tab"]:visible').count(), 3);
       assert.match(await page.locator('#entityDrawerSubtitle').innerText(), new RegExp(id));
       await page.waitForTimeout(250);
       const box = await drawer.boundingBox();
@@ -1728,7 +1734,8 @@ async function createLead(page, name, options = {}) {
       await page.getByRole('button', { name: deal.title }).click();
       assert.equal(await drawer.getByLabel('Campo geral teste').count(), 0);
       assert.equal(await drawer.locator('#drawerAddCustomField option[value="test:global"]').count(), 0);
-      assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isHidden(), true);
+      await drawer.getByRole('tab', { name: 'Campos adicionais' }).waitFor({ state: 'visible' });
+      assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isVisible(), true);
       await drawer.getByRole('button', { name: deal.id === saved.deals[0].id ? 'Salvar registro' : 'Fechar painel' }).click();
     }
     saved = await stateFrom(page);
@@ -1784,15 +1791,18 @@ async function createLead(page, name, options = {}) {
     assert.deepEqual(saved.deals.map(deal => deal.customFields[0].value), valuesBefore);
     assert.deepEqual(saved.deals.map(deal => deal.visibleCustomFieldKeys), visibilityBefore);
     assert.equal(await drawer.locator('#drawerAddCustomField option[value="test:x-global"]').count(), 0);
-    assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isHidden(), true);
-    assert.equal(await drawer.getByRole('tab', { name: 'Informações' }).getAttribute('aria-selected'), 'true');
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).waitFor({ state: 'visible' });
+    assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isVisible(), true);
+    assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).getAttribute('aria-selected'), 'true');
+    assert.match(await drawer.locator('#drawerCustomPanel').innerText(), /Nenhum campo adicional visível\./);
     assert.equal(await page.evaluate(key => hideDrawerCustomField(key), schema.key), false);
     assert.equal(await page.evaluate(() => hideDrawerCustomField('test:inexistente')), false);
     assert.deepEqual((await stateFrom(page)).moduleFieldSettings.deals.hiddenCustomFieldKeys, [schema.key]);
 
     await drawer.getByRole('button', { name: 'Fechar painel' }).click();
     await page.getByRole('button', { name: secondDeal.title }).click();
-    assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isHidden(), true);
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).waitFor({ state: 'visible' });
+    assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isVisible(), true);
     assert.equal(await drawer.getByLabel('Campo global pelo x').count(), 0);
     await drawer.getByRole('button', { name: 'Fechar painel' }).click();
 
