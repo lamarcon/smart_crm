@@ -26,6 +26,9 @@ def compatibility_contract(pyproject_text: str, sources: dict[str, str]) -> int:
     if not dependencies or any("==" not in dependency for dependency in dependencies):
         raise ContractError("Dependências de runtime não estão fixadas.")
 
+    if "argon2-cffi==25.1.0" not in dependencies:
+        raise ContractError("Argon2id não está fixado na versão compatível esperada.")
+
     for path, source in sources.items():
         try:
             ast.parse(source, filename=path, feature_version=(3, 11))
@@ -49,6 +52,7 @@ def self_test(pyproject_text: str, sources: dict[str, str]) -> None:
     mutations = [
         (pyproject_text.replace(">=3.11,<3.13", ">=3.12,<3.13"), sources),
         (pyproject_text.replace(">=3.11,<3.13", ">=3.11,<3.14"), sources),
+        (pyproject_text.replace('"argon2-cffi==25.1.0",\n', ""), sources),
         (pyproject_text, {**sources, "app/python312_only.py": "type Alias = int\n"}),
     ]
     for mutated_metadata, mutated_sources in mutations:

@@ -7,7 +7,7 @@ Implement these tasks with the tlc-spec-driven skill and follow its Execute flow
 **Design:** .specs/features/secure-multitenancy/design.md
 **Status:** In Progress
 
-**Baseline evidence:** 91 backend test functions and 69 browser scenarios were discovered but not executed because PostgreSQL/Docker were unavailable and the bundled runtime did not expose pytest. Execution must establish and record a green baseline first.
+**Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
 ## Test Coverage Matrix
 
@@ -15,25 +15,25 @@ Implement these tasks with the tlc-spec-driven skill and follow its Execute flow
 
 | Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
 | ---------- | ------------------ | -------------------- | ---------------- | ----------- |
-| Control models/repository | PostgreSQL integration | Directory, sessions, throttle locks, audit redaction, expiry and cleanup | tests/backend/test_control_*.py | python -m pytest -p no:cacheprovider tests/backend/test_control_models.py tests/backend/test_control_repository.py -q |
-| Secret provider/router | unit + PostgreSQL integration | DPAPI contract, trusted-only routing, identity mismatch, two databases, pools and no fallback | tests/backend/test_secrets.py, tests/backend/test_tenant_router.py | python -m pytest -p no:cacheprovider tests/backend/test_secrets.py tests/backend/test_tenant_router.py -q |
-| Password/session/auth | unit + integration | Every MT-01/MT-02 branch, dummy hash, expiry, revocation, concurrency and outage | tests/backend/test_security.py, tests/backend/test_auth_service.py | python -m pytest -p no:cacheprovider tests/backend/test_security.py tests/backend/test_auth_service.py -q |
-| Authorization policy | unit | Complete role/action/record matrix | tests/backend/test_authorization.py | python -m pytest -p no:cacheprovider tests/backend/test_authorization.py -q |
-| Tenant repository | PostgreSQL integration | Two databases, identical IDs, all mutations/restores and forced RLS | tests/backend/test_repository.py | python -m pytest -p no:cacheprovider tests/backend/test_repository.py -q |
-| Workspace/auth API | integration | All routes and happy/anonymous/forbidden/forged/CSRF/503 paths | tests/backend/test_api.py | python -m pytest -p no:cacheprovider tests/backend/test_api.py -q |
-| Models/schemas/migrations | unit + PostgreSQL integration | Both lineages, identity, preservation, RLS and downgrade | tests/backend/test_models.py, tests/backend/test_schemas.py, tests/backend/test_migrations.py | python -m pytest -p no:cacheprovider tests/backend/test_models.py tests/backend/test_schemas.py tests/backend/test_migrations.py -q |
-| Admin/fleet | integration | Activation, checkpoints/resume, hidden secrets, preflight, selection and independent failures | tests/backend/test_admin.py, tests/backend/test_fleet.py | python -m pytest -p no:cacheprovider tests/backend/test_admin.py tests/backend/test_fleet.py -q |
+| Control models/repository | PostgreSQL integration | Directory, sessions, throttle locks, audit redaction, expiry and cleanup | tests/backend/test_control_*.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_control_models.py tests/backend/test_control_repository.py -q |
+| Secret provider/router | unit + PostgreSQL integration | DPAPI contract, trusted-only routing, identity mismatch, two databases, pools and no fallback | tests/backend/test_secrets.py, tests/backend/test_tenant_router.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_secrets.py tests/backend/test_tenant_router.py -q |
+| Password/session/auth | unit + integration | Every MT-01/MT-02 branch, dummy hash, expiry, revocation, concurrency and outage | tests/backend/test_security.py, tests/backend/test_auth_service.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_security.py tests/backend/test_auth_service.py -q |
+| Authorization policy | unit | Complete role/action/record matrix | tests/backend/test_authorization.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_authorization.py -q |
+| Tenant repository | PostgreSQL integration | Two databases, identical IDs, all mutations/restores and forced RLS | tests/backend/test_repository.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_repository.py -q |
+| Workspace/auth API | integration | All routes and happy/anonymous/forbidden/forged/CSRF/503 paths | tests/backend/test_api.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_api.py -q |
+| Models/schemas/migrations | unit + PostgreSQL integration | Both lineages, identity, preservation, RLS and downgrade | tests/backend/test_models.py, tests/backend/test_schemas.py, tests/backend/test_migrations.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_models.py tests/backend/test_schemas.py tests/backend/test_migrations.py -q |
+| Admin/fleet | integration | Activation, checkpoints/resume, hidden secrets, preflight, selection and independent failures | tests/backend/test_admin.py, tests/backend/test_fleet.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_admin.py tests/backend/test_fleet.py -q |
 | Frontend route/auth/cache | browser e2e | Locator, login, cookie session, immutable profile, logout and namespaced preferences | tests/ui-prototype.spec.cjs | pnpm test |
-| Windows/Apache/offline | contract + outcome | Env allowlist, secret placeholders, both migrations, wheels and no production mutation | tests/backend/test_manual_windows_pg11_*.py, scripts/verify_windows_*.py | python -m pytest -p no:cacheprovider tests/backend/test_manual_windows_pg11_deployment.py tests/backend/test_manual_windows_pg11_outcomes.py -q |
+| Windows/Apache/offline | contract + outcome | Env allowlist, secret placeholders, both migrations, wheels and no production mutation | tests/backend/test_manual_windows_pg11_*.py, scripts/verify_windows_*.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_manual_windows_pg11_deployment.py tests/backend/test_manual_windows_pg11_outcomes.py -q |
 | Dependency/config/docs | build/contract | Exact pins, Python 3.11 parse, Compose and documentation contracts | manifests and verifier scripts | Build gate only |
 
 ## Gate Check Commands
 
 | Gate Level | When to Use | Command |
 | ---------- | ----------- | ------- |
-| Quick | Pure unit task | python -m pytest -p no:cacheprovider TASK_TEST_FILE -q |
-| Full | Repository, migration, API, CLI or browser | docker compose up -d postgres; python -m pytest -p no:cacheprovider tests/backend -q; pnpm test |
-| Build | Phase/config/deployment | python -m compileall -q app migrations migrations_control; python scripts/verify_python_compatibility.py; docker compose config --quiet; python -m pytest -p no:cacheprovider tests/backend -q; pnpm test; python scripts/verify_windows_runbook_contract.py; python scripts/verify_windows_apache_contract.py |
+| Quick | Pure unit task | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp TASK_TEST_FILE -q |
+| Full | Repository, migration, API, CLI or browser | docker compose up -d postgres; python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend -q; pnpm test |
+| Build | Phase/config/deployment | python -m compileall -q app migrations migrations_control; python scripts/verify_python_compatibility.py; docker compose config --quiet; python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend -q; pnpm test; python scripts/verify_windows_runbook_contract.py; python scripts/verify_windows_apache_contract.py |
 
 The Build gate records totals and cannot fall below 91 backend functions and 69 browser scenarios plus tests added by completed tasks.
 
@@ -67,7 +67,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T1: Pin the Argon2 dependency
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Add an exact-pinned Argon2id-capable library for CPython 3.11 Windows x64.
 **Where:** pyproject.toml
