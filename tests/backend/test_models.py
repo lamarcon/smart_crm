@@ -1,5 +1,5 @@
 from sqlalchemy import CheckConstraint, ForeignKeyConstraint, PrimaryKeyConstraint, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql.sqltypes import DateTime, Numeric
 
 from app.models import Base
@@ -26,6 +26,7 @@ EXPECTED_TABLES = {
     "saved_filters",
     "user_module_preferences",
     "user_dashboard_preferences",
+    "tenant_identity",
 }
 
 
@@ -108,3 +109,61 @@ def test_user_status_constraint_accepts_every_ui_status() -> None:
         f"'{status}'" in status_constraint
         for status in ("Ativo", "Pendente", "Inativo", "Cancelado")
     )
+
+
+def test_tenant_identity_binds_control_uuid_to_workspace() -> None:
+    table = Base.metadata.tables["tenant_identity"]
+    checks = " ".join(
+        str(constraint.sqltext)
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    )
+
+    assert isinstance(table.c.control_tenant_id.type, UUID)
+    assert table.c.control_tenant_id.nullable is False
+    assert table.c.workspace_id.nullable is False
+    assert "singleton_key = 'identity'" in checks
+
+
+def test_legacy_users_start_without_enabled_credentials() -> None:
+    table = Base.metadata.tables["crm_users"]
+
+    assert table.c.normalized_email.nullable is True
+    assert table.c.password_hash.nullable is True
+    assert table.c.auth_enabled.default.arg is False
+    assert table.c.auth_version.default.arg == 0
+
+
+def test_normalized_email_is_unique_inside_workspace() -> None:
+    table = Base.metadata.tables["crm_users"]
+    unique_columns = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+
+    assert ("workspace_id", "normalized_email") in unique_columns
+
+
+def test_all_direct_child_tables_carry_required_workspace_scope() -> None:
+    child_tables = {
+        "lead_assistants",
+        "deal_assistants",
+        "deal_stage_history",
+        "quotes",
+    }
+
+    assert {
+        name
+        for name in child_tables
+        if "workspace_id" in Base.metadata.tables[name].c
+        and Base.metadata.tables[name].c.workspace_id.nullable is False
+    } == child_tables
+
+
+def test_auth_version_is_nonnegative() -> None:
+    checks = " ".join(
+        str(item.sqltext) for item in Base.metadata.tables["crm_users"].constraints
+        if isinstance(item, CheckConstraint)
+    )
+    assert "auth_version >= 0" in checks

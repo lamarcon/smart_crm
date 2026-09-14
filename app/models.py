@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
@@ -21,7 +22,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgreSQLUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -62,6 +63,24 @@ class Workspace(Base, TimestampMixin):
     initialized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class TenantIdentity(Base):
+    __tablename__ = "tenant_identity"
+    __table_args__ = (
+        CheckConstraint("singleton_key = 'identity'", name="singleton_key_identity"),
+        UniqueConstraint("control_tenant_id"),
+    )
+
+    singleton_key: Mapped[str] = mapped_column(String(16), primary_key=True, default="identity")
+    control_tenant_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
+    schema_contract: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class Team(Base, TimestampMixin):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("workspace_id", "name"),)
@@ -77,10 +96,12 @@ class CrmUser(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "crm_users"
     __table_args__ = (
         UniqueConstraint("workspace_id", "email"),
+        UniqueConstraint("workspace_id", "normalized_email"),
         CheckConstraint(
             "status IN ('Ativo', 'Pendente', 'Inativo', 'Cancelado', 'Convidado')",
             name="valid_status",
         ),
+        CheckConstraint("auth_version >= 0", name="auth_version_nonnegative"),
         Index("ix_crm_users_workspace_active", "workspace_id", "deleted_at"),
     )
 
@@ -91,6 +112,10 @@ class CrmUser(Base, TimestampMixin, SoftDeleteMixin):
     team_id: Mapped[str | None] = mapped_column(ForeignKey("teams.id", ondelete="RESTRICT"))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
+    normalized_email: Mapped[str | None] = mapped_column(String(320))
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    auth_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    auth_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     job_title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     role: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="Ativo")
@@ -193,6 +218,9 @@ class Deal(Base, TimestampMixin, SoftDeleteMixin):
 class LeadAssistant(Base):
     __tablename__ = "lead_assistants"
     __table_args__ = (UniqueConstraint("lead_id", "user_id"),)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
     lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id", ondelete="RESTRICT"), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("crm_users.id", ondelete="RESTRICT"), primary_key=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -201,6 +229,9 @@ class LeadAssistant(Base):
 class DealAssistant(Base):
     __tablename__ = "deal_assistants"
     __table_args__ = (UniqueConstraint("deal_id", "user_id"),)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
     deal_id: Mapped[str] = mapped_column(ForeignKey("deals.id", ondelete="RESTRICT"), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("crm_users.id", ondelete="RESTRICT"), primary_key=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -209,6 +240,9 @@ class DealAssistant(Base):
 class DealStageHistory(Base):
     __tablename__ = "deal_stage_history"
     __table_args__ = (UniqueConstraint("deal_id", "position"),)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     deal_id: Mapped[str] = mapped_column(ForeignKey("deals.id", ondelete="RESTRICT"), nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -221,6 +255,9 @@ class DealStageHistory(Base):
 class Quote(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "quotes"
     __table_args__ = (Index("ix_quotes_deal_active", "deal_id", "deleted_at"),)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     deal_id: Mapped[str] = mapped_column(ForeignKey("deals.id", ondelete="RESTRICT"), nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -191,9 +191,11 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T7: Add tenant identity and user auth fields
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Extend business ORM with singleton tenant identity, missing workspace markers and secure user auth/version fields.
+**Execution note:** T7 criou o esqueleto mínimo da revisão tenant com colunas e marcadores. T8 amplia a mesma revisão com backfill, preservação e RLS; essa divisão mantém cada commit executável sem fundir as duas tarefas.
+
 **Where:** app/models.py
 **Depends on:** T6
 **Reuses:** Existing entities/workspace keys.

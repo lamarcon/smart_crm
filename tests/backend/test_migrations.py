@@ -54,7 +54,7 @@ def test_upgrade_reaches_head_and_creates_uninitialized_singleton(isolated_migra
     ).one()
     assert set(Base.metadata.tables).issubset(tables)
     assert tuple(workspace) == ("default", 0, None)
-    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "9f7a2c31d5e8"
+    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "a4c9d2e7f1b6"
     status_constraint = connection.scalar(
         text(
             "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
@@ -103,5 +103,5 @@ def test_upgrade_current_database_preserves_existing_probe() -> None:
         after = connection.scalar(text("SELECT count(*) FROM _smartcrm_test_probe"))
         head = connection.scalar(text("SELECT version_num FROM alembic_version"))
     assert after == before == 1
-    assert head == "9f7a2c31d5e8"
+    assert head == "a4c9d2e7f1b6"
     engine.dispose()
