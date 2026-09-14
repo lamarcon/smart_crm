@@ -128,7 +128,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T4: Create the control Alembic lineage
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Add independent Alembic configuration and initial control migration.
 **Where:** migrations_control/
