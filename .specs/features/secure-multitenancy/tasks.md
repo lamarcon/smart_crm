@@ -283,9 +283,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T11: Define auth API schemas
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Add bounded locator/login/session/error contracts without trusted connection or role inputs.
+**Execution note:** Os contratos de autenticação proíbem campos extras, normalizam slug e e-mail no servidor, aceitam somente URL HTTPS do host público com um segmento e expõem sessão sem hash, token ou DSN.
 **Where:** app/schemas.py
 **Depends on:** T10
 **Reuses:** Existing strict Pydantic validation.
@@ -294,10 +295,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Slug/URL/email/password bounds and reserved paths are explicit.
-- [ ] Session output excludes hash, token and DSN; failures share one schema.
-- [ ] Tests add at least 10 boundary/malicious tenant-DSN-role cases.
-- [ ] Quick gate passes.
+- [x] Slug/URL/email/password bounds and reserved paths are explicit.
+- [x] Session output excludes hash, token and DSN; failures share one schema.
+- [x] Tests add at least 10 boundary/malicious tenant-DSN-role cases.
+- [x] Quick gate passes: 37 passed, 17 cases added.
 
 **Tests:** unit
 **Gate:** quick

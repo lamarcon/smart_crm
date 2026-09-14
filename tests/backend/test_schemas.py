@@ -1,10 +1,22 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
-from app.schemas import WorkspaceReferenceError, WorkspaceState, count_state, validate_references
+from app.schemas import (
+    LOGIN_FAILURE_MESSAGE,
+    AuthErrorResponse,
+    LocateTenantRequest,
+    LoginRequest,
+    SessionResponse,
+    WorkspaceReferenceError,
+    WorkspaceState,
+    count_state,
+    validate_references,
+)
 
 
 def valid_state() -> dict:
@@ -218,3 +230,108 @@ def test_custom_definition_validation_reports_stable_path(definitions: list[dict
     state["customFieldSchemas"]["leads"] = definitions
     state["leads"][0]["customFields"] = []
     assert_invalid(state, path)
+@pytest.mark.parametrize(
+    ("identifier", "expected"),
+    [
+        ("Cliente-A", "cliente-a"),
+        ("https://sc2030.brbots.com/CLIENTE-A", "cliente-a"),
+    ],
+)
+def test_locator_normalizes_slug_or_expected_origin_url(identifier: str, expected: str) -> None:
+    request = LocateTenantRequest(identifier=identifier)
+
+    assert request.slug == expected
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "https://evil.example/cliente-a",
+        "https://sc2030.brbots.com/cliente-a/extra",
+        "api",
+        "cliente_a",
+        "x" * 64,
+    ],
+)
+def test_locator_rejects_external_nested_reserved_or_invalid_identifiers(identifier: str) -> None:
+    with pytest.raises(ValidationError):
+        LocateTenantRequest(identifier=identifier)
+
+
+def test_login_normalizes_tenant_and_email() -> None:
+    request = LoginRequest(
+        slug="Cliente-A",
+        email="  USER@Example.Test ",
+        password="correct horse battery staple",
+    )
+
+    assert request.slug == "cliente-a"
+    assert request.email == "user@example.test"
+    assert request.password == "correct horse battery staple"
+
+
+@pytest.mark.parametrize("length", [12, 128])
+def test_login_accepts_password_bounds_without_truncation(length: int) -> None:
+    password = "x" * length
+
+    assert LoginRequest(slug="cliente-a", email="a@example.test", password=password).password == password
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"slug": "cliente-a", "email": "invalid", "password": "x" * 12},
+        {"slug": "cliente-a", "email": "a@example.test", "password": "x" * 11},
+        {"slug": "cliente-a", "email": "a@example.test", "password": "x" * 129},
+    ],
+)
+def test_login_rejects_invalid_email_and_password_bounds(values: dict[str, str]) -> None:
+    with pytest.raises(ValidationError):
+        LoginRequest.model_validate(values)
+
+
+@pytest.mark.parametrize("authority_field", ["tenant_id", "dsn", "role"])
+def test_auth_requests_forbid_browser_authority_fields(authority_field: str) -> None:
+    payload = {
+        "slug": "cliente-a",
+        "email": "a@example.test",
+        "password": "correct horse battery staple",
+        authority_field: "forged",
+    }
+
+    with pytest.raises(ValidationError):
+        LoginRequest.model_validate(payload)
+
+
+def test_session_response_exposes_identity_without_secret_fields() -> None:
+    tenant_id = uuid4()
+    response = SessionResponse(
+        tenant_id=tenant_id,
+        tenant_slug="cliente-a",
+        tenant_display_name="Cliente A",
+        user_id="u-1",
+        user_name="Ana",
+        email="ana@example.test",
+        role="Administrador",
+    )
+
+    assert response.model_dump() == {
+        "tenant_id": tenant_id,
+        "tenant_slug": "cliente-a",
+        "tenant_display_name": "Cliente A",
+        "user_id": "u-1",
+        "user_name": "Ana",
+        "email": "ana@example.test",
+        "role": "Administrador",
+    }
+    assert {"password_hash", "token", "dsn"}.isdisjoint(SessionResponse.model_fields)
+
+
+def test_auth_failure_contract_uses_only_the_generic_public_message() -> None:
+    failure = AuthErrorResponse()
+
+    assert failure.model_dump() == {
+        "error": "invalid_login",
+        "message": LOGIN_FAILURE_MESSAGE,
+    }
+    assert failure.message == "Não foi possível entrar com os dados informados."

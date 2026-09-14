@@ -2,12 +2,105 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
+from urllib.parse import urlsplit
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 MODULES = ("leads", "contacts", "companies", "deals")
+EXPECTED_PUBLIC_HOST = "sc2030.brbots.com"
+RESERVED_TENANT_SLUGS = frozenset({"api", "docs", "redoc", "static", "health", "openapi.json"})
+TENANT_SLUG_PATTERN = re.compile(r"[a-z0-9-]{1,63}\Z")
+EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+\Z")
+LOGIN_FAILURE_MESSAGE = "Não foi possível entrar com os dados informados."
+
+
+def normalize_tenant_identifier(identifier: str) -> str:
+    value = identifier.strip()
+    if "://" in value:
+        try:
+            parsed = urlsplit(value)
+            port = parsed.port
+        except ValueError as error:
+            raise ValueError("invalid tenant identifier") from error
+        if (
+            parsed.scheme.lower() != "https"
+            or parsed.hostname is None
+            or parsed.hostname.lower() != EXPECTED_PUBLIC_HOST
+            or port is not None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or not parsed.path.startswith("/")
+            or parsed.path.count("/") != 1
+        ):
+            raise ValueError("invalid tenant identifier")
+        value = parsed.path[1:]
+
+    slug = value.lower()
+    if not TENANT_SLUG_PATTERN.fullmatch(slug) or slug in RESERVED_TENANT_SLUGS:
+        raise ValueError("invalid tenant identifier")
+    return slug
+
+
+class AuthContractModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class LocateTenantRequest(AuthContractModel):
+    identifier: str = Field(min_length=1, max_length=2048)
+
+    @field_validator("identifier")
+    @classmethod
+    def validate_identifier(cls, value: str) -> str:
+        return normalize_tenant_identifier(value)
+
+    @property
+    def slug(self) -> str:
+        return self.identifier
+
+
+class LocateTenantResponse(AuthContractModel):
+    slug: str = Field(min_length=1, max_length=63, pattern=r"^[a-z0-9-]+$")
+    display_name: str = Field(min_length=1, max_length=255)
+
+
+class LoginRequest(AuthContractModel):
+    slug: str = Field(min_length=1, max_length=63)
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=12, max_length=128)
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, value: str) -> str:
+        return normalize_tenant_identifier(value)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not EMAIL_PATTERN.fullmatch(normalized):
+            raise ValueError("invalid email")
+        return normalized
+
+
+class SessionResponse(AuthContractModel):
+    tenant_id: UUID
+    tenant_slug: str = Field(min_length=1, max_length=63, pattern=r"^[a-z0-9-]+$")
+    tenant_display_name: str = Field(min_length=1, max_length=255)
+    user_id: str = Field(min_length=1, max_length=128)
+    user_name: str = Field(min_length=1, max_length=255)
+    email: str = Field(min_length=3, max_length=254)
+    role: Literal["Administrador", "Gestor", "Vendedor", "Assistente", "Faturamento"]
+
+
+class AuthErrorResponse(AuthContractModel):
+    error: str = "invalid_login"
+    message: str = LOGIN_FAILURE_MESSAGE
 
 
 class ContractModel(BaseModel):
