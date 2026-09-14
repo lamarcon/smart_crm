@@ -34,6 +34,14 @@
 - **Date**: 2026-09-03
 - **Status**: active
 
+### AD-005
+- **Decision**: O Smart CRM usará uma aplicação central com plano de controle central e um banco PostgreSQL de negócio exclusivo por empresa, selecionado somente a partir do tenant gravado na sessão opaca do servidor.
+- **Reason**: O usuário escolheu isolamento físico dos dados por empresa e quer preservar uma única aplicação e URLs por caminho para facilitar a evolução e a escalabilidade futuras.
+- **Trade-off**: Migrações, credenciais, pools, saúde, backup e recuperação passam a ser operados como uma frota de bancos; o provisionamento entre o plano de controle e o banco da empresa exige estado idempotente em vez de uma única transação SQL.
+- **Scope**: Autenticação, sessões, roteamento de dados, persistência de negócio, provisionamento, migrações, operação e testes de isolamento multiempresa.
+- **Date**: 2026-09-14
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: Implantação manual Windows/PostgreSQL 11 / `.specs/features/manual-windows-pg11-deployment`
