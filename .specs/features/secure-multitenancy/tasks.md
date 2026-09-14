@@ -107,7 +107,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T3: Define control-plane models
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Model tenant directory, opaque sessions, throttles and redacted security events without user hashes/business data.
 **Where:** app/control_models.py
