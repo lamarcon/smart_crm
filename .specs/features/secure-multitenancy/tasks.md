@@ -149,7 +149,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T5: Implement the server secret provider
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Provide DPAPI-backed connection secrets with test/development substitutes.
 **Where:** app/security/secrets.py
