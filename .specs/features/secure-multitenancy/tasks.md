@@ -260,9 +260,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T10: Implement password and session primitives
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Add Argon2id verification, dummy path, opaque tokens/digests and TTL logic.
+**Execution note:** O perfil Argon2id fixado em 64 MiB, 3 iterações e paralelismo 4 levou 337 ms no runtime local de validação. O módulo usa salt aleatório por hash, verificação fictícia fixa para sujeitos desconhecidos, token de 256 bits e limites de sessão exatos.
 **Where:** app/security/passwords.py
 **Depends on:** T9
 **Reuses:** Standard secrets/hashlib and aware datetimes.
@@ -271,10 +272,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Bounds are 12-128, Argon2id parameters are benchmarked and unknown subjects use dummy verification.
-- [ ] Token entropy/digest and idle/absolute TTL match the spec.
-- [ ] Tests add at least 12 cases for hashes, invalid inputs, timing path, token and TTL/revocation edges.
-- [ ] Quick gate passes.
+- [x] Bounds are 12-128, Argon2id parameters are benchmarked and unknown subjects use dummy verification.
+- [x] Token entropy/digest and idle/absolute TTL match the spec.
+- [x] Tests add at least 12 cases for hashes, invalid inputs, timing path, token and TTL/revocation edges.
+- [x] Quick gate passes: 15 passed.
 
 **Tests:** unit
 **Gate:** quick
