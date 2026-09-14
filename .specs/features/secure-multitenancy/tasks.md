@@ -170,7 +170,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T6: Implement the control repository
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Add directory, central sessions, throttle locking, provisioning state and audit operations.
 **Where:** app/control_database.py
