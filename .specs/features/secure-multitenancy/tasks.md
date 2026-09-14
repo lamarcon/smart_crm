@@ -214,9 +214,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T8: Migrate the current database as a tenant
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Preserve default data, backfill child scopes and enable forced RLS in the tenant lineage.
+**Execution note:** T8 ampliou a revisão tenant iniciada em T7 com preflight, backfill, invariantes NOT NULL, RLS forçado e downgrade. O binding de escrita dos quatro filhos em WorkspaceRepository é a compatibilidade mínima exigida pelas novas invariantes; filtros e lookups permanecem reservados a T16.
 **Where:** migrations/versions/secure_multitenancy_tenant_database.py
 **Depends on:** T7
 **Reuses:** Existing migration fixture/named constraints.
@@ -225,10 +226,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Upgrade preserves default, row counts, checksums and relationships.
-- [ ] Every tenant table has forced USING/WITH CHECK RLS after verified backfill.
-- [ ] Tests add at least 10 preservation, identity, RLS, failure and downgrade cases.
-- [ ] Full gate passes with pre/post evidence.
+- [x] Upgrade preserves default, row counts, checksums and relationships.
+- [x] Every tenant table has forced USING/WITH CHECK RLS after verified backfill.
+- [x] Tests add at least 10 preservation, identity, RLS, failure and downgrade cases.
+- [x] Full gate passes with pre/post evidence.
 
 **Tests:** PostgreSQL integration
 **Gate:** full

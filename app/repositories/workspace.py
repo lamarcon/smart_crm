@@ -338,7 +338,7 @@ class WorkspaceRepository:
                     setattr(row, key, value)
             self.session.execute(delete(LeadAssistant).where(LeadAssistant.lead_id == record["id"]))
             for assistant_position, user_id in enumerate(record.get("assistants") or []):
-                self.session.add(LeadAssistant(lead_id=record["id"], user_id=user_id, position=assistant_position))
+                self.session.add(LeadAssistant(workspace_id=self.workspace_id, lead_id=record["id"], user_id=user_id, position=assistant_position))
 
     def _reconcile_deals(self, records: list[dict[str, Any]], teams: dict[str, str]) -> None:
         company_names = self._unique_name_ids(Company)
@@ -375,10 +375,10 @@ class WorkspaceRepository:
             self.session.flush()
             self.session.execute(delete(DealAssistant).where(DealAssistant.deal_id == record["id"]))
             for assistant_position, user_id in enumerate(record.get("assistants") or []):
-                self.session.add(DealAssistant(deal_id=record["id"], user_id=user_id, position=assistant_position))
+                self.session.add(DealAssistant(workspace_id=self.workspace_id, deal_id=record["id"], user_id=user_id, position=assistant_position))
             self.session.execute(delete(DealStageHistory).where(DealStageHistory.deal_id == record["id"]))
             for history_position, history in enumerate(record.get("stageHistory") or []):
-                self.session.add(DealStageHistory(deal_id=record["id"], position=history_position, from_stage=history.get("from"), to_stage=history.get("to", ""), changed_at=_date(history.get("at")) or _now(), changed_by_id=history.get("byId")))
+                self.session.add(DealStageHistory(workspace_id=self.workspace_id, deal_id=record["id"], position=history_position, from_stage=history.get("from"), to_stage=history.get("to", ""), changed_at=_date(history.get("at")) or _now(), changed_by_id=history.get("byId")))
             self._reconcile_quotes(record["id"], record.get("quotes") or [])
 
     def _reconcile_quotes(self, deal_id: str, records: list[dict[str, Any]]) -> None:
@@ -388,7 +388,7 @@ class WorkspaceRepository:
             row = self.session.get(Quote, record["id"])
             values = dict(deal_id=deal_id, position=position, description=record.get("description", ""), quantity=Decimal(str(record.get("quantity", 1))), unit_price=Decimal(str(record.get("unitPrice", 0))), discount=Decimal(str(record.get("discount", 0))), total=Decimal(str(record.get("total", 0))), valid_until=_date(record.get("validUntil")), state=record.get("state", "Rascunho"), pdf_name=record.get("pdf"), payload=_packed(record, position), deleted_at=None)
             if row is None:
-                self.session.add(Quote(id=record["id"], **values))
+                self.session.add(Quote(id=record["id"], workspace_id=self.workspace_id, **values))
             else:
                 for key, value in values.items():
                     setattr(row, key, value)
