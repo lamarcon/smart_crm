@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import zipfile
 from pathlib import Path
+import tomllib
 
 import pytest
 
@@ -105,3 +106,13 @@ def test_source_contract_rejects_postgresql_service_restart(tmp_path: Path):
 
     with pytest.raises(AssertionError, match="MPG-08"):
         verifier.verify_source(tmp_path)
+
+
+def test_runtime_dependencies_match_project_dependencies():
+    project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project_dependencies = set(project["project"]["dependencies"])
+    runtime_dependencies = {
+        line.strip() for line in (PROJECT_ROOT / "requirements-runtime.txt").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+    assert runtime_dependencies == project_dependencies

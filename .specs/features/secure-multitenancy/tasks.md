@@ -87,7 +87,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T2: Align the offline runtime manifest
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Mirror the authentication dependency in runtime requirements.
 **Where:** requirements-runtime.txt
