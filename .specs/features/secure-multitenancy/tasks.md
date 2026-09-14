@@ -237,9 +237,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T9: Route tenant database sessions without a default
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Implement trusted tenant_id routing, bounded engines, identity/version guard and fail-closed transactions.
+**Execution note:** O gate usa dois bancos PostgreSQL físicos temporários no mesmo servidor de teste. O roteador aceita somente UUID interno, resolve perfil e segredo no servidor, valida tenant_identity e revisão antes de liberar a sessão, configura workspace local à transação e descarta somente engines afetadas por mismatch, outage, rotação ou LRU.
 **Where:** app/tenant_database.py
 **Depends on:** T8
 **Reuses:** SQLAlchemy patterns from app/database.py.
@@ -248,10 +249,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] API inputs cannot select slug/DSN/profile and no default/fallback engine exists.
-- [ ] Identity/revision precede business SQL; cache, rotation and invalidation are bounded.
-- [ ] Tests add at least 14 two-database cases for identical IDs, swapped profiles, outage, LRU and no fallback.
-- [ ] Phase 1 Build gate passes.
+- [x] API inputs cannot select slug/DSN/profile and no default/fallback engine exists.
+- [x] Identity/revision precede business SQL; cache, rotation and invalidation are bounded.
+- [x] Tests add at least 14 two-database cases for identical IDs, swapped profiles, outage, LRU and no fallback.
+- [x] Phase 1 Build gate passes.
 
 **Tests:** unit + PostgreSQL integration
 **Gate:** build
