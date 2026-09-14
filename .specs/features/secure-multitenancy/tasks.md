@@ -306,9 +306,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T12: Encode server authorization
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Implement action/record policies for all five current profiles.
+**Execution note:** A política aceita somente os cinco perfis canônicos, falha fechada para papéis e módulos desconhecidos e separa ações administrativas, acesso tenant-wide e escopo por equipe/responsabilidade/assistência.
 **Where:** app/policies.py
 **Depends on:** T11
 **Reuses:** Current canSee behavior only as input, never authority.
@@ -317,10 +318,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Every read/mutation/admin action has an explicit outcome.
-- [ ] Team, responsible/assistant, tenant-wide and admin-only rules match the spec.
-- [ ] Tests add at least 25 role/action/record cases including forged roles.
-- [ ] Quick gate passes.
+- [x] Every read/mutation/admin action has an explicit outcome.
+- [x] Team, responsible/assistant, tenant-wide and admin-only rules match the spec.
+- [x] Tests add at least 25 role/action/record cases including forged roles.
+- [x] Quick gate passes: 55 passed.
 
 **Tests:** unit
 **Gate:** quick
