@@ -491,9 +491,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T20: Add locator, login and logout UI
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Implement root locator and /{slug} login/app-shell using cookie credentials only.
+**Execution note:** A raiz agora exibe somente o localizador; a rota tenant valida a sessão opaca por cookie antes de consultar o workspace e mantém o slug apenas como vínculo, nunca como autoridade. Login e locator usam falha genérica, nenhuma credencial/token é persistida ou enviada em header/query, e logout revoga no backend e limpa o estado sensível em memória.
 **Where:** app/static/index.html
 **Depends on:** T19
 **Reuses:** Existing single-file styles and fetch helper.
@@ -502,10 +503,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Locator/login routes and generic failures match spec.
-- [ ] Fetch never reads/writes a token and logout clears in-memory UI.
-- [ ] Browser suite adds at least 12 locator, login, error, route, cookie and logout scenarios.
-- [ ] Full gate passes.
+- [x] Locator/login routes and generic failures match spec.
+- [x] Fetch never reads/writes a token and logout clears in-memory UI.
+- [x] Browser suite adds at least 12 locator, login, error, route, cookie and logout scenarios: 12 cases added.
+- [x] Full gate passes: 448 backend and 81 browser scenarios passed.
 
 **Tests:** browser e2e
 **Gate:** full

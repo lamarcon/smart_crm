@@ -49,6 +49,17 @@
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .auth-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at top, #233354, var(--navy-950) 68%); }
+    .auth-card { width: min(100%, 430px); padding: 32px; border: 1px solid rgba(255,255,255,.12); border-radius: 18px; color: var(--navy-900); background: white; box-shadow: 0 28px 70px rgba(0,0,0,.28); }
+    .auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+    .auth-card h1 { margin: 0 0 8px; font-size: 25px; }
+    .auth-card p { margin: 0 0 22px; color: var(--slate-500); line-height: 1.5; }
+    .auth-form { display: grid; gap: 16px; }
+    .auth-form label { display: grid; gap: 7px; color: var(--navy-800); font-weight: 700; }
+    .auth-form input { width: 100%; min-height: 44px; border: 1px solid var(--slate-300); border-radius: 9px; padding: 10px 12px; outline: 0; }
+    .auth-form input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px var(--blue-100); }
+    .auth-form .button { width: 100%; min-height: 44px; }
+    .auth-error { min-height: 20px; margin: 0; color: var(--red-600); font-size: 13px; font-weight: 650; }
 
     .app { min-height: 100vh; display: grid; grid-template-columns: 256px minmax(0, 1fr); }
     .sidebar {
@@ -356,7 +367,34 @@
   </style>
 </head>
 <body>
-  <div class="app">
+  <section class="auth-screen" id="tenantLocator" hidden>
+    <div class="auth-card">
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong></div>
+      <h1>Acesse sua empresa</h1>
+      <p>Informe o identificador ou a URL fornecida pela sua empresa.</p>
+      <form class="auth-form" id="tenantLocatorForm">
+        <label for="tenantIdentifier">Empresa<input id="tenantIdentifier" name="identifier" autocomplete="organization" required></label>
+        <p class="auth-error" id="locatorError" role="alert"></p>
+        <button class="button primary" type="submit">Continuar</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="auth-screen" id="tenantLogin" hidden>
+    <div class="auth-card">
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong></div>
+      <h1>Entrar em <span id="tenantLoginName"></span></h1>
+      <p>Use suas credenciais corporativas para continuar.</p>
+      <form class="auth-form" id="tenantLoginForm">
+        <label for="loginEmail">E-mail<input id="loginEmail" name="email" type="email" autocomplete="username" required></label>
+        <label for="loginPassword">Senha<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+        <p class="auth-error" id="loginError" role="alert"></p>
+        <button class="button primary" type="submit">Entrar</button>
+      </form>
+    </div>
+  </section>
+
+  <div class="app" id="crmApp" hidden>
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <div class="brand-mark">S</div>
@@ -388,6 +426,7 @@
             <select id="profileSelect"></select>
           </div>
           <button class="icon-button" data-view="notifications" aria-label="Notificações">♢<span class="badge-count" id="topNoticeCount">0</span></button>
+          <button class="button small" type="button" id="logoutButton">Sair</button>
         </div>
       </header>
 
@@ -545,6 +584,7 @@
     const STORAGE_KEY = 'smart-crm-demo-v1';
     const CONFIRMED_CACHE_KEY = 'smart-crm-confirmed-v1';
     const READ_ONLY_WARNING = 'Banco indisponível. Alterações bloqueadas.';
+    const GENERIC_LOGIN_ERROR = 'Não foi possível entrar com os dados informados.';
     const leadStages = ['Em contato', 'Lead descartado', 'Lead convertido'];
     const dealStages = [
       'Em Contato', 'Orçamento Proposta Preço', 'Orçamentos enviados',
@@ -687,6 +727,7 @@
     });
 
     let state = loadState();
+    let sessionIdentity = null;
     let workspaceVersion = 0;
     let workspaceWritable = false;
     let workspaceInitialized = false;
@@ -892,13 +933,128 @@
       }
       return payload;
     }
+    function apiFetch(input, init = {}) {
+      return fetch(input, { ...init, credentials: 'same-origin' });
+    }
+    function tenantSlugFromPath() {
+      const segments = location.pathname.split('/').filter(Boolean);
+      return segments.length === 1 && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(segments[0])
+        ? segments[0]
+        : null;
+    }
+    function showAuthView(view, slug = '') {
+      document.getElementById('tenantLocator').hidden = view !== 'locator';
+      document.getElementById('tenantLogin').hidden = view !== 'login';
+      document.getElementById('crmApp').hidden = view !== 'app';
+      document.getElementById('tenantLoginName').textContent = slug;
+      document.documentElement.dataset.authenticated = String(view === 'app');
+    }
+    async function activateSession(session, expectedSlug) {
+      if (!session?.tenant_slug || session.tenant_slug !== expectedSlug) throw new Error('Tenant da sessão não corresponde à rota.');
+      sessionIdentity = session;
+      document.documentElement.dataset.authenticated = 'true';
+      await initializeWorkspace();
+      showAuthView('app', expectedSlug);
+    }
+    async function initializeRoute() {
+      const slug = tenantSlugFromPath();
+      if (location.pathname === '/' || location.pathname === '') {
+        showAuthView('locator');
+        return;
+      }
+      if (!slug) {
+        showAuthView('locator');
+        return;
+      }
+      showAuthView('login', slug);
+      try {
+        const session = await responseJson(await apiFetch('/api/auth/session', { headers: { Accept: 'application/json' } }));
+        await activateSession(session, slug);
+      } catch (_) {
+        sessionIdentity = null;
+        setWorkspaceAccess(false, false, 'Autenticação necessária.', 'loading');
+        showAuthView('login', slug);
+      }
+    }
+    async function submitTenantLocator(event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById('locatorError');
+      error.textContent = '';
+      button.disabled = true;
+      try {
+        const identifier = form.elements.identifier.value.trim();
+        const tenant = await responseJson(await apiFetch('/api/auth/locate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ identifier })
+        }));
+        location.assign('/' + encodeURIComponent(tenant.slug));
+      } catch (_) {
+        error.textContent = GENERIC_LOGIN_ERROR;
+        button.disabled = false;
+      }
+    }
+    async function submitTenantLogin(event) {
+      event.preventDefault();
+      const slug = tenantSlugFromPath();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById('loginError');
+      error.textContent = '';
+      button.disabled = true;
+      try {
+        const session = await responseJson(await apiFetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            slug,
+            email: form.elements.email.value.trim(),
+            password: form.elements.password.value
+          })
+        }));
+        form.elements.password.value = '';
+        await activateSession(session, slug);
+      } catch (_) {
+        form.elements.password.value = '';
+        error.textContent = GENERIC_LOGIN_ERROR;
+        showAuthView('login', slug);
+      } finally {
+        button.disabled = false;
+      }
+    }
+    function clearSessionUi() {
+      sessionIdentity = null;
+      state = normalizeState({ currentUserId: null, users: [], leads: [], contacts: [], companies: [], deals: [], notifications: [] });
+      workspaceVersion = 0;
+      workspaceWritable = false;
+      workspaceInitialized = false;
+      confirmedState = null;
+      persistenceScheduled = false;
+      workspaceWriteInFlight = false;
+      queuedToasts = [];
+      document.documentElement.dataset.workspaceReady = 'false';
+      document.documentElement.dataset.workspaceWritable = 'false';
+      document.documentElement.dataset.workspaceWriting = 'false';
+      document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
+    }
+    async function logout() {
+      const slug = tenantSlugFromPath();
+      try {
+        await apiFetch('/api/auth/logout', { method: 'POST', headers: { Accept: 'application/json' } });
+      } finally {
+        clearSessionUi();
+        showAuthView('login', slug);
+      }
+    }
     function flushQueuedToasts() {
       const pending = queuedToasts;
       queuedToasts = [];
       pending.forEach(({ message, action }) => showToast(message, action));
     }
     async function loadCanonicalWorkspace() {
-      const payload = await responseJson(await fetch('/api/workspace', { headers: { Accept: 'application/json' } }));
+      const payload = await responseJson(await apiFetch('/api/workspace', { headers: { Accept: 'application/json' } }));
       if (!payload.initialized || !payload.state) throw new Error('Workspace canônico indisponível.');
       workspaceVersion = payload.version;
       confirmedState = extractDurableState(payload.state);
@@ -914,7 +1070,7 @@
       pendingPersistenceEndpoint = '/api/workspace';
       const candidate = extractDurableState();
       try {
-        const payload = await responseJson(await fetch(endpoint, {
+        const payload = await responseJson(await apiFetch(endpoint, {
           method: endpoint === '/api/workspace' ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ version: workspaceVersion, state: candidate })
@@ -953,7 +1109,7 @@
       setWorkspaceAccess(false, false, 'Conectando ao workspace...', 'loading');
       const localCandidate = state;
       try {
-        const payload = await responseJson(await fetch('/api/workspace', { headers: { Accept: 'application/json' } }));
+        const payload = await responseJson(await apiFetch('/api/workspace', { headers: { Accept: 'application/json' } }));
         workspaceVersion = payload.version || 0;
         if (payload.initialized) {
           if (!payload.state) throw new Error('Workspace inicializado sem estado.');
@@ -991,7 +1147,7 @@
       button.textContent = 'Migrando...';
       error.textContent = '';
       try {
-        const payload = await responseJson(await fetch('/api/workspace/bootstrap', {
+        const payload = await responseJson(await apiFetch('/api/workspace/bootstrap', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ state: extractDurableState() })
@@ -2451,7 +2607,7 @@
       container.innerHTML = '<p class="hint">Carregando...</p>';
       error.textContent = '';
       try {
-        const payload = await responseJson(await fetch(`/api/workspace/deleted?module=${encodeURIComponent(module)}`, { headers: { Accept: 'application/json' } }));
+        const payload = await responseJson(await apiFetch(`/api/workspace/deleted?module=${encodeURIComponent(module)}`, { headers: { Accept: 'application/json' } }));
         container.innerHTML = payload.records.length ? payload.records.map(record => `<div class="deleted-record"><div><strong>${escapeHTML(deletedRecordLabel(record))}</strong><span>${escapeHTML(record.id)}</span></div><button type="button" class="button small" data-action="restore-deleted" data-module="${escapeHTML(module)}" data-id="${escapeHTML(record.id)}" aria-label="Recuperar ${escapeHTML(record.id)}">Recuperar</button></div>`).join('') : '<p class="hint">Nenhum registro excluído neste módulo.</p>';
       } catch (failure) {
         container.innerHTML = '';
@@ -2469,7 +2625,7 @@
       workspaceWriteInFlight = true;
       document.documentElement.dataset.workspaceWriting = 'true';
       try {
-        const payload = await responseJson(await fetch('/api/workspace/restore', {
+        const payload = await responseJson(await apiFetch('/api/workspace/restore', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ version: workspaceVersion, module, id })
@@ -2601,8 +2757,11 @@
       }
     });
 
-    render();
-    initializeWorkspace();
+    document.getElementById('tenantLocatorForm').addEventListener('submit', submitTenantLocator);
+    document.getElementById('tenantLoginForm').addEventListener('submit', submitTenantLogin);
+    document.getElementById('logoutButton').addEventListener('click', logout);
+
+    initializeRoute();
   </script>
 </body>
 </html>

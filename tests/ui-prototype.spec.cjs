@@ -2,6 +2,12 @@ const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 
 const BASE_URL = process.env.SMART_CRM_TEST_URL || 'http://localhost:8080/';
+const TENANT_URL = new URL('cliente-a', BASE_URL).toString();
+const AUTH_SESSION = {
+  tenant_id: '00000000-0000-0000-0000-000000000001', tenant_slug: 'cliente-a',
+  tenant_display_name: 'Cliente A', user_id: 'u-admin', user_name: 'Alexandre Martins',
+  email: 'admin@cliente-a.test', role: 'Administrador'
+};
 const STORAGE_KEY = 'smart-crm-demo-v1';
 const CONFIRMED_CACHE_KEY = 'smart-crm-confirmed-v1';
 const LEAD_STAGES = ['Em contato', 'Lead descartado', 'Lead convertido'];
@@ -60,6 +66,10 @@ async function openFresh(options = {}) {
   const page = await context.newPage();
   const api = { initialized: false, version: 0, state: null, loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false, deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] } };
   apiByPage.set(page, api);
+  await context.route('**/api/auth/session', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify(AUTH_SESSION)
+  }));
   await context.route('**/api/workspace**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -132,7 +142,7 @@ async function openFresh(options = {}) {
     }
     return route.fulfill({ status: 405 });
   });
-  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(TENANT_URL, { waitUntil: 'domcontentloaded' });
   await page.locator('#workspaceBanner').waitFor();
   if (options.autoBootstrap !== false && !api.loadFailure) {
     const confirm = page.getByRole('button', { name: 'Confirmar migração' });
@@ -173,6 +183,10 @@ async function assertCanonicalRehydration(page) {
       deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
     };
     apiByPage.set(independent, mirrorApi);
+    await context.route('**/api/auth/session', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify(AUTH_SESSION)
+    }));
     await context.route('**/api/workspace**', async route => {
       const request = route.request();
       const url = new URL(request.url());
@@ -185,7 +199,7 @@ async function assertCanonicalRehydration(page) {
       }
       return route.fulfill({ status: 405 });
     });
-    await independent.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+    await independent.goto(TENANT_URL, { waitUntil: 'domcontentloaded' });
     await independent.locator('#workspaceBanner').waitFor({ state: 'attached' });
     await independent.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
     assert.deepEqual(durableState(await stateFrom(independent)), expected, 'contexto independente não reidratou o estado canônico');
@@ -224,6 +238,80 @@ async function run(name, test, options = {}) {
   }
 }
 
+async function openAuthPage(pathname, options = {}) {
+  const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  const authRequests = [];
+  const workspaceRequests = [];
+  let authenticated = options.authenticated === true;
+  const session = { ...AUTH_SESSION, ...(options.session || {}) };
+  if (options.cookie) {
+    await context.addCookies([{
+      name: '__Host-smartcrm_session', value: options.cookie, domain: 'localhost',
+      path: '/', secure: true, httpOnly: true, sameSite: 'Strict'
+    }]);
+  }
+  await context.route('**/api/auth/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    let body;
+    try { body = request.postDataJSON(); } catch (_) { body = undefined; }
+    authRequests.push({ method: request.method(), url: request.url(), headers: request.headers(), body });
+    if (url.pathname === '/api/auth/session') {
+      return authenticated
+        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(session) })
+        : route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'unauthenticated', message: 'Autenticação necessária.' } }) });
+    }
+    if (url.pathname === '/api/auth/locate') {
+      const identifier = body.identifier.trim().toLowerCase();
+      if (options.locateFailure || identifier.includes('externo.example')) {
+        return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'invalid_login', message: 'Não foi possível entrar com os dados informados.' } }) });
+      }
+      const slug = identifier.includes('/') ? identifier.split('/').filter(Boolean).at(-1) : identifier;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ slug, display_name: 'Cliente A' }) });
+    }
+    if (url.pathname === '/api/auth/login') {
+      if (!options.loginSuccess) {
+        return route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'invalid_login', message: 'Não foi possível entrar com os dados informados.' } }) });
+      }
+      authenticated = true;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(session) });
+    }
+    if (url.pathname === '/api/auth/logout') {
+      authenticated = false;
+      return route.fulfill({ status: 204 });
+    }
+    return route.fulfill({ status: 404 });
+  });
+  await context.route('**/api/workspace**', route => {
+    workspaceRequests.push(route.request().url());
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ initialized: false, version: 0, state: null }) });
+  });
+  const page = await context.newPage();
+  const target = pathname === '/' ? BASE_URL : new URL(pathname.replace(/^\//, ''), BASE_URL).toString();
+  if (options.cookie && pathname !== '/') {
+    await page.route(target, async route => {
+      const headers = { ...route.request().headers(), cookie: '' };
+      await route.fulfill({ response: await route.fetch({ headers }) });
+    });
+  }
+  await page.goto(target, { waitUntil: 'domcontentloaded' });
+  return { context, page, authRequests, workspaceRequests };
+}
+
+async function runAuth(name, pathname, test, options = {}) {
+  const opened = await openAuthPage(pathname, options);
+  try {
+    await test(opened);
+    passed += 1;
+    console.log(`PASS ${name}`);
+  } catch (error) {
+    failed += 1;
+    console.error(`FAIL ${name}\n${error.stack}`);
+  } finally {
+    await opened.context.close();
+  }
+}
+
 async function goTo(page, name) {
   await page.locator('.nav').getByRole('button', { name: new RegExp(name) }).click();
 }
@@ -253,6 +341,100 @@ async function createLead(page, name, options = {}) {
 
 (async () => {
   browser = await chromium.launch({ channel: process.env.SMART_CRM_BROWSER || 'chrome', headless: true });
+  await runAuth('MT-01 raiz exibe localizador sem consultar workspace', '/', async ({ page, authRequests, workspaceRequests }) => {
+    assert.equal(await page.locator('#tenantLocator').isVisible(), true);
+    assert.equal(await page.locator('#crmApp').isHidden(), true);
+    assert.equal(authRequests.length, 0);
+    assert.equal(workspaceRequests.length, 0);
+  });
+
+  await runAuth('MT-01 localizador normaliza slug e abre login tenant', '/', async ({ page, authRequests }) => {
+    await page.getByLabel('Empresa', { exact: true }).fill('Cliente-A');
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    assert.equal(new URL(page.url()).pathname, '/cliente-a');
+    assert.deepEqual(authRequests.find(item => item.url.includes('/locate')).body, { identifier: 'Cliente-A' });
+  });
+
+  await runAuth('MT-01 localizador aceita URL do domínio esperado', '/', async ({ page, authRequests }) => {
+    await page.getByLabel('Empresa', { exact: true }).fill('https://sc2030.brbots.com/cliente-a');
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    assert.equal(new URL(page.url()).pathname, '/cliente-a');
+    assert.match(authRequests[0].body.identifier, /^https:\/\/sc2030\.brbots\.com\//);
+  });
+
+  await runAuth('MT-01 localizador rejeita host externo sem redirecionar', '/', async ({ page }) => {
+    await page.getByLabel('Empresa', { exact: true }).fill('https://externo.example/cliente-a');
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await page.locator('#locatorError').filter({ hasText: 'Não foi possível entrar' }).waitFor();
+    assert.equal(new URL(page.url()).pathname, '/');
+    assert.equal(await page.locator('#locatorError').innerText(), 'Não foi possível entrar com os dados informados.');
+  }, { locateFailure: true });
+
+  await runAuth('MT-01 rota tenant sem sessão exibe login', '/cliente-a', async ({ page }) => {
+    assert.equal(await page.locator('#tenantLogin').isVisible(), true);
+    assert.equal(await page.locator('#crmApp').isHidden(), true);
+    assert.match(await page.locator('#tenantLogin').innerText(), /cliente-a/i);
+  });
+
+  await runAuth('MT-02 sessão válida abre o shell sem tela de login', '/cliente-a', async ({ page, workspaceRequests }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#tenantLogin').isHidden(), true);
+    assert.equal(workspaceRequests.length, 1);
+  }, { authenticated: true });
+
+  await runAuth('MT-01 login envia somente slug email e senha', '/cliente-a', async ({ page, authRequests }) => {
+    await page.locator('#tenantLoginForm').getByLabel('E-mail').fill('ana@cliente.test');
+    await page.locator('#tenantLoginForm').getByLabel('Senha').fill('senha segura 123');
+    await page.getByRole('button', { name: 'Entrar' }).click();
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    const login = authRequests.find(item => item.url.includes('/login'));
+    assert.deepEqual(login.body, { slug: 'cliente-a', email: 'ana@cliente.test', password: 'senha segura 123' });
+    assert.equal(login.headers.authorization, undefined);
+  }, { loginSuccess: true });
+
+  await runAuth('MT-01 falha de login usa mensagem genérica', '/cliente-a', async ({ page }) => {
+    await page.locator('#tenantLoginForm').getByLabel('E-mail').fill('ana@cliente.test');
+    await page.locator('#tenantLoginForm').getByLabel('Senha').fill('senha incorreta 123');
+    await page.getByRole('button', { name: 'Entrar' }).click();
+    await page.locator('#loginError').filter({ hasText: 'Não foi possível entrar' }).waitFor();
+    assert.equal(await page.locator('#loginError').innerText(), 'Não foi possível entrar com os dados informados.');
+    assert.equal(await page.locator('#crmApp').isHidden(), true);
+  });
+
+  await runAuth('MT-03 sessão de outro tenant não troca a rota', '/cliente-a', async ({ page, workspaceRequests }) => {
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#crmApp').isHidden(), true);
+    assert.equal(workspaceRequests.length, 0);
+    assert.equal(new URL(page.url()).pathname, '/cliente-a');
+  }, { authenticated: true, session: { tenant_slug: 'cliente-b' } });
+
+  await runAuth('MT-02 sessão é lida somente pelo cookie', '/cliente-a', async ({ page, authRequests }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    const sessionRequest = authRequests.find(item => item.url.includes('/session'));
+    assert.match(sessionRequest.headers.cookie || '', /__Host-smartcrm_session=opaque-browser-cookie/);
+    assert.equal(sessionRequest.headers.authorization, undefined);
+    assert.equal(new URL(sessionRequest.url).search, '');
+  }, { authenticated: true, cookie: 'opaque-browser-cookie' });
+
+  await runAuth('MT-02 JavaScript não persiste token de sessão', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    const storage = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
+    assert.doesNotMatch(storage, /opaque-browser-cookie|smartcrm_session|token/i);
+  }, { authenticated: true, cookie: 'opaque-browser-cookie' });
+
+  await runAuth('MT-02 logout revoga e limpa o shell em memória', '/cliente-a', async ({ page, authRequests }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: 'Aguardar' }).click();
+    await page.getByRole('button', { name: 'Sair' }).click();
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#crmApp').isHidden(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.authenticated), 'false');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceReady), 'false');
+    assert.equal(authRequests.filter(item => item.url.includes('/logout')).length, 1);
+  }, { authenticated: true });
+
 
   await run('DBP-02 e DBP-03 exigem Admin e exibem contagens antes do bootstrap', async page => {
     const local = await stateFrom(page);
@@ -324,6 +506,10 @@ async function createLead(page, name, options = {}) {
     assert.equal(api.state.notifications.length, beforeNotifications + 1);
 
     const secondContext = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+    await secondContext.route('**/api/auth/session', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify(AUTH_SESSION)
+    }));
     await secondContext.route('**/api/workspace**', route => {
       const request = route.request();
       if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/workspace') {
@@ -333,7 +519,7 @@ async function createLead(page, name, options = {}) {
     });
     const secondPage = await secondContext.newPage();
     apiByPage.set(secondPage, api);
-    await secondPage.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+    await secondPage.goto(TENANT_URL, { waitUntil: 'domcontentloaded' });
     await secondPage.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
     assert.equal(await secondPage.locator('#page-dashboard').getByText('Lead confirmado pela API').count(), 1);
     assert.equal((await stateFrom(secondPage)).leads.some(lead => lead.name === 'Lead confirmado pela API'), true);
