@@ -20,7 +20,7 @@ Implement these tasks with the tlc-spec-driven skill and follow its Execute flow
 | Password/session/auth | unit + integration | Every MT-01/MT-02 branch, dummy hash, expiry, revocation, concurrency and outage | tests/backend/test_security.py, tests/backend/test_auth_service.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_security.py tests/backend/test_auth_service.py -q |
 | Authorization policy | unit | Complete role/action/record matrix | tests/backend/test_authorization.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_authorization.py -q |
 | Tenant repository | PostgreSQL integration | Two databases, identical IDs, all mutations/restores and forced RLS | tests/backend/test_repository.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_repository.py -q |
-| Workspace/auth API | integration | All routes and happy/anonymous/forbidden/forged/CSRF/503 paths | tests/backend/test_api.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_api.py -q |
+| Workspace/auth API | integration | All routes and happy/anonymous/forbidden/forged/CSRF/503 paths | tests/backend/test_api.py, tests/backend/test_auth_api.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_api.py tests/backend/test_auth_api.py -q |
 | Models/schemas/migrations | unit + PostgreSQL integration | Both lineages, identity, preservation, RLS and downgrade | tests/backend/test_models.py, tests/backend/test_schemas.py, tests/backend/test_migrations.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_models.py tests/backend/test_schemas.py tests/backend/test_migrations.py -q |
 | Admin/fleet | integration | Activation, checkpoints/resume, hidden secrets, preflight, selection and independent failures | tests/backend/test_admin.py, tests/backend/test_fleet.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_admin.py tests/backend/test_fleet.py -q |
 | Frontend route/auth/cache | browser e2e | Locator, login, cookie session, immutable profile, logout and namespaced preferences | tests/ui-prototype.spec.cjs | pnpm test |
@@ -375,9 +375,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T15: Protect auth and workspace routes
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Wire locator/login/session/logout and require principals on every workspace endpoint.
+**Execution note:** A API agora expõe locator/login/session/logout com Origin exata nas mutações, cookie opaco `__Host-` endurecido e respostas `no-store`. Todas as rotas de workspace exigem o principal imutável resolvido no servidor, aplicam autorização por ação e mantêm o banco selecionado exclusivamente pelo tenant da sessão; slug, tenant, DSN, usuário e papel enviados pelo navegador não remapeiam autoridade.
 **Where:** app/main.py
 **Depends on:** T14
 **Reuses:** App factory, exception handlers and static mount ordering.
@@ -386,10 +387,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Tenant SPA route is safe; cookie/no-store headers match spec.
-- [ ] Anonymous, forbidden and unavailable cases return stable 401/403/503.
-- [ ] Tests add at least 20 happy/failure/logout/CSRF/forged tenant-DSN-role/404/503 route cases.
-- [ ] Full gate passes.
+- [x] Tenant SPA route is safe; cookie/no-store headers match spec.
+- [x] Anonymous, forbidden and unavailable cases return stable 401/403/503.
+- [x] Tests add at least 20 happy/failure/logout/CSRF/forged tenant-DSN-role/404/503 route cases: 24 cases added.
+- [x] Full gate passes: 321 backend and 69 browser scenarios passed.
 
 **Tests:** API integration
 **Gate:** full

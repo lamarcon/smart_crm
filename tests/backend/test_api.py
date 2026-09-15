@@ -3,14 +3,17 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
+from app.auth import ResolvedPrincipal
 from app.main import create_app
+from app.policies import PrincipalScope
 from app.schemas import PersistedCounts, WorkspaceReferenceError, WorkspaceState
+from app.services.auth import SessionContext
 from app.services.workspace import (
     WorkspaceAlreadyInitialized,
     WorkspaceConflict,
@@ -101,6 +104,30 @@ class FakeService:
         )
 
 
+TEST_SESSION_CONTEXT = SessionContext(
+    principal=PrincipalScope(
+        tenant_id=uuid4(),
+        workspace_id="default",
+        user_id="u-1",
+        role="Administrador",
+        team_id="team-a",
+        auth_version=1,
+    ),
+    tenant_slug="cliente-a",
+    tenant_display_name="Cliente A",
+    user_name="Ana",
+    email="ana@example.test",
+    token_digest="d" * 64,
+)
+
+
+async def authenticated_admin():
+    yield ResolvedPrincipal(
+        context=TEST_SESSION_CONTEXT,
+        tenant_session=object(),
+    )
+
+
 @pytest.fixture
 def client_factory(tmp_path: Path):
     (tmp_path / "index.html").write_text(
@@ -117,6 +144,7 @@ def client_factory(tmp_path: Path):
             database_instance=database or FakeDatabase(),
             workspace_service=fake_service,
             static_dir=tmp_path,
+            principal_dependency=authenticated_admin,
         )
         return TestClient(app, raise_server_exceptions=False), fake_service
 
