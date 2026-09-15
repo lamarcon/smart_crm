@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -45,6 +45,10 @@ ENTITY_MODELS = {
 }
 
 
+class WorkspaceScopeError(RuntimeError):
+    """Raised before business SQL when the trusted workspace context is invalid."""
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -72,9 +76,25 @@ def _team_id(name: str) -> str:
 
 
 class WorkspaceRepository:
-    def __init__(self, session: Session, workspace_id: str = "default") -> None:
+    def __init__(self, session: Session, workspace_id: str | None = None) -> None:
         self.session = session
-        self.workspace_id = workspace_id
+        context_workspace_id = session.scalar(
+            text("SELECT current_setting('smartcrm.workspace_id', true)")
+        )
+        if not context_workspace_id:
+            raise WorkspaceScopeError("workspace context unavailable")
+        context_workspace_id = str(context_workspace_id)
+        if workspace_id is not None and workspace_id != context_workspace_id:
+            raise WorkspaceScopeError("workspace context mismatch")
+        self.workspace_id = context_workspace_id
+
+    def _scoped_one(self, model, record_id):  # noqa: ANN001, ANN201
+        return self.session.scalar(
+            select(model).where(
+                model.workspace_id == self.workspace_id,
+                model.id == record_id,
+            )
+        )
 
     def reconcile(self, state: WorkspaceState, *, fail_after: str | None = None) -> None:
         data = state.model_dump(by_alias=True, exclude_none=True)
@@ -193,7 +213,7 @@ class WorkspaceRepository:
 
     def restore_record(self, module: str, record_id: str) -> bool:
         model = ENTITY_MODELS[module]
-        row = self.session.get(model, record_id)
+        row = self._scoped_one(model, record_id)
         if row is None or row.deleted_at is None:
             return False
         row.deleted_at = None
@@ -230,7 +250,7 @@ class WorkspaceRepository:
         result: dict[str, str] = {}
         for name in sorted(names):
             team_id = _team_id(name)
-            team = self.session.get(Team, team_id)
+            team = self._scoped_one(Team, team_id)
             if team is None:
                 team = Team(id=team_id, workspace_id=self.workspace_id, name=name)
                 self.session.add(team)
@@ -243,7 +263,7 @@ class WorkspaceRepository:
         present = {record["id"] for record in records}
         self._soft_delete_absent(CrmUser, present)
         for position, record in enumerate(records):
-            row = self.session.get(CrmUser, record["id"])
+            row = self._scoped_one(CrmUser, record["id"])
             values = dict(
                 workspace_id=self.workspace_id,
                 team_id=teams.get(record.get("team")),
@@ -267,7 +287,7 @@ class WorkspaceRepository:
         present = {record["id"] for record in records}
         self._soft_delete_absent(Company, present)
         for position, record in enumerate(records):
-            row = self.session.get(Company, record["id"])
+            row = self._scoped_one(Company, record["id"])
             values = dict(
                 workspace_id=self.workspace_id,
                 owner_id=record.get("ownerId"),
@@ -290,7 +310,7 @@ class WorkspaceRepository:
         present = {record["id"] for record in records}
         self._soft_delete_absent(Contact, present)
         for position, record in enumerate(records):
-            row = self.session.get(Contact, record["id"])
+            row = self._scoped_one(Contact, record["id"])
             company_text = record.get("company", "")
             values = dict(
                 workspace_id=self.workspace_id,
@@ -314,7 +334,7 @@ class WorkspaceRepository:
         present = {record["id"] for record in records}
         self._soft_delete_absent(Lead, present)
         for position, record in enumerate(records):
-            row = self.session.get(Lead, record["id"])
+            row = self._scoped_one(Lead, record["id"])
             values = dict(
                 workspace_id=self.workspace_id,
                 responsible_id=record.get("responsibleId"),
@@ -336,7 +356,12 @@ class WorkspaceRepository:
             else:
                 for key, value in values.items():
                     setattr(row, key, value)
-            self.session.execute(delete(LeadAssistant).where(LeadAssistant.lead_id == record["id"]))
+            self.session.execute(
+                delete(LeadAssistant).where(
+                    LeadAssistant.workspace_id == self.workspace_id,
+                    LeadAssistant.lead_id == record["id"],
+                )
+            )
             for assistant_position, user_id in enumerate(record.get("assistants") or []):
                 self.session.add(LeadAssistant(workspace_id=self.workspace_id, lead_id=record["id"], user_id=user_id, position=assistant_position))
 
@@ -346,7 +371,7 @@ class WorkspaceRepository:
         present = {record["id"] for record in records}
         self._soft_delete_absent(Deal, present)
         for position, record in enumerate(records):
-            row = self.session.get(Deal, record["id"])
+            row = self._scoped_one(Deal, record["id"])
             company_text = record.get("company", "")
             contact_text = record.get("contact", "")
             values = dict(
@@ -373,10 +398,20 @@ class WorkspaceRepository:
                 for key, value in values.items():
                     setattr(row, key, value)
             self.session.flush()
-            self.session.execute(delete(DealAssistant).where(DealAssistant.deal_id == record["id"]))
+            self.session.execute(
+                delete(DealAssistant).where(
+                    DealAssistant.workspace_id == self.workspace_id,
+                    DealAssistant.deal_id == record["id"],
+                )
+            )
             for assistant_position, user_id in enumerate(record.get("assistants") or []):
                 self.session.add(DealAssistant(workspace_id=self.workspace_id, deal_id=record["id"], user_id=user_id, position=assistant_position))
-            self.session.execute(delete(DealStageHistory).where(DealStageHistory.deal_id == record["id"]))
+            self.session.execute(
+                delete(DealStageHistory).where(
+                    DealStageHistory.workspace_id == self.workspace_id,
+                    DealStageHistory.deal_id == record["id"],
+                )
+            )
             for history_position, history in enumerate(record.get("stageHistory") or []):
                 self.session.add(DealStageHistory(workspace_id=self.workspace_id, deal_id=record["id"], position=history_position, from_stage=history.get("from"), to_stage=history.get("to", ""), changed_at=_date(history.get("at")) or _now(), changed_by_id=history.get("byId")))
             self._reconcile_quotes(record["id"], record.get("quotes") or [])
@@ -385,7 +420,7 @@ class WorkspaceRepository:
         present = {record["id"] for record in records}
         self._soft_delete_absent(Quote, present, (Quote.deal_id == deal_id,))
         for position, record in enumerate(records):
-            row = self.session.get(Quote, record["id"])
+            row = self._scoped_one(Quote, record["id"])
             values = dict(deal_id=deal_id, position=position, description=record.get("description", ""), quantity=Decimal(str(record.get("quantity", 1))), unit_price=Decimal(str(record.get("unitPrice", 0))), discount=Decimal(str(record.get("discount", 0))), total=Decimal(str(record.get("total", 0))), valid_until=_date(record.get("validUntil")), state=record.get("state", "Rascunho"), pdf_name=record.get("pdf"), payload=_packed(record, position), deleted_at=None)
             if row is None:
                 self.session.add(Quote(id=record["id"], workspace_id=self.workspace_id, **values))
@@ -397,7 +432,7 @@ class WorkspaceRepository:
         present = {record["id"] for record in records}
         self._soft_delete_absent(Notification, present)
         for position, record in enumerate(records):
-            row = self.session.get(Notification, record["id"])
+            row = self._scoped_one(Notification, record["id"])
             values = dict(workspace_id=self.workspace_id, user_id=record.get("userId"), text=record.get("text", ""), detail=record.get("detail", ""), displayed_time=record.get("time", ""), is_read=bool(record.get("read", False)), payload=_packed(record, position), deleted_at=None)
             if row is None:
                 self.session.add(Notification(id=record["id"], **values))
@@ -451,7 +486,7 @@ class WorkspaceRepository:
         present = {record["id"] for record in records}
         self._soft_delete_absent(SavedFilter, present)
         for position, record in enumerate(records):
-            row = self.session.get(SavedFilter, record["id"])
+            row = self._scoped_one(SavedFilter, record["id"])
             values = dict(workspace_id=self.workspace_id, user_id=record["userId"], scope=record["scope"], name=record["name"], filter={"value": record.get("filter") or {}, "__position": position}, updated_at=_date(record.get("updatedAt")) or _now(), deleted_at=None)
             if row is None:
                 self.session.add(SavedFilter(id=record["id"], **values))

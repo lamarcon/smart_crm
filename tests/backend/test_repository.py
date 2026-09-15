@@ -65,6 +65,9 @@ def repository():
     connection.commit()
     session = Session(bind=connection, expire_on_commit=False)
     try:
+        session.execute(
+            text("SELECT set_config('smartcrm.workspace_id', 'default', true)")
+        )
         yield WorkspaceRepository(session), session
     finally:
         session.close()
@@ -227,6 +230,9 @@ def test_combined_workflow_state_rehydrates_in_new_repository_session(repository
 
     fresh_session = Session(bind=repo.session.get_bind(), expire_on_commit=False)
     try:
+        fresh_session.execute(
+            text("SELECT set_config('smartcrm.workspace_id', 'default', true)")
+        )
         rehydrated = WorkspaceRepository(fresh_session).read_active().model_dump(by_alias=True, exclude_none=True)
     finally:
         fresh_session.close()

@@ -60,7 +60,13 @@ def service():
     command.upgrade(config, "head")
     connection.commit()
     connection.close()
-    engine = create_engine(DATABASE_URL, connect_args={"options": f"-csearch_path={schema}"}, pool_pre_ping=True)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={
+            "options": f"-csearch_path={schema} -csmartcrm.workspace_id=default"
+        },
+        pool_pre_ping=True,
+    )
     database = Database(DatabaseSettings(database_url=DATABASE_URL), engine=engine)
     try:
         yield WorkspaceService(database), database

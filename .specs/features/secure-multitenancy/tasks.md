@@ -19,7 +19,7 @@ Implement these tasks with the tlc-spec-driven skill and follow its Execute flow
 | Secret provider/router | unit + PostgreSQL integration | DPAPI contract, trusted-only routing, identity mismatch, two databases, pools and no fallback | tests/backend/test_secrets.py, tests/backend/test_tenant_router.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_secrets.py tests/backend/test_tenant_router.py -q |
 | Password/session/auth | unit + integration | Every MT-01/MT-02 branch, dummy hash, expiry, revocation, concurrency and outage | tests/backend/test_security.py, tests/backend/test_auth_service.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_security.py tests/backend/test_auth_service.py -q |
 | Authorization policy | unit | Complete role/action/record matrix | tests/backend/test_authorization.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_authorization.py -q |
-| Tenant repository | PostgreSQL integration | Two databases, identical IDs, all mutations/restores and forced RLS | tests/backend/test_repository.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_repository.py -q |
+| Tenant repository | PostgreSQL integration | Two databases, identical IDs, all mutations/restores and forced RLS | tests/backend/test_repository.py, tests/backend/test_repository_tenant_scope.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_repository.py tests/backend/test_repository_tenant_scope.py -q |
 | Workspace/auth API | integration | All routes and happy/anonymous/forbidden/forged/CSRF/503 paths | tests/backend/test_api.py, tests/backend/test_auth_api.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_api.py tests/backend/test_auth_api.py -q |
 | Models/schemas/migrations | unit + PostgreSQL integration | Both lineages, identity, preservation, RLS and downgrade | tests/backend/test_models.py, tests/backend/test_schemas.py, tests/backend/test_migrations.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_models.py tests/backend/test_schemas.py tests/backend/test_migrations.py -q |
 | Admin/fleet | integration | Activation, checkpoints/resume, hidden secrets, preflight, selection and independent failures | tests/backend/test_admin.py, tests/backend/test_fleet.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_admin.py tests/backend/test_fleet.py -q |
@@ -398,9 +398,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T16: Scope every repository path
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Remove fixed/default scope and tenant-qualify every read, reconcile, delete and restore in the selected database.
+**Execution note:** O repositório deriva o workspace do `current_setting` transacional definido pelo router, rejeita contexto ausente e compara o workspace esperado do principal quando fornecido. Nove lookups por identidade foram substituídos por consultas compostas com workspace, e exclusões de assistentes/histórico agora também incluem o workspace. Os testes usam dois bancos PostgreSQL físicos com IDs comerciais idênticos; um timeout transitório do DBP-10 na primeira UI foi investigado como corrida preexistente de visualização otimista, e a reexecução integral passou 69/69 sem alteração do teste.
 **Where:** app/repositories/workspace.py
 **Depends on:** T15
 **Reuses:** Existing serialization/reconciliation.
@@ -409,10 +410,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] No tenant-owned session.get or unqualified ID lookup remains.
-- [ ] Every write binds principal workspace and missing/wrong RLS context fails closed.
-- [ ] Tests add at least 18 two-database negative read/write/delete/restore/reference cases.
-- [ ] Full gate proves the non-target database unchanged.
+- [x] No tenant-owned session.get or unqualified ID lookup remains.
+- [x] Every write binds principal workspace and missing/wrong RLS context fails closed.
+- [x] Tests add at least 18 two-database negative read/write/delete/restore/reference cases: 34 cases added.
+- [x] Full gate proves the non-target database unchanged: 355 backend and 69 browser scenarios passed.
 
 **Tests:** PostgreSQL integration
 **Gate:** full
