@@ -444,9 +444,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T18: Provision and resume tenants
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Implement local register, activate-default, resume, set-password and revoke commands with hidden inputs.
+**Execution note:** A CLI local mantém o tenant em provisioning até validar revisão, workspace, identidade imutável e primeiro Administrador no banco dedicado. Falhas registram somente checkpoint e código redigidos; retomadas não duplicam tenant, identidade ou administrador. Senhas e segredos entram por prompt oculto, e mudança de senha incrementa auth_version e revoga sessões centrais.
 **Where:** app/admin_cli.py
 **Depends on:** T17
 **Reuses:** Control states, SecretProvider, router and hasher.
@@ -455,11 +456,11 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] No HTTP provisioning exists and only fully verified tenant/admin becomes active.
-- [ ] Failure remains non-active with redacted checkpoint and idempotent resume.
-- [ ] Default activation never copies commercial data.
-- [ ] Tests add at least 14 hidden-input, duplicate, partial-failure, resume, count and revocation cases.
-- [ ] Full gate passes.
+- [x] No HTTP provisioning exists and only fully verified tenant/admin becomes active.
+- [x] Failure remains non-active with redacted checkpoint and idempotent resume.
+- [x] Default activation never copies commercial data.
+- [x] Tests add at least 14 hidden-input, duplicate, partial-failure, resume, count and revocation cases: 17 cases added.
+- [x] Full gate passes: 431 backend and 69 browser scenarios passed.
 
 **Tests:** PostgreSQL integration
 **Gate:** full
