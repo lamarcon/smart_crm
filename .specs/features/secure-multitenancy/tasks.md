@@ -352,9 +352,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T14: Resolve immutable cookie principals
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Add cookie-only session resolution, route binding, tenant session lifecycle and Origin checks.
+**Execution note:** A dependência aceita somente o cookie opaco, rejeita token alternativo em query/corpo/header, valida Origin exata antes de mutações e abre o banco exclusivamente pelo tenant_id do contexto central. Headers de tenant, DSN, usuário e papel são ignorados como autoridade.
 **Where:** app/auth.py
 **Depends on:** T13
 **Reuses:** FastAPI dependencies and configured expected origin.
@@ -363,10 +364,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Alternate token locations are rejected and principal comes from central session plus current tenant user.
-- [ ] Route mismatch cannot remap; unsafe methods require exact HTTPS Origin.
-- [ ] Tests add at least 12 malformed/expired/revoked cookie, forged-source, route and Origin cases.
-- [ ] Full gate passes.
+- [x] Alternate token locations are rejected and principal comes from central session plus current tenant user.
+- [x] Route mismatch cannot remap; unsafe methods require exact HTTPS Origin.
+- [x] Tests add at least 12 malformed/expired/revoked cookie, forged-source, route and Origin cases.
+- [x] Full gate passes: 297 backend and 69 browser scenarios passed.
 
 **Tests:** unit + API integration
 **Gate:** full
