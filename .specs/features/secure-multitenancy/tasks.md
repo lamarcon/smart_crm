@@ -468,9 +468,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T19: Preflight and migrate an explicit fleet
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Implement redacted identity/revision health and explicitly selected per-tenant Alembic execution.
+**Execution note:** O preflight abre cada perfil isoladamente, lê somente identidade e revisão e retorna códigos por tenant sem propagar detalhes de conexão. A migração recusa seleção vazia, ausência de backup confirmado ou confirmação operacional; bloqueia identidades divergentes em tenants ativos, processa apenas slugs explícitos e mantém resultados independentes após falha parcial.
 **Where:** app/fleet.py
 **Depends on:** T18
 **Reuses:** Router health, control directory and tenant lineage.
@@ -479,10 +480,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Output is independent/redacted per tenant.
-- [ ] Migration requires selection, backup acknowledgement and confirmation; requests never migrate.
-- [ ] Tests add at least 12 mixed-version, mismatch, outage, selection, cancellation and partial-failure cases.
-- [ ] Full gate passes.
+- [x] Output is independent/redacted per tenant.
+- [x] Migration requires selection, backup acknowledgement and confirmation; requests never migrate.
+- [x] Tests add at least 12 mixed-version, mismatch, outage, selection, cancellation and partial-failure cases: 17 cases added.
+- [x] Full gate passes: 448 backend and 69 browser scenarios passed.
 
 **Tests:** PostgreSQL integration
 **Gate:** full
