@@ -70,13 +70,13 @@ def _unpack(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     return int(payload.get("position", 0)), dict(payload.get("record") or {})
 
 
-def _team_id(name: str) -> str:
+def team_id_for_name(name: str) -> str:
     digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:20]
     return f"team-{digest}"
 
 
 class WorkspaceRepository:
-    def __init__(self, session: Session, workspace_id: str | None = None) -> None:
+    def __init__(self, session: Session, workspace_id: str) -> None:
         self.session = session
         context_workspace_id = session.scalar(
             text("SELECT current_setting('smartcrm.workspace_id', true)")
@@ -84,7 +84,7 @@ class WorkspaceRepository:
         if not context_workspace_id:
             raise WorkspaceScopeError("workspace context unavailable")
         context_workspace_id = str(context_workspace_id)
-        if workspace_id is not None and workspace_id != context_workspace_id:
+        if not workspace_id or workspace_id != context_workspace_id:
             raise WorkspaceScopeError("workspace context mismatch")
         self.workspace_id = context_workspace_id
 
@@ -249,7 +249,7 @@ class WorkspaceRepository:
         }
         result: dict[str, str] = {}
         for name in sorted(names):
-            team_id = _team_id(name)
+            team_id = team_id_for_name(name)
             team = self._scoped_one(Team, team_id)
             if team is None:
                 team = Team(id=team_id, workspace_id=self.workspace_id, name=name)

@@ -20,7 +20,7 @@ Implement these tasks with the tlc-spec-driven skill and follow its Execute flow
 | Password/session/auth | unit + integration | Every MT-01/MT-02 branch, dummy hash, expiry, revocation, concurrency and outage | tests/backend/test_security.py, tests/backend/test_auth_service.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_security.py tests/backend/test_auth_service.py -q |
 | Authorization policy | unit | Complete role/action/record matrix | tests/backend/test_authorization.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_authorization.py -q |
 | Tenant repository | PostgreSQL integration | Two databases, identical IDs, all mutations/restores and forced RLS | tests/backend/test_repository.py, tests/backend/test_repository_tenant_scope.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_repository.py tests/backend/test_repository_tenant_scope.py -q |
-| Workspace/auth API | integration | All routes and happy/anonymous/forbidden/forged/CSRF/503 paths | tests/backend/test_api.py, tests/backend/test_auth_api.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_api.py tests/backend/test_auth_api.py -q |
+| Workspace service/auth API | unit + PostgreSQL + API integration | Projection/merge for every role plus happy/anonymous/forbidden/forged/CSRF/version/503 paths | tests/backend/test_workspace_authorization.py, tests/backend/test_workspace_service.py, tests/backend/test_api.py, tests/backend/test_auth_api.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_workspace_authorization.py tests/backend/test_workspace_service.py tests/backend/test_api.py tests/backend/test_auth_api.py -q |
 | Models/schemas/migrations | unit + PostgreSQL integration | Both lineages, identity, preservation, RLS and downgrade | tests/backend/test_models.py, tests/backend/test_schemas.py, tests/backend/test_migrations.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_models.py tests/backend/test_schemas.py tests/backend/test_migrations.py -q |
 | Admin/fleet | integration | Activation, checkpoints/resume, hidden secrets, preflight, selection and independent failures | tests/backend/test_admin.py, tests/backend/test_fleet.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_admin.py tests/backend/test_fleet.py -q |
 | Frontend route/auth/cache | browser e2e | Locator, login, cookie session, immutable profile, logout and namespaced preferences | tests/ui-prototype.spec.cjs | pnpm test |
@@ -421,9 +421,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T17: Enforce authorized snapshot projection and merge
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Replace default service calls with principal-based projection and canonical authorized save merge.
+**Execution note:** `WorkspaceService` agora é stateless e exige a `TenantSession` já selecionada mais o `PrincipalScope` imutável em toda operação. O servidor projeta Leads/Negócios por equipe, responsabilidade ou assistência, restringe notificações e preferências ao usuário, mantém Contatos/Empresas tenant-wide e mescla saves autorizados com linhas invisíveis canônicas. Mudanças administrativas, registros fora do escopo e papéis desconhecidos falham com 403 sem escrita parcial; `currentUserId` é removido do snapshot e a identidade permanece somente na sessão autenticada. O Build gate exigiu reconstruir apenas o container CRM local porque a primeira tentativa UI encontrou `ERR_CONNECTION_REFUSED`; com o ambiente saudável, todos os 69 cenários passaram.
 **Where:** app/services/workspace.py
 **Depends on:** T16
 **Reuses:** Existing row lock, version conflict and reference validation.
@@ -432,10 +433,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Service requires principal/TenantSession, filters reads and preserves invisible canonical rows.
-- [ ] Non-admin privileged changes fail without partial write.
-- [ ] Tests add at least 20 role/record/version/forged identity/cross-database cases.
-- [ ] Phase 2 Build gate passes.
+- [x] Service requires principal/TenantSession, filters reads and preserves invisible canonical rows.
+- [x] Non-admin privileged changes fail without partial write.
+- [x] Tests add at least 20 role/record/version/forged identity/cross-database cases: 59 cases added.
+- [x] Phase 2 Build gate passes: compileall; compatibility 24/24; Compose valid; 414 backend; 69 browser; Windows runbook 41/41; Apache 21/21.
 
 **Tests:** unit + PostgreSQL + API integration
 **Gate:** build

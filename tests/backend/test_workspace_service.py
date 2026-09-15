@@ -13,10 +13,12 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 
 from app.database import Database, DatabaseSettings
-from app.repositories.workspace import WorkspaceRepository
+from app.policies import PrincipalScope
+from app.repositories.workspace import WorkspaceRepository, team_id_for_name
 from app.schemas import WorkspaceReferenceError, WorkspaceState
 from app.services.workspace import (
     WorkspaceAlreadyInitialized,
+    WorkspaceAuthorizationError,
     WorkspaceConflict,
     WorkspaceNotInitialized,
     WorkspaceRecordNotFound,
@@ -27,6 +29,42 @@ from app.services.workspace import (
 
 ROOT = Path(__file__).resolve().parents[2]
 DATABASE_URL = os.getenv("SMART_CRM_TEST_DATABASE_URL", "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test")
+TEST_PRINCIPAL = PrincipalScope(
+    tenant_id=uuid.uuid4(),
+    workspace_id="default",
+    user_id="u-1",
+    role="Administrador",
+    team_id=None,
+    auth_version=1,
+)
+
+
+class BoundWorkspaceService:
+    def __init__(self, service: WorkspaceService, database: Database) -> None:
+        self.service = service
+        self.database = database
+
+    def _call(self, method: str, *args):  # noqa: ANN002, ANN202
+        with self.database.session_scope() as session:
+            return getattr(self.service, method)(session, TEST_PRINCIPAL, *args)
+
+    def load(self):  # noqa: ANN201
+        return self._call("load")
+
+    def bootstrap(self, value):  # noqa: ANN001, ANN201
+        return self._call("bootstrap", value)
+
+    def save(self, version, value):  # noqa: ANN001, ANN201
+        return self._call("save", version, value)
+
+    def reset(self, version, value):  # noqa: ANN001, ANN201
+        return self._call("reset", version, value)
+
+    def list_deleted(self, module):  # noqa: ANN001, ANN201
+        return self._call("list_deleted", module)
+
+    def restore(self, version, module, record_id):  # noqa: ANN001, ANN201
+        return self._call("restore", version, module, record_id)
 
 
 def state_data() -> dict:
@@ -69,7 +107,7 @@ def service():
     )
     database = Database(DatabaseSettings(database_url=DATABASE_URL), engine=engine)
     try:
-        yield WorkspaceService(database), database
+        yield BoundWorkspaceService(WorkspaceService(), database), database
     finally:
         database.dispose()
         with root_engine.begin() as cleanup:
@@ -246,7 +284,7 @@ def test_repository_exception_rolls_back_save_and_version(service) -> None:
             super().reconcile(value, **kwargs)
             raise RuntimeError("forced service failure")
 
-    failing = WorkspaceService(database, FailingRepository)
+    failing = BoundWorkspaceService(WorkspaceService(FailingRepository), database)
     changed = state_data()
     changed["companies"][0]["name"] = "Não salvar"
     with pytest.raises(RuntimeError, match="forced service failure"):
@@ -265,3 +303,87 @@ def test_restore_detects_active_user_email_conflict() -> None:
 
     with pytest.raises(WorkspaceRestoreConflict):
         WorkspaceService._check_restore_uniqueness(FakeRepository(), "users", "u-old")
+
+
+def test_non_admin_privileged_save_returns_no_partial_write(service) -> None:
+    workspace, database = service
+    workspace.bootstrap(state())
+    assistant = PrincipalScope(
+        tenant_id=TEST_PRINCIPAL.tenant_id,
+        workspace_id="default",
+        user_id="u-2",
+        role="Assistente",
+        team_id=team_id_for_name("Vendas"),
+        auth_version=1,
+    )
+    core = WorkspaceService()
+    with database.session_scope() as session:
+        projected = core.load(session, assistant).state
+        projected.users[0]["role"] = "Faturamento"
+        with pytest.raises(WorkspaceAuthorizationError, match="administrative snapshot change"):
+            core.save(session, assistant, 1, projected)
+
+    loaded = workspace.load()
+    assert loaded.version == 1
+    assert loaded.state.users[0]["role"] == "Administrador"
+
+
+def test_non_admin_physical_save_preserves_invisible_canonical_row(service) -> None:
+    workspace, database = service
+    initial = state_data()
+    initial["leads"].append(
+        {
+            "id": "L-hidden",
+            "name": "Invisible canonical",
+            "company": "Empresa",
+            "stage": "Em contato",
+            "responsibleId": "u-1",
+            "assistants": [],
+        }
+    )
+    workspace.bootstrap(WorkspaceState.model_validate(initial))
+    assistant = PrincipalScope(
+        tenant_id=TEST_PRINCIPAL.tenant_id,
+        workspace_id="default",
+        user_id="u-2",
+        role="Assistente",
+        team_id=team_id_for_name("Vendas"),
+        auth_version=1,
+    )
+    core = WorkspaceService()
+    with database.session_scope() as session:
+        projected = core.load(session, assistant).state
+        assert [item["id"] for item in projected.leads] == ["L-1"]
+        projected.leads[0]["name"] = "Authorized"
+        result = core.save(session, assistant, 1, projected)
+        assert result.version == 2
+
+    loaded = workspace.load()
+    assert {item["id"]: item["name"] for item in loaded.state.leads} == {
+        "L-1": "Authorized",
+        "L-hidden": "Invisible canonical",
+    }
+
+
+def test_non_admin_stale_version_fails_before_merge_and_keeps_database(service) -> None:
+    workspace, database = service
+    workspace.bootstrap(state())
+    assistant = PrincipalScope(
+        tenant_id=TEST_PRINCIPAL.tenant_id,
+        workspace_id="default",
+        user_id="u-2",
+        role="Assistente",
+        team_id=team_id_for_name("Vendas"),
+        auth_version=1,
+    )
+    core = WorkspaceService()
+    with database.session_scope() as session:
+        projected = core.load(session, assistant).state
+        projected.leads[0]["name"] = "Must not persist"
+        with pytest.raises(WorkspaceConflict) as error:
+            core.save(session, assistant, 0, projected)
+        assert error.value.current_version == 1
+
+    loaded = workspace.load()
+    assert loaded.version == 1
+    assert loaded.state.leads[0]["name"] == "Lead"

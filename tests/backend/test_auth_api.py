@@ -104,27 +104,27 @@ class FakeRouter:
 class FakeWorkspaceService:
     calls: list[tuple] = field(default_factory=list)
 
-    def load(self) -> WorkspaceLoad:
+    def load(self, _session, _principal) -> WorkspaceLoad:  # noqa: ANN001
         self.calls.append(("load",))
         return WorkspaceLoad(True, 1, STATE)
 
-    def bootstrap(self, state: WorkspaceState) -> WorkspaceResult:
+    def bootstrap(self, _session, _principal, state: WorkspaceState) -> WorkspaceResult:  # noqa: ANN001
         self.calls.append(("bootstrap", state))
         return WorkspaceResult(1, STATE, COUNTS)
 
-    def save(self, version: int, state: WorkspaceState) -> WorkspaceResult:
+    def save(self, _session, _principal, version: int, state: WorkspaceState) -> WorkspaceResult:  # noqa: ANN001
         self.calls.append(("save", version, state))
         return WorkspaceResult(version + 1, STATE, COUNTS)
 
-    def reset(self, version: int, state: WorkspaceState) -> WorkspaceResult:
+    def reset(self, _session, _principal, version: int, state: WorkspaceState) -> WorkspaceResult:  # noqa: ANN001
         self.calls.append(("reset", version, state))
         return WorkspaceResult(version + 1, STATE, COUNTS)
 
-    def list_deleted(self, module: str) -> list[dict]:
+    def list_deleted(self, _session, _principal, module: str) -> list[dict]:  # noqa: ANN001
         self.calls.append(("list_deleted", module))
         return []
 
-    def restore(self, version: int, module: str, record_id: str) -> WorkspaceResult:
+    def restore(self, _session, _principal, version: int, module: str, record_id: str) -> WorkspaceResult:  # noqa: ANN001
         self.calls.append(("restore", version, module, record_id))
         return WorkspaceResult(version + 1, STATE, COUNTS)
 

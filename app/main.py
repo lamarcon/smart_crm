@@ -38,6 +38,7 @@ from app.schemas import (
 from app.services.auth import AuthenticationError, AuthService, SessionContext
 from app.services.workspace import (
     WorkspaceAlreadyInitialized,
+    WorkspaceAuthorizationError,
     WorkspaceConflict,
     WorkspaceNotInitialized,
     WorkspaceRecordNotFound,
@@ -111,7 +112,7 @@ def create_app(
 ) -> FastAPI:
     del settings
     active_database = database_instance or database
-    service = workspace_service or WorkspaceService(active_database)
+    service = workspace_service or WorkspaceService()
     active_auth_settings = auth_settings or AuthSettings(
         expected_origin="https://sc2030.brbots.com"
     )
@@ -253,6 +254,13 @@ def create_app(
     ) -> JSONResponse:
         return _error(409, "restore_conflict", "O registro não pode ser recuperado.")
 
+    @app.exception_handler(WorkspaceAuthorizationError)
+    async def authorization_error(
+        _request: Request,
+        _error_value: WorkspaceAuthorizationError,
+    ) -> JSONResponse:
+        return _error(403, "forbidden", "Acesso negado.")
+
     @app.exception_handler(SQLAlchemyError)
     async def database_error(_request: Request, error: SQLAlchemyError) -> JSONResponse:
         error_id = str(uuid.uuid4())
@@ -386,7 +394,7 @@ def create_app(
         principal: ResolvedPrincipal = Depends(resolve_principal),
     ) -> dict:
         require_action(principal, Action.READ)
-        loaded = service.load()
+        loaded = service.load(principal.tenant_session, principal.context.principal)
         return {
             "initialized": loaded.initialized,
             "version": loaded.version,
@@ -399,7 +407,13 @@ def create_app(
         principal: ResolvedPrincipal = Depends(resolve_principal),
     ) -> dict:
         require_action(principal, Action.IMPORT_DATA)
-        return _result_payload(service.bootstrap(payload.state))
+        return _result_payload(
+            service.bootstrap(
+                principal.tenant_session,
+                principal.context.principal,
+                payload.state,
+            )
+        )
 
     @app.put("/api/workspace")
     def save_workspace(
@@ -407,7 +421,14 @@ def create_app(
         principal: ResolvedPrincipal = Depends(resolve_principal),
     ) -> dict:
         require_action(principal, Action.UPDATE)
-        return _result_payload(service.save(payload.version, payload.state))
+        return _result_payload(
+            service.save(
+                principal.tenant_session,
+                principal.context.principal,
+                payload.version,
+                payload.state,
+            )
+        )
 
     @app.post("/api/workspace/reset")
     def reset_workspace(
@@ -415,7 +436,14 @@ def create_app(
         principal: ResolvedPrincipal = Depends(resolve_principal),
     ) -> dict:
         require_action(principal, Action.RESET_WORKSPACE)
-        return _result_payload(service.reset(payload.version, payload.state))
+        return _result_payload(
+            service.reset(
+                principal.tenant_session,
+                principal.context.principal,
+                payload.version,
+                payload.state,
+            )
+        )
 
     @app.get("/api/workspace/deleted")
     def list_deleted(
@@ -423,7 +451,14 @@ def create_app(
         principal: ResolvedPrincipal = Depends(resolve_principal),
     ) -> dict:
         require_action(principal, Action.RESTORE_DELETED)
-        return {"module": module, "records": service.list_deleted(module)}
+        return {
+            "module": module,
+            "records": service.list_deleted(
+                principal.tenant_session,
+                principal.context.principal,
+                module,
+            ),
+        }
 
     @app.post("/api/workspace/restore")
     def restore_workspace(
@@ -432,7 +467,13 @@ def create_app(
     ) -> dict:
         require_action(principal, Action.RESTORE_DELETED)
         return _result_payload(
-            service.restore(payload.version, payload.module, payload.record_id)
+            service.restore(
+                principal.tenant_session,
+                principal.context.principal,
+                payload.version,
+                payload.module,
+                payload.record_id,
+            )
         )
 
     @app.get("/")

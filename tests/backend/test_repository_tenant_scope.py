@@ -28,8 +28,10 @@ from app.models import (
     Notification,
     Quote,
 )
+from app.policies import PrincipalScope
 from app.repositories.workspace import WorkspaceRepository, WorkspaceScopeError
 from app.schemas import WorkspaceState
+from app.services.workspace import WorkspaceService
 from tests.backend.test_repository import sample_state
 
 
@@ -334,3 +336,54 @@ def test_reference_reconcile_in_tenant_a_never_deletes_tenant_b_children(
 
     with scoped_repository(isolated_repositories.dsn_b) as (_repository_b, session_b):
         assert session_b.scalar(select(func.count()).select_from(child_model)) == 1
+
+
+def test_workspace_service_save_in_one_physical_database_never_changes_the_other(
+    physical_tenant_pair: PhysicalTenantPair,
+) -> None:
+    service = WorkspaceService()
+    tenant_ids = (uuid.uuid4(), uuid.uuid4())
+    for dsn, tenant_id, marker in (
+        (physical_tenant_pair.dsn_a, tenant_ids[0], "a"),
+        (physical_tenant_pair.dsn_b, tenant_ids[1], "b"),
+    ):
+        admin = PrincipalScope(
+            tenant_id=tenant_id,
+            workspace_id=WORKSPACE_ID,
+            user_id="u-1",
+            role="Administrador",
+            team_id=None,
+            auth_version=1,
+        )
+        with scoped_repository(dsn) as (_repository, session):
+            service.bootstrap(
+                session,
+                admin,
+                WorkspaceState.model_validate(tenant_state(marker)),
+            )
+
+    admin_a = PrincipalScope(
+        tenant_id=tenant_ids[0],
+        workspace_id=WORKSPACE_ID,
+        user_id="u-1",
+        role="Administrador",
+        team_id=None,
+        auth_version=1,
+    )
+    with scoped_repository(physical_tenant_pair.dsn_a) as (_repository, session_a):
+        projected_a = service.load(session_a, admin_a).state
+        projected_a.leads[0]["name"] = "service-changed-a"
+        service.save(session_a, admin_a, 1, projected_a)
+
+    admin_b = PrincipalScope(
+        tenant_id=tenant_ids[1],
+        workspace_id=WORKSPACE_ID,
+        user_id="u-1",
+        role="Administrador",
+        team_id=None,
+        auth_version=1,
+    )
+    with scoped_repository(physical_tenant_pair.dsn_b) as (_repository, session_b):
+        loaded_b = service.load(session_b, admin_b)
+        assert loaded_b.version == 1
+        assert loaded_b.state.leads[0]["name"] == "lead-b"

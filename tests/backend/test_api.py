@@ -16,6 +16,7 @@ from app.schemas import PersistedCounts, WorkspaceReferenceError, WorkspaceState
 from app.services.auth import SessionContext
 from app.services.workspace import (
     WorkspaceAlreadyInitialized,
+    WorkspaceAuthorizationError,
     WorkspaceConflict,
     WorkspaceLoad,
     WorkspaceNotInitialized,
@@ -83,22 +84,22 @@ class FakeService:
             raise self.failure
         return value
 
-    def load(self) -> WorkspaceLoad:
+    def load(self, _session, _principal) -> WorkspaceLoad:  # noqa: ANN001
         return self._return(("load",), self.loaded)
 
-    def bootstrap(self, state: WorkspaceState) -> WorkspaceResult:
+    def bootstrap(self, _session, _principal, state: WorkspaceState) -> WorkspaceResult:  # noqa: ANN001
         return self._return(("bootstrap", state), result())
 
-    def save(self, version: int, state: WorkspaceState) -> WorkspaceResult:
+    def save(self, _session, _principal, version: int, state: WorkspaceState) -> WorkspaceResult:  # noqa: ANN001
         return self._return(("save", version, state), result(version + 1))
 
-    def reset(self, version: int, state: WorkspaceState) -> WorkspaceResult:
+    def reset(self, _session, _principal, version: int, state: WorkspaceState) -> WorkspaceResult:  # noqa: ANN001
         return self._return(("reset", version, state), result(version + 1))
 
-    def list_deleted(self, module: str) -> list[dict]:
+    def list_deleted(self, _session, _principal, module: str) -> list[dict]:  # noqa: ANN001
         return self._return(("list_deleted", module), [{"id": "L-old"}])
 
-    def restore(self, version: int, module: str, record_id: str) -> WorkspaceResult:
+    def restore(self, _session, _principal, version: int, module: str, record_id: str) -> WorkspaceResult:  # noqa: ANN001
         return self._return(
             ("restore", version, module, record_id), result(version + 1)
         )
@@ -433,3 +434,23 @@ def test_unexpected_failure_returns_500_and_logs_same_uuid_without_leaking(
     assert UUID(error["errorId"]).version == 4
     assert error["errorId"] in caplog.text
     assert "internal secret" not in response.text
+
+
+def test_workspace_authorization_failure_returns_stable_403(client_factory) -> None:
+    client, _service = client_factory(
+        service=FakeService(
+            loaded=WorkspaceLoad(True, 1, WorkspaceState.model_validate(STATE_DATA)),
+            failure=WorkspaceAuthorizationError("record is outside principal scope"),
+        )
+    )
+
+    response = client.put(
+        "/api/workspace",
+        json={"version": 1, "state": STATE_DATA},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "error": {"code": "forbidden", "message": "Acesso negado."}
+    }
+    assert "record is outside principal scope" not in response.text
