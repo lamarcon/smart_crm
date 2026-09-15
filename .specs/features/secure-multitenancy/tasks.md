@@ -329,9 +329,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T13: Coordinate tenant login and central sessions
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Implement directory lookup, tenant-DB user verification, central throttling/session creation and revocation.
+**Execution note:** O login resolve apenas o UUID do diretório central, executa Argon2 real ou fictício uma vez por tentativa, registra limites transacionais por conta/IP e persiste somente digest e vínculo da sessão. A renovação relê o usuário no banco tenant, compara auth_version e limita o idle TTL ao prazo absoluto.
 **Where:** app/services/auth.py
 **Depends on:** T12
 **Reuses:** Control repository, router and security primitives.
@@ -340,10 +341,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Login verifies only the resolved tenant DB and all subject/connection failures are publicly identical.
-- [ ] Central sessions contain linkage, never hash/role authority; refresh validates user auth_version.
-- [ ] Tests add at least 16 cases for same email across DBs, outage, limits, concurrency, expiry and revocation.
-- [ ] Full gate passes.
+- [x] Login verifies only the resolved tenant DB and all subject/connection failures are publicly identical.
+- [x] Central sessions contain linkage, never hash/role authority; refresh validates user auth_version.
+- [x] Tests add at least 16 cases for same email across DBs, outage, limits, concurrency, expiry and revocation.
+- [x] Full gate passes: 277 backend and 69 browser scenarios passed.
 
 **Tests:** unit + PostgreSQL integration
 **Gate:** full
