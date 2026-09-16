@@ -624,7 +624,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T26: Document fleet cutover and rollback
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Add control/default/remote database backup, migration, UAT and per-tenant rollback gates.
 **Where:** RUNBOOK_DEPLOY_WINDOWS_SERVER_2016.md
@@ -635,10 +635,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Every selected database requires verified backup and explicit authorization.
-- [ ] Default checks never copy business data; rollback never redirects to another database.
-- [ ] Tests add at least 10 gate/redaction/identity/RLS/rollback assertions.
-- [ ] Build gate passes without server commands.
+- [x] Every selected database requires verified backup and explicit authorization.
+- [x] Default checks never copy business data; rollback never redirects to another database.
+- [x] Tests add at least 10 gate/redaction/identity/RLS/rollback assertions: 13 cases added.
+- [x] Build gate passes without server commands: 495 backend and 93 browser scenarios; compatibility 26, runbook 41 and Apache 32 contracts passed.
 
 **Tests:** contract
 **Gate:** build
