@@ -560,9 +560,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T23: Define safe Windows environment inputs
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Add control DSN, secret store, expected origin and pool/timeout placeholders.
+**Execution note:** O modelo externo do Windows agora declara placeholder explicito para o DSN de control, diretorio DPAPI em ProgramData, origem HTTPS unica e limites positivos para cache, pool e timeouts. O arquivo continua preso a 127.0.0.1:8080 e nao contem DSN, senha ou token tenant em texto puro.
 **Where:** deploy/manual-windows-pg11/server.env.example
 **Depends on:** T22
 **Reuses:** Existing allowlist/local bind.
@@ -571,9 +572,9 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] No tenant DSN/password/token is plaintext and defaults preserve local bind/secure origin.
-- [ ] Contract tests add at least 6 required-key, placeholder, allowlist and forbidden-secret assertions.
-- [ ] Build gate passes.
+- [x] No tenant DSN/password/token is plaintext and defaults preserve local bind/secure origin.
+- [x] Contract tests add at least 6 required-key, placeholder, allowlist and forbidden-secret assertions: 8 cases added.
+- [x] Build gate passes: 466 backend and 93 browser scenarios; compatibility 26, runbook 41 and Apache 21 contracts passed.
 
 **Tests:** contract
 **Gate:** build
