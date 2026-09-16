@@ -582,7 +582,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T24: Package both migration lineages
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Include Argon2 wheel, control/tenant migrations and admin/fleet modules in the offline bundle.
 **Where:** scripts/build_manual_windows_pg11_bundle.py
@@ -593,9 +593,9 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Missing wheel/source contract fails before packaging and bundle has no real secret.
-- [ ] Tests add at least 8 content, hash, offline-install and missing-wheel assertions.
-- [ ] Build gate passes without production deployment.
+- [x] Missing wheel/source contract fails before packaging and bundle has no real secret.
+- [x] Tests add at least 8 content, hash, offline-install and missing-wheel assertions: 8 cases added.
+- [x] Build gate passes without production deployment: 474 backend and 93 browser scenarios; compatibility 26, runbook 41 and Apache 21 contracts passed.
 
 **Tests:** contract + outcome
 **Gate:** build

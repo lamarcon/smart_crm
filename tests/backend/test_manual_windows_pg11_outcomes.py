@@ -41,6 +41,10 @@ def test_builder_creates_versioned_zip_digest_and_complete_windows_payload(tmp_p
         wheelhouse = staging / "wheelhouse"
         wheelhouse.mkdir()
         (wheelhouse / "fake_dependency-1.0.0-cp311-cp311-win_amd64.whl").write_bytes(b"wheel")
+        (wheelhouse / "argon2_cffi-25.1.0-py3-none-any.whl").write_bytes(b"wheel")
+        (
+            wheelhouse / "argon2_cffi_bindings-25.1.0-cp39-abi3-win_amd64.whl"
+        ).write_bytes(b"wheel")
 
     archive, digest_file = builder.build(
         PROJECT_ROOT,

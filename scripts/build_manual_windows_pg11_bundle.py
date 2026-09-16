@@ -16,8 +16,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PATHS = (
     Path("app"),
     Path("migrations"),
+    Path("migrations_control"),
     Path("deploy/manual-windows-pg11"),
     Path("alembic.ini"),
+    Path("alembic-control.ini"),
     Path("requirements-runtime.txt"),
 )
 IGNORED_PARTS = {"__pycache__", ".pytest_cache"}
@@ -57,6 +59,25 @@ def copy_runtime(root: Path, staging: Path) -> None:
         shutil.copy2(root / relative, target)
 
 
+def validate_wheelhouse(wheelhouse: Path) -> None:
+    downloaded = sorted(path for path in wheelhouse.iterdir() if path.is_file())
+    if not downloaded or any(item.suffix.lower() != ".whl" for item in downloaded):
+        raise RuntimeError("wheelhouse must contain binary wheels only")
+
+    names = [item.name.lower() for item in downloaded]
+    if not any(name.startswith("argon2_cffi-") for name in names):
+        raise RuntimeError("argon2-cffi wheel is required")
+
+    bindings = [name for name in names if name.startswith("argon2_cffi_bindings-")]
+    compatible_binding = any(
+        name.endswith("-win_amd64.whl")
+        and ("-cp311-" in name or "-abi3-" in name)
+        for name in bindings
+    )
+    if not compatible_binding:
+        raise RuntimeError("argon2 binding wheel must support CPython 3.11 x64 Windows")
+
+
 def download_windows_wheels(staging: Path, python: str = sys.executable) -> None:
     wheelhouse = staging / "wheelhouse"
     wheelhouse.mkdir(parents=True, exist_ok=True)
@@ -83,9 +104,7 @@ def download_windows_wheels(staging: Path, python: str = sys.executable) -> None
         ],
         check=True,
     )
-    downloaded = sorted(wheelhouse.iterdir())
-    if not downloaded or any(item.suffix != ".whl" for item in downloaded):
-        raise RuntimeError("wheelhouse must contain binary wheels only")
+    validate_wheelhouse(wheelhouse)
 
 
 def write_manifest(staging: Path) -> Path:
@@ -157,6 +176,7 @@ def build(
         staging = Path(temp)
         copy_runtime(root, staging)
         wheel_downloader(staging, python)
+        validate_wheelhouse(staging / "wheelhouse")
         write_manifest(staging)
         verify_manifest(staging)
         create_deterministic_zip(staging, archive)
