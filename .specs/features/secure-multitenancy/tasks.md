@@ -603,7 +603,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T25: Prepare Apache tenant paths
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Preserve one reverse proxy and document Basic Auth removal only at cutover.
 **Where:** deploy/windows-apache/httpd-sc2030.conf.example
@@ -614,9 +614,9 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Root, /{slug} and /api proxy to 127.0.0.1:8080 without database exposure.
-- [ ] Tests add at least 6 proxy-order, reserved-path, auth-transition and no-secret assertions.
-- [ ] Build gate passes and no server is changed.
+- [x] Root, /{slug} and /api proxy to 127.0.0.1:8080 without database exposure.
+- [x] Tests add at least 6 proxy-order, reserved-path, auth-transition and no-secret assertions: 8 cases added.
+- [x] Build gate passes and no server is changed: 482 backend and 93 browser scenarios; compatibility 26, runbook 41 and Apache 32 contracts passed.
 
 **Tests:** contract
 **Gate:** build

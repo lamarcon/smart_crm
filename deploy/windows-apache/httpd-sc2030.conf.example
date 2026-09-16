@@ -34,12 +34,19 @@
     RequestHeader set X-Forwarded-Proto "https"
     RequestHeader set X-Forwarded-Host "sc2030.brbots.com"
 
+    # Reserved application namespace: /api/ must precede the tenant catch-all.
+    ProxyPass "/api/" "http://127.0.0.1:8080/api/" connectiontimeout=5 timeout=60
+    ProxyPassReverse "/api/" "http://127.0.0.1:8080/api/"
+
+    # Root / and /{tenant-slug} use the same central application.
     ProxyPass "/" "http://127.0.0.1:8080/" connectiontimeout=5 timeout=60
     ProxyPassReverse "/" "http://127.0.0.1:8080/"
 
     LimitRequestBody 26214400
     Header always set Strict-Transport-Security "max-age=31536000"
 
+    # CUTOVER GATE: keep Basic Auth during homologation.
+    # Remove this entire <Location "/"> block only after authorized UAT and a separately authorized cutover.
     <Location "/">
         AuthType Basic
         AuthName "Smart CRM - homologacao privada"

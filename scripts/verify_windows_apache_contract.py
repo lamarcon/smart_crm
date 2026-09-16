@@ -36,9 +36,14 @@ def apache_contract(text: str) -> int:
         ('SSLCertificateFile "C:/ProgramData/SmartCRM/tls/sc2030.brbots.com-fullchain.pem"', "Cadeia TLS externa ausente."),
         ('SSLCertificateKeyFile "C:/ProgramData/SmartCRM/tls/sc2030.brbots.com-privkey.pem"', "Chave TLS externa ausente."),
         ('ProxyRequests Off', "Forward proxy não está desabilitado."),
+        ('ProxyPass "/api/" "http://127.0.0.1:8080/api/"', "Proxy reservado da API ausente."),
+        ('ProxyPassReverse "/api/" "http://127.0.0.1:8080/api/"', "Proxy reverso reservado da API ausente."),
+        ('Root / and /{tenant-slug} use the same central application.', "Rotas de tenant não estão documentadas no proxy central."),
         ('ProxyPass "/" "http://127.0.0.1:8080/"', "Proxy não aponta ao loopback do CRM."),
         ('ProxyPassReverse "/" "http://127.0.0.1:8080/"', "Proxy reverso ausente."),
         ('RequestHeader set X-Forwarded-Proto "https"', "Protocolo encaminhado ausente."),
+        ('CUTOVER GATE', "Gate de corte do Basic Auth ausente."),
+        ('authorized UAT', "UAT autorizado não é pré-condição do corte."),
         ('AuthType Basic', "Basic Auth ausente."),
         ('AuthUserFile "C:/ProgramData/SmartCRM/apache/.htpasswd-smart-crm"', "Arquivo de credenciais externo ausente."),
         ('Require valid-user', "Acesso autenticado não é obrigatório."),
@@ -49,13 +54,22 @@ def apache_contract(text: str) -> int:
     reject(text, "0.0.0.0:8080", "Proxy aponta para binding público.")
     reject(text, "ProxyRequests On", "Forward proxy foi habilitado.")
     reject(text, "deploy/windows-apache/tls", "Material TLS foi colocado no clone.")
+    reject(text.lower(), "postgresql://", "DSN de banco exposto no proxy.")
+    reject(text.lower(), "database_url", "Configuração de banco exposta no proxy.")
+    reject(text.lower(), "db_password", "Senha de banco exposta no proxy.")
+    reject(text, ":5432", "Porta de banco exposta no proxy.")
+    reject(text, ":5433", "Porta de banco exposta no proxy.")
     if text.count("ServerName sc2030.brbots.com") != 2:
         raise ContractError("O hostname deve aparecer nos dois virtual hosts.")
-    return len(checks) + 4
+    api_proxy = text.index('ProxyPass "/api/" "http://127.0.0.1:8080/api/"')
+    tenant_catch_all = text.index('ProxyPass "/" "http://127.0.0.1:8080/"')
+    if api_proxy >= tenant_catch_all:
+        raise ContractError("Mapeamento reservado da API deve preceder o catch-all de tenant.")
+    return len(checks) + 10
 
 
 def self_test(valid: str) -> None:
-    assert apache_contract(valid) == 21
+    assert apache_contract(valid) == 32
     mutations = [
         valid.replace("ServerName sc2030.brbots.com", "ServerName old.example", 1),
         valid.replace("http://127.0.0.1:8080/", "http://0.0.0.0:8080/"),
