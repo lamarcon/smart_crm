@@ -104,6 +104,36 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: .specs/features/crm-relationship-cards/validation.md:53 (ui-tests)
 - last seen: 2026-09-10T18:27:30Z
 
+### L-016 - Every authentication-state mutation must increment auth_version and revoke existing server sessions.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `authentication` · harmful: 0
+- features: secure-multitenancy
+- evidence: MT-02.7 (authentication)
+- last seen: 2026-09-16T23:31:30Z
+
+### L-017 - Every rejected opaque session cookie must be expired in the same HTTP response.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `sessions` · harmful: 0
+- features: secure-multitenancy
+- evidence: validation.md:92 (sessions) (+1 more)
+- last seen: 2026-09-16T23:32:04Z
+
+### L-018 - Exercise every required security-event class and assert its redacted persisted audit record.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `audit` · harmful: 0
+- features: secure-multitenancy
+- evidence: MT-06.1 (audit)
+- last seen: 2026-09-16T23:31:31Z
+
+### L-019 - Validate remote database profiles require certificate and hostname verification before creating an engine.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `database-routing` · harmful: 0
+- features: secure-multitenancy
+- evidence: validation.md:74 (database-routing) (+1 more)
+- last seen: 2026-09-16T23:32:04Z
+
+### L-020 - Assert security cache headers on every specified response class, including successful responses.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `api-contracts` · harmful: 0
+- features: secure-multitenancy
+- evidence: MT-06.4 (api-contracts)
+- last seen: 2026-09-16T23:31:31Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

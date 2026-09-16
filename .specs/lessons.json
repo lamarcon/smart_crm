@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 16,
+  "next_id": 21,
   "lessons": [
     {
       "id": "L-001",
@@ -274,6 +274,98 @@
       ],
       "created": "2026-09-10T18:27:30Z",
       "last_seen": "2026-09-10T18:27:30Z"
+    },
+    {
+      "id": "L-016",
+      "key": "ac_gap::every authentication state mutation must increment auth version and revoke existing server sessions",
+      "text": "Every authentication-state mutation must increment auth_version and revoke existing server sessions.",
+      "signal": "ac_gap",
+      "scope": "authentication",
+      "status": "candidate",
+      "features": [
+        "secure-multitenancy"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "MT-02.7 (authentication)"
+      ],
+      "created": "2026-09-16T23:31:30Z",
+      "last_seen": "2026-09-16T23:31:30Z"
+    },
+    {
+      "id": "L-017",
+      "key": "ac_gap::every rejected opaque session cookie must be expired in the same http response",
+      "text": "Every rejected opaque session cookie must be expired in the same HTTP response.",
+      "signal": "ac_gap",
+      "scope": "sessions",
+      "status": "candidate",
+      "features": [
+        "secure-multitenancy"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md:92 (sessions)",
+        "validation.md:87 (sessions)"
+      ],
+      "created": "2026-09-16T23:31:30Z",
+      "last_seen": "2026-09-16T23:32:04Z"
+    },
+    {
+      "id": "L-018",
+      "key": "ac_gap::exercise every required security event class and assert its redacted persisted audit record",
+      "text": "Exercise every required security-event class and assert its redacted persisted audit record.",
+      "signal": "ac_gap",
+      "scope": "audit",
+      "status": "candidate",
+      "features": [
+        "secure-multitenancy"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "MT-06.1 (audit)"
+      ],
+      "created": "2026-09-16T23:31:31Z",
+      "last_seen": "2026-09-16T23:31:31Z"
+    },
+    {
+      "id": "L-019",
+      "key": "ac_gap::validate remote database profiles require certificate and hostname verification before creating an engine",
+      "text": "Validate remote database profiles require certificate and hostname verification before creating an engine.",
+      "signal": "ac_gap",
+      "scope": "database-routing",
+      "status": "candidate",
+      "features": [
+        "secure-multitenancy"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md:74 (database-routing)",
+        "validation.md:78 (database-routing)"
+      ],
+      "created": "2026-09-16T23:31:31Z",
+      "last_seen": "2026-09-16T23:32:04Z"
+    },
+    {
+      "id": "L-020",
+      "key": "ac_gap::assert security cache headers on every specified response class including successful responses",
+      "text": "Assert security cache headers on every specified response class, including successful responses.",
+      "signal": "ac_gap",
+      "scope": "api-contracts",
+      "status": "candidate",
+      "features": [
+        "secure-multitenancy"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "MT-06.4 (api-contracts)"
+      ],
+      "created": "2026-09-16T23:31:31Z",
+      "last_seen": "2026-09-16T23:31:31Z"
     }
   ]
 }
