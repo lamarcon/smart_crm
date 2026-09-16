@@ -164,7 +164,8 @@ def test_health_reports_database_ok_with_security_headers(client_factory) -> Non
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "database": "ok"}
+    assert response.json() == {"status": "ok"}
+    assert response.headers["cache-control"] == "no-store"
     assert_security_headers(response)
 
 
@@ -177,7 +178,8 @@ def test_database_unavailable_degrades_health_but_keeps_root_available(
     root = client.get("/")
 
     assert health.status_code == 503
-    assert health.json() == {"status": "degraded", "database": "unavailable"}
+    assert health.json() == {"status": "degraded"}
+    assert health.headers["cache-control"] == "no-store"
     assert root.status_code == 200
     assert "Smart CRM route test" in root.text
     assert_security_headers(root)

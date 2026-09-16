@@ -537,9 +537,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T22: Bootstrap the central runtime safely
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Validate control revision and expose redacted health without eagerly opening every tenant.
+**Execution note:** O factory central valida a revisao Alembic exata do control antes de criar a aplicacao, compoe autenticacao e roteamento com segredos DPAPI e mantem os engines tenant totalmente lazy. O health consulta somente o control e retorna apenas `ok` ou `degraded`, com `no-store` e sem detalhes de conexao, revisao ou erro.
 **Where:** app/server.py
 **Depends on:** T21
 **Reuses:** Existing Uvicorn/health behavior.
@@ -548,10 +549,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Missing/incompatible control DB blocks startup without secrets; tenant engines stay lazy.
-- [ ] Health exposes no host/database/role/DSN/error detail.
-- [ ] Tests add at least 8 control-failure, lazy-start, mixed-health and redaction cases.
-- [ ] Phase 3 Build gate passes.
+- [x] Missing/incompatible control DB blocks startup without secrets; tenant engines stay lazy.
+- [x] Health exposes no host/database/role/DSN/error detail.
+- [x] Tests add at least 8 control-failure, lazy-start, mixed-health and redaction cases: 10 cases added.
+- [x] Phase 3 Build gate passes: 458 backend and 93 browser scenarios; compatibility 26, runbook 41 and Apache 21 contracts passed.
 
 **Tests:** unit + API integration
 **Gate:** build

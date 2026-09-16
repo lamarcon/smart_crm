@@ -109,9 +109,11 @@ def create_app(
     tenant_router: TenantDatabaseRouter | None = None,
     auth_settings: AuthSettings | None = None,
     principal_dependency: Callable | None = None,
+    health_check: Callable[[], bool] | None = None,
 ) -> FastAPI:
     del settings
     active_database = database_instance or database
+    active_health_check = health_check or active_database.check_database
     service = workspace_service or WorkspaceService()
     active_auth_settings = auth_settings or AuthSettings(
         expected_origin="https://sc2030.brbots.com"
@@ -286,15 +288,19 @@ def create_app(
     @app.get("/health")
     def health() -> JSONResponse:
         try:
-            available = active_database.check_database()
+            available = active_health_check()
         except Exception:
             available = False
         if not available:
             return JSONResponse(
                 status_code=503,
-                content={"status": "degraded", "database": "unavailable"},
+                content={"status": "degraded"},
+                headers={"Cache-Control": "no-store"},
             )
-        return JSONResponse(content={"status": "ok", "database": "ok"})
+        return JSONResponse(
+            content={"status": "ok"},
+            headers={"Cache-Control": "no-store"},
+        )
 
     def require_auth_service() -> AuthService:
         if auth_service is None:

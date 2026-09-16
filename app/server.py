@@ -1,144 +1,117 @@
-"""Dependency-free HTTP server for the Smart CRM local prototype."""
+"""Central FastAPI runtime for isolated tenant databases."""
 
 from __future__ import annotations
 
-import argparse
-import json
-import logging
-import tempfile
-import threading
-import urllib.error
-import urllib.parse
-import urllib.request
-from http import HTTPStatus
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path, PurePosixPath
+import os
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
+from fastapi import FastAPI
+from sqlalchemy import text
 
-APP_DIR = Path(__file__).resolve().parent
-STATIC_DIR = APP_DIR / "static"
-LOG = logging.getLogger("smart-crm-demo")
-
-
-class DemoRequestHandler(SimpleHTTPRequestHandler):
-    """Serve local assets and expose a small health endpoint."""
-
-    server_version = "SmartCRMDemo/1.0"
-
-    def do_GET(self) -> None:  # noqa: N802 - inherited HTTP method name
-        parsed = urllib.parse.urlsplit(self.path)
-        decoded_parts = PurePosixPath(urllib.parse.unquote(parsed.path)).parts
-        if ".." in decoded_parts:
-            self.send_error(HTTPStatus.FORBIDDEN, "Path traversal rejected")
-            return
-
-        if parsed.path == "/health":
-            payload = json.dumps(
-                {"status": "ok", "service": "smart-crm-demo"}
-            ).encode("utf-8")
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(payload)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(payload)
-            return
-
-        super().do_GET()
-
-    def end_headers(self) -> None:
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline'")
-        super().end_headers()
-
-    def log_message(self, message: str, *args: object) -> None:
-        LOG.info("%s - %s", self.address_string(), message % args)
+from app.auth import AuthSettings
+from app.control_database import ControlDatabase
+from app.main import STATIC_DIR, create_app as create_http_app
+from app.security.secrets import DpapiFileSecretProvider, SecretProvider
+from app.services.auth import AuthService
+from app.tenant_database import ControlTenantProfileLoader, TenantDatabaseRouter
 
 
-def handler_factory(static_dir: Path) -> Callable[..., DemoRequestHandler]:
-    """Bind the standard handler to a specific static directory."""
-
-    resolved = static_dir.resolve()
-
-    def create_handler(*args: object, **kwargs: object) -> DemoRequestHandler:
-        return DemoRequestHandler(*args, directory=str(resolved), **kwargs)
-
-    return create_handler
+CONTROL_SCHEMA_REVISION = "c01a5d8e4f20"
 
 
-def create_server(
-    host: str = "0.0.0.0", port: int = 8000, static_dir: Path = STATIC_DIR
-) -> ThreadingHTTPServer:
-    """Create the demo server; split out so the same wiring is self-tested."""
-
-    return ThreadingHTTPServer((host, port), handler_factory(static_dir))
+class RuntimeBootstrapError(RuntimeError):
+    """Generic startup failure that deliberately carries no connection detail."""
 
 
-def run_self_test() -> int:
-    """Exercise health, static delivery and traversal rejection over real HTTP."""
+@dataclass(repr=False)
+class CentralRuntime:
+    control_database: ControlDatabase
+    tenant_router: TenantDatabaseRouter
+    auth_service: AuthService
 
-    with tempfile.TemporaryDirectory(prefix="smart-crm-demo-") as temp:
-        static_dir = Path(temp)
-        (static_dir / "index.html").write_text(
-            "<!doctype html><title>Smart CRM test</title>", encoding="utf-8"
-        )
-        server = create_server("127.0.0.1", 0, static_dir)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        base_url = f"http://127.0.0.1:{server.server_port}"
-
+    def control_is_ready(self) -> bool:
         try:
-            with urllib.request.urlopen(f"{base_url}/health", timeout=2) as response:
-                health = json.load(response)
-                assert response.status == HTTPStatus.OK
-                assert health == {"status": "ok", "service": "smart-crm-demo"}
+            return _control_revision(self.control_database) == CONTROL_SCHEMA_REVISION
+        except Exception:
+            return False
 
-            with urllib.request.urlopen(f"{base_url}/", timeout=2) as response:
-                body = response.read().decode("utf-8")
-                assert response.status == HTTPStatus.OK
-                assert "Smart CRM test" in body
+    def dispose(self) -> None:
+        self.tenant_router.dispose()
+        self.control_database.dispose()
 
-            try:
-                urllib.request.urlopen(f"{base_url}/%2e%2e/secret", timeout=2)
-            except urllib.error.HTTPError as error:
-                assert error.code == HTTPStatus.FORBIDDEN
-            else:
-                raise AssertionError("Traversal request was not rejected")
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=2)
-
-    print("server self-test: ok")
-    return 0
+    def __repr__(self) -> str:
+        return "CentralRuntime(control=configured, tenant_router=lazy)"
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", default=8000, type=int)
-    parser.add_argument("--self-test", action="store_true")
-    return parser.parse_args()
+def _control_revision(control_database: ControlDatabase) -> str | None:
+    with control_database.session_scope() as session:
+        value = session.scalar(text("SELECT version_num FROM alembic_control_version"))
+    return str(value) if value is not None else None
 
 
-def main() -> int:
-    args = parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    if args.self_test:
-        return run_self_test()
+def _default_secret_provider() -> SecretProvider:
+    root = os.getenv("SMART_CRM_TENANT_SECRET_STORE")
+    if not root:
+        raise RuntimeBootstrapError("central runtime unavailable")
+    return DpapiFileSecretProvider(Path(root))
 
-    server = create_server(args.host, args.port)
-    LOG.info("Smart CRM demo disponível em http://%s:%s", args.host, args.port)
+
+def bootstrap_runtime(
+    *,
+    control_database: ControlDatabase | None = None,
+    control_database_factory: Callable[[], ControlDatabase] = ControlDatabase,
+    secret_provider: SecretProvider | None = None,
+) -> CentralRuntime:
+    """Validate the control lineage and compose lazy tenant routing."""
+
+    active_control = control_database
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        LOG.info("Encerrando Smart CRM demo")
-    finally:
-        server.server_close()
-    return 0
+        active_control = active_control or control_database_factory()
+        if _control_revision(active_control) != CONTROL_SCHEMA_REVISION:
+            raise RuntimeBootstrapError("central runtime unavailable")
+        provider = secret_provider or _default_secret_provider()
+        router = TenantDatabaseRouter(
+            ControlTenantProfileLoader(active_control),
+            provider,
+        )
+        return CentralRuntime(
+            control_database=active_control,
+            tenant_router=router,
+            auth_service=AuthService(active_control, router),
+        )
+    except Exception:
+        if active_control is not None:
+            try:
+                active_control.dispose()
+            except Exception:
+                pass
+        raise RuntimeBootstrapError("central runtime unavailable") from None
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+def create_app(
+    settings=None,  # noqa: ANN001 - Uvicorn factory compatibility
+    *,
+    runtime: CentralRuntime | None = None,
+    static_dir: Path = STATIC_DIR,
+) -> FastAPI:
+    """Build the production app only after the control plane is compatible."""
+
+    del settings
+    active_runtime = runtime or bootstrap_runtime()
+    application = create_http_app(
+        static_dir=static_dir,
+        auth_service=active_runtime.auth_service,
+        tenant_router=active_runtime.tenant_router,
+        auth_settings=AuthSettings(
+            expected_origin=os.getenv(
+                "SMART_CRM_EXPECTED_ORIGIN",
+                "https://sc2030.brbots.com",
+            )
+        ),
+        health_check=active_runtime.control_is_ready,
+    )
+    application.state.central_runtime = active_runtime
+    application.add_event_handler("shutdown", active_runtime.dispose)
+    return application
