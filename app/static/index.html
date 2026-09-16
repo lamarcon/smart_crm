@@ -97,7 +97,9 @@
     .top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
     .profile-box { display: flex; align-items: center; gap: 10px; padding: 5px 8px 5px 5px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
     .avatar { flex: 0 0 auto; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: #233012; background: var(--lime-500); font-size: 12px; font-weight: 800; }
-    .profile-box select { max-width: 190px; border: 0; outline: 0; color: var(--navy-800); background: white; font-weight: 650; }
+    .session-profile { min-width: 0; display: grid; gap: 2px; }
+    .session-profile strong { overflow: hidden; max-width: 190px; text-overflow: ellipsis; white-space: nowrap; color: var(--navy-800); font-size: 12px; }
+    .session-profile small { color: var(--slate-500); font-size: 11px; }
     .icon-button { position: relative; width: 40px; height: 40px; border: 1px solid var(--slate-200); border-radius: 10px; color: var(--navy-700); background: white; }
     .badge-count { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; display: grid; place-items: center; padding: 0 5px; border: 2px solid white; border-radius: 999px; color: white; background: var(--red-600); font-size: 9px; font-weight: 800; }
 
@@ -420,10 +422,9 @@
         <button class="mobile-menu" id="mobileMenu" aria-label="Abrir menu">☰</button>
         <div class="page-heading"><h1 id="topTitle">Visão geral</h1><p id="topSubtitle">Acompanhe os principais indicadores comerciais</p></div>
         <div class="top-actions">
-          <div class="profile-box" title="Alterne o usuário ativo">
+          <div class="profile-box" aria-label="Usuário autenticado">
             <div class="avatar" id="profileAvatar">AM</div>
-            <label class="sr-only" for="profileSelect">Perfil de usuário</label>
-            <select id="profileSelect"></select>
+            <div class="session-profile"><strong id="sessionUserName"></strong><small id="sessionUserRole"></small></div>
           </div>
           <button class="icon-button" data-view="notifications" aria-label="Notificações">♢<span class="badge-count" id="topNoticeCount">0</span></button>
           <button class="button small" type="button" id="logoutButton">Sair</button>
@@ -581,8 +582,9 @@
   <script>
     'use strict';
 
-    const STORAGE_KEY = 'smart-crm-demo-v1';
-    const CONFIRMED_CACHE_KEY = 'smart-crm-confirmed-v1';
+    const UI_STORAGE_PREFIX = 'smart-crm-ui-v1';
+    const LEGACY_STORAGE_KEYS = ['smart-crm-demo-v1', 'smart-crm-confirmed-v1'];
+    LEGACY_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
     const READ_ONLY_WARNING = 'Banco indisponível. Alterações bloqueadas.';
     const GENERIC_LOGIN_ERROR = 'Não foi possível entrar com os dados informados.';
     const leadStages = ['Em contato', 'Lead descartado', 'Lead convertido'];
@@ -726,7 +728,7 @@
       ]
     });
 
-    let state = loadState();
+    let state = normalizeState(seedState());
     let sessionIdentity = null;
     let workspaceVersion = 0;
     let workspaceWritable = false;
@@ -833,21 +835,43 @@
       record.visibleCustomFieldKeys = [...new Set(record.visibleCustomFieldKeys)];
     }
 
-    function loadState() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-        if (saved && Array.isArray(saved.leads) && Array.isArray(saved.deals)) {
-          const normalized = normalizeState(saved);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-          return normalized;
-        }
-      } catch (_) { /* corrupted local state is intentionally replaced */ }
-      const fresh = normalizeState(seedState());
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
-      return fresh;
+    function tenantStorageKey(identity = sessionIdentity) {
+      if (!identity?.tenant_id || !identity?.user_id) return null;
+      return `${UI_STORAGE_PREFIX}:${identity.tenant_id}:${identity.user_id}`;
     }
-
-    function writeLocalState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    function sanitizeUiPreferences(raw, users = state.users || []) {
+      const safe = defaultUiState(users);
+      const userId = sessionIdentity?.user_id;
+      if (!raw || typeof raw !== 'object' || !userId) return safe;
+      if (raw.filtersByUser?.[userId] && typeof raw.filtersByUser[userId] === 'object') {
+        safe.filtersByUser[userId] = clone(raw.filtersByUser[userId]);
+      }
+      safe.savedFilters = Array.isArray(raw.savedFilters) ? clone(raw.savedFilters) : [];
+      if (raw.viewModesByUser?.[userId] && typeof raw.viewModesByUser[userId] === 'object') {
+        safe.viewModesByUser[userId] = clone(raw.viewModesByUser[userId]);
+      }
+      if (typeof raw.dashboardScopeByUser?.[userId] === 'string') {
+        safe.dashboardScopeByUser[userId] = raw.dashboardScopeByUser[userId];
+      }
+      return safe;
+    }
+    function loadUiPreferences(users = state.users || []) {
+      const key = tenantStorageKey();
+      if (!key) return defaultUiState(users);
+      try {
+        return sanitizeUiPreferences(JSON.parse(localStorage.getItem(key)), users);
+      } catch (_) {
+        localStorage.removeItem(key);
+        return defaultUiState(users);
+      }
+    }
+    function writeLocalState() {
+      const key = tenantStorageKey();
+      if (!key) return;
+      const preferences = sanitizeUiPreferences(state.ui, state.users || []);
+      state.ui = preferences;
+      localStorage.setItem(key, JSON.stringify(preferences));
+    }
     function saveState(options = {}) {
       writeLocalState();
       if (!workspaceWritable || !confirmedState) return;
@@ -861,27 +885,14 @@
     function extractDurableState(source = state) {
       const durable = clone(source);
       delete durable.currentUserId;
-      durable.ui ||= {};
-      delete durable.ui.filtersByUser;
+      delete durable.ui;
       return durable;
     }
     function mergeDurableState(durable, local = state) {
       const merged = clone(durable);
-      const localUserId = local?.currentUserId;
-      merged.currentUserId = (merged.users || []).some(user => user.id === localUserId) ? localUserId : merged.users?.[0]?.id;
-      merged.ui ||= {};
-      merged.ui.filtersByUser = clone(local?.ui?.filtersByUser || {});
+      merged.currentUserId = sessionIdentity?.user_id || null;
+      merged.ui = sanitizeUiPreferences(local?.ui, merged.users || []);
       return normalizeState(merged);
-    }
-    function writeConfirmedCache(version, durable) {
-      localStorage.setItem(CONFIRMED_CACHE_KEY, JSON.stringify({ version, state: extractDurableState(durable) }));
-    }
-    function readConfirmedCache() {
-      try {
-        const cached = JSON.parse(localStorage.getItem(CONFIRMED_CACHE_KEY));
-        if (Number.isInteger(cached?.version) && cached.version >= 1 && Array.isArray(cached.state?.users) && Array.isArray(cached.state?.leads) && Array.isArray(cached.state?.deals)) return cached;
-      } catch (_) { /* invalid confirmed cache is ignored */ }
-      return null;
     }
     function setWorkspaceAccess(ready, writable, message, status) {
       workspaceWritable = writable;
@@ -951,7 +962,10 @@
     }
     async function activateSession(session, expectedSlug) {
       if (!session?.tenant_slug || session.tenant_slug !== expectedSlug) throw new Error('Tenant da sessão não corresponde à rota.');
-      sessionIdentity = session;
+      sessionIdentity = Object.freeze({ ...session });
+      state.currentUserId = sessionIdentity.user_id;
+      state.ui = loadUiPreferences(state.users);
+      writeLocalState();
       document.documentElement.dataset.authenticated = 'true';
       await initializeWorkspace();
       showAuthView('app', expectedSlug);
@@ -1026,6 +1040,8 @@
     }
     function clearSessionUi() {
       sessionIdentity = null;
+      document.getElementById('sessionUserName').textContent = '';
+      document.getElementById('sessionUserRole').textContent = '';
       state = normalizeState({ currentUserId: null, users: [], leads: [], contacts: [], companies: [], deals: [], notifications: [] });
       workspaceVersion = 0;
       workspaceWritable = false;
@@ -1059,7 +1075,6 @@
       workspaceVersion = payload.version;
       confirmedState = extractDurableState(payload.state);
       state = mergeDurableState(payload.state, state);
-      writeConfirmedCache(workspaceVersion, payload.state);
       writeLocalState();
       render();
     }
@@ -1078,7 +1093,6 @@
         workspaceVersion = payload.version;
         confirmedState = extractDurableState(payload.state);
         state = mergeDurableState(payload.state, state);
-        writeConfirmedCache(workspaceVersion, payload.state);
         writeLocalState();
         render();
         flushQueuedToasts();
@@ -1116,7 +1130,6 @@
           state = mergeDurableState(payload.state, localCandidate);
           workspaceInitialized = true;
           confirmedState = extractDurableState(payload.state);
-          writeConfirmedCache(workspaceVersion, payload.state);
           saveState();
           setWorkspaceAccess(true, true, 'Workspace conectado.', 'ready');
           render();
@@ -1129,11 +1142,15 @@
         render();
         openBootstrapDialog();
       } catch (_) {
-        const cached = readConfirmedCache();
-        workspaceVersion = cached?.version || 0;
-        state = cached ? mergeDurableState(cached.state, localCandidate) : normalizeState(seedState());
-        workspaceInitialized = Boolean(cached);
-        confirmedState = cached ? extractDurableState(cached.state) : null;
+        workspaceVersion = 0;
+        state = normalizeState({
+          currentUserId: sessionIdentity?.user_id || null,
+          users: sessionIdentity ? [{ id: sessionIdentity.user_id, name: sessionIdentity.user_name, role: sessionIdentity.role, email: sessionIdentity.email, status: 'Ativo', team: '' }] : [],
+          leads: [], contacts: [], companies: [], deals: [], notifications: []
+        });
+        state.ui = loadUiPreferences(state.users);
+        workspaceInitialized = false;
+        confirmedState = null;
         saveState();
         setWorkspaceAccess(true, false, READ_ONLY_WARNING, 'degraded');
         render();
@@ -1156,7 +1173,6 @@
         state = mergeDurableState(payload.state, state);
         workspaceInitialized = true;
         confirmedState = extractDurableState(payload.state);
-        writeConfirmedCache(workspaceVersion, payload.state);
         saveState();
         document.getElementById('bootstrapDialog').close();
         setWorkspaceAccess(true, true, 'Workspace conectado.', 'ready');
@@ -1169,8 +1185,15 @@
         button.textContent = 'Confirmar migração';
       }
     }
-    function currentUser() { return state.users.find(user => user.id === state.currentUserId) || state.users[0]; }
-    function userName(id) { return state.users.find(user => user.id === id)?.name || 'Sem responsável'; }
+    function currentUser() {
+      if (!sessionIdentity) return null;
+      const record = state.users.find(user => user.id === sessionIdentity.user_id) || {};
+      return {
+        ...record, id: sessionIdentity.user_id, name: sessionIdentity.user_name,
+        email: sessionIdentity.email, role: sessionIdentity.role
+      };
+    }
+    function userName(id) { return id === sessionIdentity?.user_id ? sessionIdentity.user_name : state.users.find(user => user.id === id)?.name || 'Sem responsável'; }
     function initials(name) { return String(name || '?').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase(); }
     function escapeHTML(value) { return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]); }
     function money(value) { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
@@ -1524,10 +1547,11 @@
       return `<span class="tag ${css}">${escapeHTML(stage)}</span>`;
     }
 
-    function profileOptions() {
-      const allowed = state.users.filter(user => user.status === 'Ativo' && ['Administrador', 'Gestor', 'Vendedor', 'Assistente', 'Faturamento'].includes(user.role));
-      document.getElementById('profileSelect').innerHTML = allowed.map(user => `<option value="${user.id}" ${user.id === state.currentUserId ? 'selected' : ''}>${escapeHTML(user.name)} · ${escapeHTML(user.role)}</option>`).join('');
-      document.getElementById('profileAvatar').textContent = initials(currentUser().name);
+    function renderSessionIdentity() {
+      const user = currentUser();
+      document.getElementById('sessionUserName').textContent = user?.name || '';
+      document.getElementById('sessionUserRole').textContent = user?.role || '';
+      document.getElementById('profileAvatar').textContent = initials(user?.name);
     }
 
     function updateCounts() {
@@ -1817,7 +1841,7 @@
     function emptyHTML(message) { return `<div class="empty"><div class="empty-icon">⌕</div><b>${escapeHTML(message)}</b><p>Tente ajustar a busca ou restaurar os dados iniciais.</p></div>`; }
 
     function render() {
-      profileOptions();
+      renderSessionIdentity();
       updateCounts();
       document.querySelector('[data-admin-nav]').hidden = currentUser().role !== 'Administrador';
       document.getElementById('page-dashboard').innerHTML = dashboardHTML();
@@ -2633,7 +2657,6 @@
         workspaceVersion = payload.version;
         confirmedState = extractDurableState(payload.state);
         state = mergeDurableState(payload.state, state);
-        writeConfirmedCache(workspaceVersion, payload.state);
         writeLocalState();
         render();
         await loadDeletedRecords();
@@ -2738,9 +2761,6 @@
       }
     });
 
-    document.getElementById('profileSelect').addEventListener('change', event => {
-      state.currentUserId = event.target.value; saveState(); render(); toast(`Perfil alterado para ${currentUser().name} · ${currentUser().role}.`);
-    });
     document.getElementById('entityForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveEntity(event.currentTarget); });
     document.getElementById('drawerForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveEntity(event.currentTarget); });
     document.getElementById('quoteForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveQuote(event.currentTarget); });

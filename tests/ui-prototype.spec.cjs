@@ -29,8 +29,7 @@ function clone(value) {
 function durableState(source) {
   const durable = clone(source);
   delete durable.currentUserId;
-  durable.ui ||= {};
-  delete durable.ui.filtersByUser;
+  delete durable.ui;
   return durable;
 }
 
@@ -49,26 +48,47 @@ function countsFor(state) {
 
 async function stateFrom(page) {
   await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting !== 'true');
-  const local = JSON.parse(await page.evaluate(key => localStorage.getItem(key), STORAGE_KEY));
   const api = apiByPage.get(page);
+  const canonical = api?.state && !api.loadFailure ? clone(api.state) : {
+    users: [], leads: [], contacts: [], companies: [], deals: [], notifications: [],
+    customFieldSchemas: { leads: [], contacts: [], companies: [], deals: [] },
+    moduleFieldSettings: {}
+  };
+  const key = uiStorageKey(api.session);
+  let preferences = { filtersByUser: {}, savedFilters: [], viewModesByUser: {}, dashboardScopeByUser: {} };
+  try { preferences = JSON.parse(await page.evaluate(storageKey => localStorage.getItem(storageKey), key)) || preferences; } catch (_) {}
+  canonical.currentUserId = api.session.user_id;
+  canonical.ui = preferences;
   const writable = await page.evaluate(() => document.documentElement.dataset.workspaceWritable === 'true');
   if (api?.initialized && writable && api.assertSynchronized && !api.writeFailure) {
-    assert.deepEqual(durableState(local), api.state, 'estado durável local divergiu da API confirmada');
+    assert.deepEqual(durableState(canonical), api.state, 'estado durável em memória divergiu da API confirmada');
   }
-  return local;
+  return canonical;
+}
+async function waitForMockState(page, predicate, timeoutMs = 5000) {
+  const api = apiByPage.get(page);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (api.state && predicate(api.state)) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error('estado canônico mockado não atingiu a condição esperada');
 }
 
 async function openFresh(options = {}) {
   const context = await browser.newContext({ viewport: options.viewport || { width: 1366, height: 768 } });
-  if (options.preloadState) {
-    await context.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: options.preloadState });
-  }
   const page = await context.newPage();
-  const api = { initialized: false, version: 0, state: null, loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false, deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] } };
+  const initialState = options.preloadState ? durableState(options.preloadState) : null;
+  const api = {
+    initialized: Boolean(initialState), version: initialState ? 1 : 0, state: initialState,
+    session: { ...AUTH_SESSION, ...(options.session || {}) },
+    loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false,
+    deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
+  };
   apiByPage.set(page, api);
   await context.route('**/api/auth/session', route => route.fulfill({
     status: 200, contentType: 'application/json',
-    body: JSON.stringify(AUTH_SESSION)
+    body: JSON.stringify(api.session)
   }));
   await context.route('**/api/workspace**', async route => {
     const request = route.request();
@@ -142,12 +162,14 @@ async function openFresh(options = {}) {
     }
     return route.fulfill({ status: 405 });
   });
-  await page.goto(TENANT_URL, { waitUntil: 'domcontentloaded' });
+  const tenantUrl = new URL(api.session.tenant_slug, BASE_URL).toString();
+  await page.goto(tenantUrl, { waitUntil: 'domcontentloaded' });
   await page.locator('#workspaceBanner').waitFor();
-  if (options.autoBootstrap !== false && !api.loadFailure) {
+  if (options.autoBootstrap !== false && !api.loadFailure && !api.initialized) {
     const confirm = page.getByRole('button', { name: 'Confirmar migração' });
     await confirm.waitFor();
     await confirm.click();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWritable === 'true');
   }
   await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
   return { context, page };
@@ -158,6 +180,7 @@ async function reloadReady(page, options = {}) {
   const api = apiByPage.get(page);
   if (options.autoBootstrap !== false && !api.loadFailure && !api.initialized) {
     await page.getByRole('button', { name: 'Confirmar migração' }).click();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWritable === 'true');
   }
   await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
 }
@@ -175,6 +198,7 @@ async function assertCanonicalRehydration(page) {
     const mirrorApi = {
       initialized: true,
       version: sourceApi.version,
+      session: { ...AUTH_SESSION },
       state: expected,
       loadFailure: false,
       writeFailure: false,
@@ -240,6 +264,11 @@ async function run(name, test, options = {}) {
 
 async function openAuthPage(pathname, options = {}) {
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  if (options.storageEntries) {
+    await context.addInitScript(entries => {
+      Object.entries(entries).forEach(([key, value]) => localStorage.setItem(key, value));
+    }, options.storageEntries);
+  }
   const authRequests = [];
   const workspaceRequests = [];
   let authenticated = options.authenticated === true;
@@ -284,9 +313,14 @@ async function openAuthPage(pathname, options = {}) {
   });
   await context.route('**/api/workspace**', route => {
     workspaceRequests.push(route.request().url());
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ initialized: false, version: 0, state: null }) });
+    const workspaceState = options.workspaceState ? clone(options.workspaceState) : null;
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ initialized: Boolean(workspaceState), version: workspaceState ? 1 : 0, state: workspaceState })
+    });
   });
   const page = await context.newPage();
+  page.setDefaultTimeout(5000);
   const target = pathname === '/' ? BASE_URL : new URL(pathname.replace(/^\//, ''), BASE_URL).toString();
   if (options.cookie && pathname !== '/') {
     await page.route(target, async route => {
@@ -317,7 +351,11 @@ async function goTo(page, name) {
 }
 
 async function selectProfile(page, userId) {
-  await page.getByLabel('Perfil de usuário').selectOption(userId);
+  const api = apiByPage.get(page);
+  const user = api.state.users.find(candidate => candidate.id === userId);
+  assert.ok(user, `usuário ${userId} ausente do estado mockado`);
+  api.session = { ...api.session, user_id: user.id, user_name: user.name, email: user.email || `${user.id}@local.invalid`, role: user.role };
+  await reloadReady(page);
 }
 
 async function visibleRows(page, entity) {
@@ -339,6 +377,37 @@ async function createLead(page, name, options = {}) {
   if (options.waitForSaved !== false) await page.locator('#page-leads .entity-link').filter({ hasText: name }).waitFor();
 }
 
+function minimalWorkspace() {
+  return {
+    currentUserId: 'u-admin',
+    users: [
+      { id: 'u-admin', name: 'Estado Local Admin', role: 'Administrador', team: 'Gestão', status: 'Ativo' },
+      { id: 'u-paula', name: 'Estado Local Paula', role: 'Administrador', team: 'Vendas CMS', status: 'Ativo' }
+    ],
+    leads: [], contacts: [], companies: [], deals: [], notifications: [],
+    customFieldSchemas: { leads: [], contacts: [], companies: [], deals: [] },
+    moduleFieldSettings: {
+      leads: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] },
+      contacts: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] },
+      companies: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] },
+      deals: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] }
+    },
+    ui: { filtersByUser: {}, savedFilters: [], viewModesByUser: {}, dashboardScopeByUser: {} }
+  };
+}
+
+function uiStorageKey(session) {
+  return `smart-crm-ui-v1:${session.tenant_id}:${session.user_id}`;
+}
+
+async function storageEntries(page) {
+  return page.evaluate(() => Object.fromEntries(
+    [...Array(localStorage.length)].map((_, index) => {
+      const key = localStorage.key(index);
+      return [key, localStorage.getItem(key)];
+    })
+  ));
+}
 (async () => {
   browser = await chromium.launch({ channel: process.env.SMART_CRM_BROWSER || 'chrome', headless: true });
   await runAuth('MT-01 raiz exibe localizador sem consultar workspace', '/', async ({ page, authRequests, workspaceRequests }) => {
@@ -436,26 +505,171 @@ async function createLead(page, name, options = {}) {
   }, { authenticated: true });
 
 
-  await run('DBP-02 e DBP-03 exigem Admin e exibem contagens antes do bootstrap', async page => {
-    const local = await stateFrom(page);
-    local.currentUserId = 'u-paula';
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: local });
-    resetMockWorkspace(page);
-    await reloadReady(page, { autoBootstrap: false });
+  const SELLER_SESSION = {
+    ...AUTH_SESSION,
+    user_id: 'u-paula',
+    user_name: 'Paula Identidade Servidor',
+    email: 'paula@cliente-a.test',
+    role: 'Vendedor'
+  };
+  const TENANT_B_SESSION = {
+    ...SELLER_SESSION,
+    tenant_id: '00000000-0000-0000-0000-000000000002',
+    tenant_slug: 'cliente-b',
+    tenant_display_name: 'Cliente B'
+  };
 
+  await runAuth('MT-04 identidade do servidor é exibida sem seletor editável', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#profileSelect').count(), 0);
+    assert.equal(await page.locator('#sessionUserName').innerText(), SELLER_SESSION.user_name);
+    assert.equal(await page.locator('#sessionUserRole').innerText(), SELLER_SESSION.role);
+  }, { authenticated: true, session: SELLER_SESSION, workspaceState: minimalWorkspace() });
+
+  await runAuth('MT-04 currentUserId e role do workspace não substituem a sessão', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-admin-nav]').isHidden(), true);
+    assert.match(await page.locator('#page-dashboard').innerText(), /perfil Vendedor/);
+    assert.doesNotMatch(await page.locator('#sessionUserName').innerText(), /Estado Local/);
+  }, { authenticated: true, session: SELLER_SESSION, workspaceState: minimalWorkspace() });
+
+  await runAuth('MT-04 snapshot legado no localStorage não personifica usuário', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#sessionUserName').innerText(), SELLER_SESSION.user_name);
+    assert.equal(await page.locator('[data-admin-nav]').isHidden(), true);
+    assert.equal((await storageEntries(page))[STORAGE_KEY], undefined);
+  }, {
+    authenticated: true,
+    session: SELLER_SESSION,
+    workspaceState: minimalWorkspace(),
+    storageEntries: { [STORAGE_KEY]: JSON.stringify(minimalWorkspace()) }
+  });
+
+  await runAuth('MT-03 cache comercial confirmado legado é removido', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    assert.equal((await storageEntries(page))[CONFIRMED_CACHE_KEY], undefined);
+  }, {
+    authenticated: true,
+    session: SELLER_SESSION,
+    workspaceState: minimalWorkspace(),
+    storageEntries: { [CONFIRMED_CACHE_KEY]: JSON.stringify({ version: 7, state: minimalWorkspace() }) }
+  });
+
+  await runAuth('MT-02 Web Storage não contém credencial sessão perfil ou snapshot comercial', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    const entries = await storageEntries(page);
+    for (const value of Object.values(entries)) {
+      assert.doesNotMatch(value, /opaque-browser-cookie|password|Administrador|tenant_slug|session/i);
+      const parsed = JSON.parse(value);
+      for (const field of ['users', 'leads', 'contacts', 'companies', 'deals', 'notifications', 'currentUserId', 'role']) {
+        assert.equal(Object.hasOwn(parsed, field), false);
+      }
+    }
+  }, { authenticated: true, session: SELLER_SESSION, workspaceState: minimalWorkspace(), cookie: 'opaque-browser-cookie' });
+
+  await runAuth('MT-04 preferência de UI usa namespace tenant e usuário da sessão', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    await goTo(page, 'Leads');
+    await page.locator('[data-search="leads"]').fill('somente preferência');
+    const entries = await storageEntries(page);
+    const expectedKey = uiStorageKey(SELLER_SESSION);
+    assert.deepEqual(Object.keys(entries), [expectedKey]);
+    const preferences = JSON.parse(entries[expectedKey]);
+    assert.equal(preferences.filtersByUser['u-paula'].leads.query, 'somente preferência');
+  }, { authenticated: true, session: SELLER_SESSION, workspaceState: minimalWorkspace() });
+
+  await runAuth('MT-04 preferência adulterada não eleva perfil nem identidade', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#sessionUserRole').innerText(), 'Vendedor');
+    assert.equal(await page.locator('[data-admin-nav]').isHidden(), true);
+  }, {
+    authenticated: true,
+    session: SELLER_SESSION,
+    workspaceState: minimalWorkspace(),
+    storageEntries: { [uiStorageKey(SELLER_SESSION)]: JSON.stringify({ role: 'Administrador', currentUserId: 'u-admin', filtersByUser: {} }) }
+  });
+
+  await runAuth('MT-04 tentativa DOM de abrir admin falha fechada pela identidade imutável', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    const adminNav = page.locator('[data-admin-nav]');
+    await adminNav.evaluate(element => { element.hidden = false; });
+    await adminNav.click();
+    assert.equal(await page.locator('#page-admin').isVisible(), false);
+    assert.equal(await page.locator('#page-dashboard').isVisible(), true);
+    assert.equal(await page.locator('#sessionUserRole').innerText(), 'Vendedor');
+  }, { authenticated: true, session: SELLER_SESSION, workspaceState: minimalWorkspace() });
+
+  await runAuth('MT-03 preferência do tenant A não é consumida no tenant B', '/cliente-b', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    await goTo(page, 'Leads');
+    assert.equal(await page.locator('[data-search="leads"]').inputValue(), '');
+    const entries = await storageEntries(page);
+    assert.ok(entries[uiStorageKey(SELLER_SESSION)]);
+    assert.ok(entries[uiStorageKey(TENANT_B_SESSION)]);
+  }, {
+    authenticated: true,
+    session: TENANT_B_SESSION,
+    workspaceState: minimalWorkspace(),
+    storageEntries: {
+      [uiStorageKey(SELLER_SESSION)]: JSON.stringify({
+        filtersByUser: { 'u-paula': { leads: { query: 'A_ONLY', criteria: {} } } },
+        savedFilters: [], viewModesByUser: {}, dashboardScopeByUser: {}
+      })
+    }
+  });
+
+  await runAuth('MT-04 preferência de outro usuário do mesmo tenant fica isolada', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    await goTo(page, 'Leads');
+    assert.equal(await page.locator('[data-search="leads"]').inputValue(), '');
+    const entries = await storageEntries(page);
+    assert.ok(entries[uiStorageKey(AUTH_SESSION)]);
+    assert.ok(entries[uiStorageKey(SELLER_SESSION)]);
+  }, {
+    authenticated: true,
+    session: SELLER_SESSION,
+    workspaceState: minimalWorkspace(),
+    storageEntries: {
+      [uiStorageKey(AUTH_SESSION)]: JSON.stringify({
+        filtersByUser: { 'u-admin': { leads: { query: 'ADMIN_ONLY', criteria: {} } } },
+        savedFilters: [], viewModesByUser: {}, dashboardScopeByUser: {}
+      })
+    }
+  });
+
+  await runAuth('MT-04 preferência corrompida é descartada sem conceder acesso', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-admin-nav]').isHidden(), true);
+    const value = (await storageEntries(page))[uiStorageKey(SELLER_SESSION)];
+    assert.doesNotThrow(() => JSON.parse(value));
+  }, {
+    authenticated: true,
+    session: SELLER_SESSION,
+    workspaceState: minimalWorkspace(),
+    storageEntries: { [uiStorageKey(SELLER_SESSION)]: '{invalid-json' }
+  });
+
+  await runAuth('MT-02 logout não deixa identidade nem dados comerciais no Web Storage', '/cliente-a', async ({ page }) => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: 'Sair' }).click();
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    const entries = await storageEntries(page);
+    assert.equal(await page.locator('#sessionUserName').innerText(), '');
+    assert.equal(Object.keys(entries).every(key => key.startsWith('smart-crm-ui-v1:')), true);
+    Object.values(entries).forEach(value => {
+      assert.doesNotMatch(value, /Estado Local|opaque-browser-cookie|Administrador|tenant_slug/i);
+    });
+  }, { authenticated: true, session: SELLER_SESSION, workspaceState: minimalWorkspace(), cookie: 'opaque-browser-cookie' });
+  await run('DBP-02 e DBP-03 permitem ao Admin confirmar contagens antes do bootstrap', async page => {
     const dialog = page.locator('#bootstrapDialog');
     assert.equal(await dialog.isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceWritable), 'false');
-    assert.equal(await dialog.getByRole('button', { name: 'Confirmar migração' }).isDisabled(), true);
+    assert.equal(await dialog.getByRole('button', { name: 'Confirmar migração' }).isDisabled(), false);
     assert.match(await dialog.innerText(), /5\s+Leads/);
     assert.match(await dialog.innerText(), /4\s+Contatos/);
     assert.match(await dialog.innerText(), /4\s+Empresas/);
     assert.match(await dialog.innerText(), /6\s+Negócios/);
 
-    local.currentUserId = 'u-admin';
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: local });
-    resetMockWorkspace(page);
-    await reloadReady(page, { autoBootstrap: false });
     await page.getByRole('button', { name: 'Confirmar migração' }).click();
     await page.waitForFunction(() => document.documentElement.dataset.workspaceWritable === 'true');
     const api = apiByPage.get(page);
@@ -474,23 +688,25 @@ async function createLead(page, name, options = {}) {
     assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceWritable), 'true');
   });
 
-  await run('DBP-21 usa somente cache confirmado em leitura quando a API falha', async page => {
-    const cached = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), CONFIRMED_CACHE_KEY);
-    const altered = await stateFrom(page);
-    altered.leads[0].name = 'Alteração não confirmada';
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: altered });
+  await run('DBP-21 não usa cache comercial quando a API falha', async page => {
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), {
+      key: CONFIRMED_CACHE_KEY,
+      value: { version: 9, state: apiByPage.get(page).state }
+    });
     apiByPage.get(page).loadFailure = true;
     await reloadReady(page);
-    assert.equal((await stateFrom(page)).leads[0].name, cached.state.leads[0].name);
+    assert.equal((await stateFrom(page)).leads.length, 0);
+    assert.equal(await page.evaluate(key => localStorage.getItem(key), CONFIRMED_CACHE_KEY), null);
     assert.equal(await page.locator('#workspaceBanner').innerText(), 'Banco indisponível. Alterações bloqueadas.');
     assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceWritable), 'false');
     await page.getByRole('button', { name: /Novo Lead/ }).click();
     assert.equal(await page.locator('#entityDialog').getAttribute('open'), null);
   });
 
-  await run('DBP-21 usa seed em leitura quando a API falha sem cache confirmado', async page => {
+  await run('DBP-21 não usa seed comercial quando a API falha', async page => {
     const state = await stateFrom(page);
-    assert.equal(state.leads[0].name, 'Larissa Spinola');
+    assert.equal(state.leads.length, 0);
+    assert.equal(state.deals.length, 0);
     assert.equal(await page.locator('#workspaceBanner').innerText(), 'Banco indisponível. Alterações bloqueadas.');
     assert.equal(await page.evaluate(key => localStorage.getItem(key), CONFIRMED_CACHE_KEY), null);
     assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceWritable), 'false');
@@ -529,7 +745,7 @@ async function createLead(page, name, options = {}) {
   await run('DBP-09 só confirma visualmente depois da versão persistida', async page => {
     const api = apiByPage.get(page);
     const beforeVersion = api.version;
-    const beforeCache = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), CONFIRMED_CACHE_KEY);
+    const beforeState = clone(api.state);
     let releaseWrite;
     api.writeGate = new Promise(resolve => { releaseWrite = resolve; });
 
@@ -538,32 +754,32 @@ async function createLead(page, name, options = {}) {
 
     assert.equal(api.version, beforeVersion);
     assert.equal(await page.getByText('Lead criado com sucesso.', { exact: true }).count(), 0);
-    assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), CONFIRMED_CACHE_KEY), beforeCache);
+    assert.deepEqual(api.state, beforeState);
 
     releaseWrite();
     await page.getByText('Lead criado com sucesso.', { exact: true }).waitFor();
     await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting === 'false');
 
     assert.equal(api.version, beforeVersion + 1);
-    assert.equal((await page.evaluate(key => JSON.parse(localStorage.getItem(key)), CONFIRMED_CACHE_KEY)).version, beforeVersion + 1);
     assert.equal(api.state.leads.some(lead => lead.name === 'Lead aguardando confirmação'), true);
   });
 
-  await run('DBP-16 mantém busca e perfil locais sem incrementar a versão', async page => {
+  await run('DBP-16 mantém preferências namespaced e sessão sem incrementar a versão', async page => {
     const api = apiByPage.get(page);
     const beforeVersion = api.version;
     await goTo(page, 'Leads');
     await page.getByPlaceholder('Buscar em leads...').fill('Larissa');
     await selectProfile(page, 'u-paula');
     const local = await stateFrom(page);
+    const adminPreferences = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), uiStorageKey(AUTH_SESSION));
     assert.equal(api.version, beforeVersion);
     assert.equal(local.currentUserId, 'u-paula');
-    assert.equal(local.ui.filtersByUser['u-admin'].leads.query, 'Larissa');
+    assert.equal(adminPreferences.filtersByUser['u-admin'].leads.query, 'Larissa');
     assert.equal(Object.hasOwn(api.state, 'currentUserId'), false);
-    assert.equal(Object.hasOwn(api.state.ui, 'filtersByUser'), false);
+    assert.equal(Object.hasOwn(api.state, 'ui'), false);
   });
 
-  await run('DBP-22 reverte a alteração e preserva cache quando o PUT falha', async page => {
+  await run('DBP-22 reverte a alteração sem gravar cache comercial quando o PUT falha', async page => {
     const api = apiByPage.get(page);
     const beforeVersion = api.version;
     const before = clone(api.state);
@@ -573,7 +789,7 @@ async function createLead(page, name, options = {}) {
     await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting === 'false');
     assert.deepEqual(durableState(await stateFrom(page)), before);
     assert.equal(api.version, beforeVersion);
-    assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).version, CONFIRMED_CACHE_KEY), beforeVersion);
+    assert.equal(Object.keys(await storageEntries(page)).some(key => [STORAGE_KEY, CONFIRMED_CACHE_KEY].includes(key)), false);
   });
 
   await run('DBP-10 recarrega o estado canônico após conflito de versão', async page => {
@@ -635,10 +851,10 @@ async function createLead(page, name, options = {}) {
       delete deal.stageHistory;
       delete deal.wonAt;
     });
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: legacy });
-    resetMockWorkspace(page);
+    await setMockWorkspace(page, legacy);
     await reloadReady(page);
 
+    await page.evaluate(() => saveState());
     const normalized = await stateFrom(page);
     assert.equal(normalized.leads[0].name, 'Lead legado preservado');
     assert.deepEqual(normalized.ui.viewModesByUser['u-admin'], { leads: 'list', deals: 'list' });
@@ -675,10 +891,10 @@ async function createLead(page, name, options = {}) {
     ];
     delete legacy.contacts[0].customFields;
     delete legacy.contacts[0].visibleCustomFieldKeys;
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: legacy });
-    resetMockWorkspace(page);
+    await setMockWorkspace(page, legacy);
     await reloadReady(page);
 
+    await page.evaluate(() => saveState());
     const migrated = (await stateFrom(page)).contacts.find(contact => contact.bitrixId === 'LEGACY-1');
     assert.deepEqual(migrated.customFields.map(field => [field.key, field.label, field.value]), [
       ['bitrix:cargo:2', 'Cargo (2)', 'Decisora'],
@@ -1142,7 +1358,9 @@ async function createLead(page, name, options = {}) {
       id: 'SF-invalid', name: 'Filtro antigo', userId: 'u-admin', scope: 'leads',
       filter: { query: '', visibleFields: ['unknownField'], criteria: { unknownField: { operator: 'contains', value: 'x' } } }
     });
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: state });
+    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), {
+      key: uiStorageKey(apiByPage.get(page).session), value: state.ui
+    });
     await setMockWorkspace(page, state);
     await reloadReady(page);
     await goTo(page, 'Leads');
@@ -1409,6 +1627,7 @@ async function createLead(page, name, options = {}) {
     assert.equal(await page.locator('#page-deals .kanban-card').count(), 1);
 
     await selectProfile(page, 'u-manager');
+    await goTo(page, 'Negócios');
     await page.getByRole('button', { name: 'Kanban', exact: true }).click();
     assert.doesNotMatch(await page.locator('#page-deals').innerText(), /Conferência fiscal interna/);
     await goTo(page, 'Visão geral');
@@ -1719,10 +1938,7 @@ async function createLead(page, name, options = {}) {
       + '9103;Terceiro atualizado;Empresa Teste;Em Contato;33;Atualizada três;\n';
     await input.setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(changed, 'utf8') });
     await dialog.getByRole('button', { name: 'Importar amostra' }).click();
-    await page.waitForFunction(() => {
-      const current = JSON.parse(localStorage.getItem('smart-crm-demo-v1'));
-      return current.deals.find(item => item.bitrixId === '9103')?.title === 'Terceiro atualizado';
-    });
+    await waitForMockState(page, state => state.deals.find(item => item.bitrixId === '9103')?.title === 'Terceiro atualizado');
     assert.equal(await dialog.locator('#bitrixImportSummary').innerText(), 'Criados: 0 · Atualizados: 3 · Rejeitados: 0');
     const updated = (await stateFrom(page)).deals.filter(item => ['9101', '9102', '9103'].includes(item.bitrixId)).sort((a, b) => a.bitrixId.localeCompare(b.bitrixId));
     assert.deepEqual(updated.map(item => [item.bitrixId, item.title, item.amount, item.customFields.find(field => field.label === 'Observação').value]), [
@@ -1893,7 +2109,6 @@ async function createLead(page, name, options = {}) {
     configured.deals[1].visibleCustomFieldKeys = [];
     const valuesBefore = configured.deals.map(deal => deal.customFields[0].value);
     const individualVisibilityBefore = configured.deals.map(deal => [...deal.visibleCustomFieldKeys]);
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
     await setMockWorkspace(page, configured);
     await reloadReady(page);
 
@@ -1957,7 +2172,6 @@ async function createLead(page, name, options = {}) {
     configured.deals[1].visibleCustomFieldKeys = [];
     const valuesBefore = configured.deals.map(deal => deal.customFields[0].value);
     const visibilityBefore = configured.deals.map(deal => [...deal.visibleCustomFieldKeys]);
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
     await setMockWorkspace(page, configured);
     await reloadReady(page);
 
@@ -2018,9 +2232,9 @@ async function createLead(page, name, options = {}) {
     configured.deals[0].customFields = [{ ...schema, value: 'DADO PRESERVADO' }];
     configured.deals[0].visibleCustomFieldKeys = [schema.key];
     configured.currentUserId = 'u-paula';
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
     await setMockWorkspace(page, configured);
     await reloadReady(page);
+    await selectProfile(page, 'u-paula');
 
     await goTo(page, 'Negócios');
     const firstDeal = (await stateFrom(page)).deals[0];
@@ -2053,7 +2267,6 @@ async function createLead(page, name, options = {}) {
       deal.customFields = [...(deal.customFields || []).filter(field => !field.key.startsWith('test:')), ...schemas.map(field => ({ ...field, value: field.type === 'multiselect' ? [] : field.type === 'boolean' ? false : '' }))];
       deal.visibleCustomFieldKeys = [...new Set([...(deal.visibleCustomFieldKeys || []), ...schemas.map(field => field.key)])];
     });
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: STORAGE_KEY, value: configured });
     await setMockWorkspace(page, configured);
     await reloadReady(page);
 
@@ -2181,7 +2394,7 @@ async function createLead(page, name, options = {}) {
 
     await page.getByRole('button', { name: 'Simular aceitação de Juliana Lima' }).click();
     assert.equal((await stateFrom(page)).users.find(user => user.id === juliana.id).status, 'Ativo');
-    assert.equal(await page.getByLabel('Perfil de usuário').locator(`option[value="${juliana.id}"]`).count(), 1);
+    assert.equal(await page.locator('#profileSelect').count(), 0);
     await page.getByRole('button', { name: 'Desativar Juliana Lima' }).click();
     assert.equal((await stateFrom(page)).users.find(user => user.id === juliana.id).status, 'Inativo');
     assert.equal(await page.getByLabel('Perfil de usuário').locator(`option[value="${juliana.id}"]`).count(), 0);

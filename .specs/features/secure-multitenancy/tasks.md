@@ -514,9 +514,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T21: Remove identity switching and commercial cache
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Replace profile selector with immutable server identity and keep only namespaced UI preferences.
+**Execution note:** O frontend agora fixa identidade e perfil a partir de `/api/auth/session`, remove o seletor de personificacao e ignora `currentUserId`/perfil vindos do workspace ou do armazenamento local. O Web Storage retem somente preferencias de UI sob namespace de tenant e usuario; snapshots comerciais legados sao removidos e falhas do banco nao usam seed nem cache comercial.
 **Where:** app/static/index.html
 **Depends on:** T20
 **Reuses:** Existing role labels/renderers.
@@ -525,10 +526,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] No control/local value changes effective identity or role.
-- [ ] Commercial snapshots/credentials/session authority are absent from Web Storage.
-- [ ] Tests add at least 12 identity, direct-action, storage and two-tenant preference scenarios.
-- [ ] Full gate passes.
+- [x] No control/local value changes effective identity or role.
+- [x] Commercial snapshots/credentials/session authority are absent from Web Storage.
+- [x] Tests add at least 12 identity, direct-action, storage and two-tenant preference scenarios: 12 cases added.
+- [x] Full gate passes: 448 backend and 93 browser scenarios passed.
 
 **Tests:** browser e2e
 **Gate:** full
