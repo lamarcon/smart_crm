@@ -2,9 +2,118 @@
 
 CRM em desenvolvimento para substituir o uso comercial atual do Bitrix24. O repositório contém as especificações do MVP de produção e um protótipo local navegável para validação antecipada do layout e dos fluxos.
 
-**Status da entrega local:** concluída e validada. O endereço `http://localhost:8080` executa a aplicação local funcional com API FastAPI e PostgreSQL. O trabalho pendente no `crm-mvp` corresponde à evolução produtiva para usuários e dados reais, não à conclusão do layout ou dos fluxos locais.
+**Status:** a implementação multiempresa está disponível e validada localmente, mas não foi implantada. Produção continua inalterada até uma autorização específica de deploy e cutover.
 
-## Protótipo local
+## Modelo multiempresa: plano de controle e bancos dedicados
+
+A aplicação central atende `/`, `/{slug}` e `/api`, mas não compartilha dados comerciais entre empresas. O slug localiza apenas um candidato antes do login; depois da autenticação, o tenant vem exclusivamente da sessão opaca armazenada no servidor. O navegador nunca recebe DSN, senha de banco ou secret_ref.
+
+O banco de controle armazena somente diretório de tenants, referências opacas de segredo, sessões, limites de login e eventos de segurança. Nunca armazena usuários, hashes de senha, workspaces ou dados comerciais de tenants. Cada banco tenant armazena seus próprios usuários, hashes Argon2id, workspace e dados comerciais.
+
+| Fronteira | Conteúdo | Não contém |
+| --- | --- | --- |
+| Controle central | `control_tenants`, sessões opacas, throttles e auditoria | CRM, usuários tenant, hashes de senha ou DSNs |
+| Tenant A | identidade vinculada ao UUID de controle, usuários e CRM da empresa A | metadados/sessões centrais ou dados da empresa B |
+| Tenant B | identidade vinculada ao UUID de controle, usuários e CRM da empresa B | metadados/sessões centrais ou dados da empresa A |
+| Navegador | cookie HttpOnly e preferências visuais namespaced | token de sessão, perfil confiável, snapshot comercial ou segredo de banco |
+
+O roteador abre cada PostgreSQL apenas a partir do `tenant_id` confiável da sessão e da referência guardada no plano de controle. Não existe banco default de fallback: indisponibilidade, revisão incompatível ou identidade divergente falham fechadas somente para o tenant afetado.
+
+### Setup local com controle + tenant A + tenant B
+
+Este roteiro é somente para desenvolvimento em uma máquina controlada. Não execute estes comandos contra produção. Nenhum comando desta seção faz deploy, acessa servidor remoto ou altera o ambiente Windows Server.
+
+O PostgreSQL local pode ser uma única instância contendo três bancos separados; produção mantém a topologia de banco/servidor dedicado por empresa. Os nomes locais são:
+
+- `smartcrm_control_local`: metadados e sessões centrais;
+- `smartcrm_tenant_a_local`: usuários e dados comerciais do cliente A;
+- `smartcrm_tenant_b_local`: usuários e dados comerciais do cliente B.
+
+Em outras palavras, o gate local usa controle + tenant A + tenant B. Inicie somente o serviço PostgreSQL legado e crie os três bancos uma vez, sem apagar bancos existentes:
+
+```powershell
+docker compose up -d postgres
+docker compose exec -T postgres createdb -U smartcrm -O smartcrm smartcrm_control_local
+docker compose exec -T postgres createdb -U smartcrm -O smartcrm smartcrm_tenant_a_local
+docker compose exec -T postgres createdb -U smartcrm -O smartcrm smartcrm_tenant_b_local
+```
+
+Se `createdb` informar que o banco já existe, confira owner e conteúdo em vez de recriá-lo. Não use `DROP DATABASE`, `docker compose down -v` ou restauração sobre um banco existente como parte deste setup.
+
+Capture a senha local sem colocá-la no histórico e monte as URLs apenas na sessão atual:
+
+```powershell
+$localCredential = Get-Credential -UserName smartcrm -Message "PostgreSQL local"
+$localPassword = [Uri]::EscapeDataString($localCredential.GetNetworkCredential().Password)
+$controlUrl = "postgresql+psycopg://smartcrm:$localPassword@127.0.0.1:5432/smartcrm_control_local"
+$tenantAUrl = "postgresql+psycopg://smartcrm:$localPassword@127.0.0.1:5432/smartcrm_tenant_a_local"
+$tenantBUrl = "postgresql+psycopg://smartcrm:$localPassword@127.0.0.1:5432/smartcrm_tenant_b_local"
+```
+
+Essas variáveis não devem ser impressas, persistidas em arquivo versionado ou copiadas para logs. Limpe-as ao terminar a sessão.
+
+### Migrações explícitas e revisões suportadas
+
+Existem duas linhagens Alembic independentes. O runtime nunca executa upgrade no startup nem durante requests. Migre primeiro o controle e depois cada banco tenant explicitamente:
+
+```powershell
+$env:SMART_CRM_CONTROL_DATABASE_URL = $controlUrl
+python -m alembic -c alembic-control.ini upgrade c01a5d8e4f20
+python -m alembic -c alembic-control.ini current
+
+$env:SMART_CRM_DATABASE_URL = $tenantAUrl
+python -m alembic -c alembic.ini upgrade a4c9d2e7f1b6
+python -m alembic -c alembic.ini current
+
+$env:SMART_CRM_DATABASE_URL = $tenantBUrl
+python -m alembic -c alembic.ini upgrade a4c9d2e7f1b6
+python -m alembic -c alembic.ini current
+```
+
+No controle, `current deve confirmar c01a5d8e4f20`. Em cada tenant, `current deve confirmar a4c9d2e7f1b6`. Pare se a revisão divergir; não use `stamp`, downgrade ou migração automática para contornar drift.
+
+### Provisionamento administrativo local
+
+Não há endpoint público para cadastrar empresas. As operações administrativas são locais, idempotentes e solicitam segredos interativamente: senhas e DSNs são digitados em prompts, nunca em argumentos de linha de comando. Defina o mesmo diretório local para o comando administrativo e o runtime:
+
+```powershell
+$secretStore = Join-Path $PWD ".local\tenant-secrets"
+$env:SMART_CRM_SECRET_STORE = $secretStore
+$env:SMART_CRM_TENANT_SECRET_STORE = $secretStore
+$env:SMART_CRM_CONTROL_DATABASE_URL = $controlUrl
+
+python -m app.admin_cli register-tenant cliente-a --display-name "Cliente A" --secret-ref local-cliente-a --expected-revision a4c9d2e7f1b6
+python -m app.admin_cli register-tenant cliente-b --display-name "Cliente B" --secret-ref local-cliente-b --expected-revision a4c9d2e7f1b6
+python -m app.admin_cli activate-default cliente-a --admin-email admin-a@example.test --admin-name "Admin A"
+python -m app.admin_cli resume-provisioning cliente-b --admin-email admin-b@example.test --admin-name "Admin B"
+```
+
+`register-tenant` pede a URL completa do banco e a protege no Windows com DPAPI. Os comandos seguintes pedem a senha inicial e persistem somente hash Argon2id. Em produção, secret refs, autorizações, backup e UAT seguem o runbook; não existe cadastro público de empresa ou primeiro administrador.
+
+Depois de confirmar as revisões e provisionar ambos os tenants, inicie a aplicação central sem executar migração:
+
+```powershell
+$env:SMART_CRM_EXPECTED_ORIGIN = "http://127.0.0.1:8080"
+python -m uvicorn app.server:create_central_app --factory --host 127.0.0.1 --port 8080
+```
+
+Abra `http://127.0.0.1:8080/`, localize `cliente-a` ou `cliente-b` e autentique com o administrador do respectivo banco.
+
+### Gate local de isolamento
+
+O gate negativo cria bancos temporários únicos e verifica IDs iguais nos dois tenants, rota forjada, falha de conexão, identidade, RLS, leitura, alteração, exclusão e restauração:
+
+```powershell
+.venv\Scripts\pytest --basetemp .pytest-tmp tests/backend/test_repository_tenant_scope.py tests/backend/test_tenant_router.py tests/backend/test_fleet.py -q
+```
+
+A variável `SMART_CRM_TEST_DATABASE_URL` deve apontar somente para a instância local descartável usada pelos testes. O harness cria e remove apenas bancos com nomes aleatórios próprios; nunca aponte esse gate para produção.
+
+### PostgreSQL 11
+
+PostgreSQL 11 está EOL desde 09/11/2023 e não recebe correções de segurança ou bugs. O uso de PostgreSQL 17 local não elimina esse risco: a compatibilidade mínima continua sendo PostgreSQL 11 por causa do servidor existente e do pacote offline. Antes de qualquer corte, execute os testes e migrações em PostgreSQL 11 isolado, limite rede/privilégios e mantenha plano prioritário de atualização.
+
+## Compose legado do protótipo local
 
 O protótipo é uma demonstração funcional com dados fictícios. Ele inclui:
 
@@ -20,8 +129,8 @@ O protótipo é uma demonstração funcional com dados fictícios. Ele inclui:
 - automação demonstrativa de atribuição ao Faturamento;
 - Dashboard filtrável nos escopos Todos, Leads e Negócios, com recálculo de indicadores, Pipeline e movimentações;
 - notificações internas;
-- seletor de perfil para simular Administrador, Gestor, Vendedor e Assistente;
-- API FastAPI e PostgreSQL local como fonte principal do workspace comercial.
+- identidade e perfil imutáveis carregados da sessão autenticada no servidor;
+- API FastAPI e banco tenant como fonte exclusiva dos dados comerciais daquele cliente.
 
 ### Usar o workspace comercial
 
@@ -78,7 +187,7 @@ docker compose exec -T postgres psql -U smartcrm -d smartcrm_test
 docker compose logs -f postgres
 ```
 
-As migrações Alembic são aplicadas automaticamente antes de o Uvicorn iniciar. Para conferir a revisão e inspecionar o workspace sem alterar dados:
+Somente este Compose legado aplica a linhagem tenant automaticamente antes do Uvicorn; ele não representa o runtime central multiempresa e não deve ser usado para validar cutover. Para conferir a revisão e inspecionar o workspace legado sem alterar dados:
 
 ```powershell
 docker compose exec -T crm alembic current
@@ -86,9 +195,9 @@ docker compose exec -T postgres psql -X -U smartcrm -d smartcrm_test -c "SELECT 
 docker compose exec -T postgres psql -X -U smartcrm -d smartcrm_test -c "SELECT (SELECT count(*) FROM leads WHERE deleted_at IS NULL) AS leads, (SELECT count(*) FROM contacts WHERE deleted_at IS NULL) AS contacts, (SELECT count(*) FROM companies WHERE deleted_at IS NULL) AS companies, (SELECT count(*) FROM deals WHERE deleted_at IS NULL) AS deals;"
 ```
 
-No primeiro acesso a um banco vazio, o perfil **Administrador** recebe uma confirmação única antes da migração da massa fictícia ou do cache legado. O diálogo mostra as contagens de usuários, Leads, Contatos, Empresas, Negócios, orçamentos, notificações e campos personalizados; nada é enviado antes da confirmação. Depois que o workspace existe, o estado do PostgreSQL prevalece sobre qualquer cópia comercial alterada no navegador.
+No fluxo multiempresa, o banco tenant e o primeiro administrador são provisionados explicitamente antes do login. Falha de banco nunca carrega massa fictícia, cache comercial ou dados de outro tenant.
 
-O `localStorage` mantém somente o último snapshot confirmado e estados transitórios, como busca, perfil selecionado, drawer e filtros ainda não salvos. Se a carga falhar, a interface usa esse cache apenas para leitura e mostra `Banco indisponível. Alterações bloqueadas.`. Se uma gravação falhar, ela restaura o estado confirmado e mostra `Não foi possível salvar no banco.`.
+O `localStorage` mantém somente preferências visuais separadas por tenant e usuário; não mantém identidade, perfil confiável, token de sessão ou snapshot comercial. Falha de carga/gravação bloqueia a operação sem fallback.
 
 O volume nomeado `postgres_data` preserva dados após reinícios, recriações do container e `docker compose down`. Antes de qualquer limpeza intencional, gere uma cópia:
 
@@ -126,6 +235,6 @@ docker compose down
 
 ## Limitações importantes
 
-Esta versão serve apenas para desenvolvimento e validação local. Embora o workspace comercial já seja persistido no PostgreSQL, o seletor de perfil não é autenticação e a API não implementa autorização real no servidor. A porta web publicada pelo Docker pode ficar acessível na rede local conforme a configuração do host; não exponha este Compose à internet. Ainda não há integração com WordPress, migração direta/sincronização com o Bitrix24, paginação para alto volume, auditoria produtiva ou armazenamento binário de PDFs. Não devem ser inseridos dados pessoais ou comerciais reais.
+O Compose legado serve apenas à regressão local de interface e um banco; não representa a topologia multiempresa segura. A porta publicada pode ficar acessível na rede local conforme a configuração do host, portanto não a exponha à internet. Ainda não há integração com WordPress, migração direta/sincronização com o Bitrix24, paginação para alto volume ou armazenamento binário de PDFs. Dados reais dependem do cutover autorizado, backups, migrações explícitas, UAT e controles operacionais do runbook.
 
 O escopo produtivo permanece documentado em [.specs/features/crm-mvp/spec.md](.specs/features/crm-mvp/spec.md). O recorte inicial da demonstração está em [.specs/features/ui-prototype/spec.md](.specs/features/ui-prototype/spec.md), e a evolução deste workspace está em [.specs/features/ui-crm-workspace/spec.md](.specs/features/ui-crm-workspace/spec.md).

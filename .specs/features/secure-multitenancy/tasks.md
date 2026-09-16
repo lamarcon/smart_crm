@@ -646,7 +646,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ### T27: Document the multi-database model
 
-**Status:** Pending
+**Status:** In Progress
 
 **What:** Document control boundary, local three-database tests, provisioning and limitations.
 **Where:** README.md
@@ -657,10 +657,10 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 **Done when:**
 
-- [ ] Docs separate control metadata from tenant users/data and explain revisions/no-auto-migrate.
-- [ ] Local setup uses control, tenant A and tenant B databases and notes PostgreSQL 11 risk.
-- [ ] Contract tests add at least 5 command/safety assertions.
-- [ ] Phase 4 Build gate passes with final totals.
+- [x] Docs separate control metadata from tenant users/data and explain revisions/no-auto-migrate.
+- [x] Local setup uses control, tenant A and tenant B databases and notes PostgreSQL 11 risk.
+- [x] Contract tests add at least 5 command/safety assertions: 8 cases added.
+- [x] Phase 4 Build gate passes with final totals: 503 backend and 93 browser scenarios; compatibility 26, runbook 41 and Apache 32 contracts passed.
 - [ ] Fresh Verifier runs spec evidence and discrimination sensor before validate_state passes.
 
 **Tests:** contract + full regression
