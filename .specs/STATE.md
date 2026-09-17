@@ -45,10 +45,10 @@
 ## Handoff
 
 - **Feature**: Multiempresa Seguro / `.specs/features/secure-multitenancy`
-- **Phase / Task**: Execute / T36 Fresh Verifier FAIL; correção de lifecycle pendente
-- **Completed**: código T36 e gates 555 backend, 93 browser e contratos 27/41/32 verdes; sensor T36 5/6, com M6 sobrevivente; nenhum deploy executado
-- **In-progress** (file:line): `tests/backend/test_server.py:66` - falta asserção de dispose após sair do lifecycle do factory
-- **Next step**: adicionar teste de lifecycle via `TestClient(factory())`, afirmar dispose de router/control e reexecutar o Fresh Verifier contra M6
-- **Blockers**: T36 não pode fechar enquanto a suíte não detectar a remoção do handler de shutdown/dispose
+- **Phase / Task**: Execute concluído; T1-T37 e Fresh Verifier completos
+- **Completed**: validação independente PASS incluindo T37, 556 backend, 93 browser, contratos 27/41/32 e sensor T37 5/5; nenhum deploy executado
+- **In-progress** (file:line): none
+- **Next step**: planejar UAT humano e cutover de produção conforme o runbook somente após autorização explícita separada
+- **Blockers**: nenhum de implementação; produção ainda depende de backup, CA/TLS, segredos DPAPI, seleção explícita dos bancos e autorização operacional
 - **Uncommitted files**: `.local/`, `.pytest-tmp/`, `.specs/features/crm-mvp/tasks.md`, `.venv/`, `smart_crm_demo.egg-info/` (untracked preexistentes, preservados)
 - **Branch**: main

@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** In Progress
+**Status:** Complete
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -889,6 +889,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35 -> T36 -> T37
 - [x] The test resolves app.server:create_central_app through uvicorn.importer, injects one observable CentralRuntime through the public factory and enters/exits TestClient(factory()).
 - [x] Router and control disposal are asserted separately after lifespan exit and remain false while the client is active.
 - [x] Removing the application shutdown handler makes the targeted test fail; targeted, backend, browser and contract/build gates pass with production code unchanged.
+- [x] Fresh Verifier repeats the exact shutdown-handler mutation plus independent lifecycle controls: PASS, 556 backend and 93 browser scenarios, sensor 5/5 killed.
 
 **Tests:** runtime lifecycle integration
 **Gate:** build
