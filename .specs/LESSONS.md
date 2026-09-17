@@ -134,6 +134,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: MT-06.4 (api-contracts)
 - last seen: 2026-09-16T23:31:31Z
 
+### L-021 - Lifecycle tests must assert cleanup side effects after the application context exits.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `runtime` · harmful: 0
+- features: secure-multitenancy
+- evidence: .specs/features/secure-multitenancy/validation.md:T36-M6 (runtime)
+- last seen: 2026-09-17T21:10:02Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

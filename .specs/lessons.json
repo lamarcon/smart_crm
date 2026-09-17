@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 21,
+  "next_id": 22,
   "lessons": [
     {
       "id": "L-001",
@@ -367,6 +367,24 @@
       ],
       "created": "2026-09-16T23:31:31Z",
       "last_seen": "2026-09-16T23:31:31Z"
+    },
+    {
+      "id": "L-021",
+      "key": "surviving_mutant::lifecycle tests must assert cleanup side effects after the application context exits",
+      "text": "Lifecycle tests must assert cleanup side effects after the application context exits.",
+      "signal": "surviving_mutant",
+      "scope": "runtime",
+      "status": "candidate",
+      "features": [
+        "secure-multitenancy"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/secure-multitenancy/validation.md:T36-M6 (runtime)"
+      ],
+      "created": "2026-09-17T21:10:02Z",
+      "last_seen": "2026-09-17T21:10:02Z"
     }
   ]
 }

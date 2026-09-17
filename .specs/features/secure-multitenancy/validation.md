@@ -1,11 +1,11 @@
 # Multiempresa Seguro Validation
 
-## Validation: Multiempresa Seguro - PASS ✅
+## Validation: Multiempresa Seguro - FAIL ❌
 
-**Verdict:** PASS ✅
-**Date:** 2026-09-17 (independent post-PASS extension verification T35)
+**Verdict:** FAIL ❌
+**Date:** 2026-09-17 (independent post-PASS extension verification T36)
 **Spec:** `.specs/features/secure-multitenancy/spec.md`
-**Diff range:** `67e3f6c..e1eb1c0` (post-PASS extension T35); implementation lineage remains `6962ca5..e1eb1c0`
+**Diff range:** `88cb1ea..bb4083e` (post-PASS extension T36); implementation lineage remains `6962ca5..bb4083e`
 **Verifier:** independent sub-agent (author ≠ verifier)
 
 ---
@@ -17,6 +17,7 @@
 | T1-T26 | ✅ Done | Commits, checklists reconciliados e evidência de gate presentes. |
 | T27 | ✅ Done | Documentação, full gate, Fresh Verifier e validate_state concluídos. |
 | T28-T35 | ✅ Done | Correções de revogação, TLS, auditoria, cookies, no-store, tenant shell e opt-in local estrito verificadas. |
+| T36 | ❌ Verification gap | Factory implementado e gates verdes; falta teste persistido do dispose no shutdown. |
 
 ## Spec-Anchored Acceptance Criteria
 
@@ -113,12 +114,12 @@ As mutações foram aplicadas somente no worktree temporário `D:\Develop_CRM_Pr
 ## Gate Check
 
 - **Build:** `python -m compileall -q app migrations migrations_control`; compatibility; Compose; backend; browser; runbook; Apache.
-- **Gate totals:** 554 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 contract 27/27; runbook 41/41; Apache 32/32; Compose válido.
+- **Gate totals:** 555 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 contract 27/27; runbook 41/41; Apache 32/32; Compose válido.
 - **Warnings:** 2 (Starlette deprecation e Pydantic alias), sem falha.
 - **Before feature:** 97 backend e 69 browser.
-- **After corrections/extensions:** 554 backend e 93 browser.
-- **Delta from baseline:** +457 backend, +24 browser.
-- **Structural validators after closure:** `validate_spec` 0/0; `validate_tasks --strict` 0/0; `validate_state` 0/0.
+- **After corrections/extensions:** 555 backend e 93 browser.
+- **Delta from baseline:** +458 backend, +24 browser.
+- **Structural validators for T36 FAIL:** `validate_spec` 0/0; `validate_tasks --strict` 0/0; `validate_state` recusou o fechamento com 1 erro esperado porque o veredito permanece FAIL.
 
 ## Code Quality
 
@@ -139,7 +140,7 @@ O fluxo user-facing foi exercitado localmente por 93 cenários browser, incluind
 
 ## Resolved Gap
 
-T34 centralizou a rejeição da tenant shell no mesmo `unauthenticated_error(request)` usado pelas APIs. A matriz independente confirmou: sem cookie → 200/no `Set-Cookie`; malformed/unknown/expired/revoked → 401 e cookie `__Host-` expirado com todos os atributos endurecidos. Não restam gaps de implementação nesta rodada.
+T34 centralizou a rejeição da tenant shell no mesmo `unauthenticated_error(request)` usado pelas APIs. A matriz independente confirmou: sem cookie → 200/no `Set-Cookie`; malformed/unknown/expired/revoked → 401 e cookie `__Host-` expirado com todos os atributos endurecidos. Não restaram gaps de implementação na rodada T34.
 
 ## Post-PASS Extension Verification — T35
 
@@ -153,26 +154,55 @@ T34 centralizou a rejeição da tenant shell no mesmo `unauthenticated_error(req
 
 O gate completo após T35 passou com 554 testes backend, 93 browser, compatibilidade Python 27/27, runbook 41/41, Apache 32/32, Compose válido e `compileall` limpo. O sensor independente em worktree scratch matou 7/7 mutações: parser permissivo, literal trocado, propagação removida em server/admin/fleet, host remoto liberado pelo opt-in e cleanup do README removido. O worktree scratch foi restaurado e removido; nenhum arquivo rastreado do principal foi alterado pelo sensor.
 
+## Post-PASS Extension Verification — T36
+
+| T36 criterion | Independent evidence | Result |
+| ------------- | -------------------- | ------ |
+| Target extraído do README resolve pelo importador real do Uvicorn | `tests/backend/test_server.py:66-82` usa `import_from_string(target)` e compara o target exato | ✅ PASS |
+| Factory é zero-arg e retorna a aplicação central | `app/server.py:134-137`; `tests/backend/test_server.py:79-83` chama `factory()` e verifica `central_runtime` | ✅ PASS |
+| Wrapper delega ao bootstrap/create_app sem bypass | `app/server.py:137`; `tests/backend/test_server.py:77-84` verifica uma chamada ao bootstrap e o runtime retornado | ✅ PASS |
+| Control plane inválido falha fechado | `tests/backend/test_server.py:87-109` verifica mensagem genérica e descarte em falha; sonda independente chamou o factory sem configuração e recebeu `central runtime unavailable` | ✅ PASS |
+| Shutdown preserva `CentralRuntime.dispose()` para router e control | `app/server.py:45-47,130` mantém o handler e a sonda independente confirmou ambos descartados, mas não há asserção persistida; M6 removeu o handler e `test_server.py` continuou 17/17 verde | ❌ GAP |
+
+### T36 Discrimination Sensor
+
+As mutações foram aplicadas somente no worktree temporário `D:\Develop_CRM_Project_verifier_sensor_t36`, restauradas individualmente e o worktree foi removido. O porcelain do principal permaneceu igual ao baseline.
+
+| # | Mutation | Corrective test/result | Result |
+| - | -------- | ---------------------- | ------ |
+| M1 | Remove o atributo `create_central_app` | Importador real não encontra o atributo | ✅ Killed |
+| M2 | Faz o target do README divergir para `app.server:create_app` | Testes de server e contrato README falham | ✅ Killed |
+| M3 | Wrapper deixa de chamar `create_app` e retorna FastAPI vazio | Estado `central_runtime` ausente | ✅ Killed |
+| M4 | Factory passa a exigir parâmetro | Chamada zero-arg levanta `TypeError` | ✅ Killed |
+| M5 | Wrapper ignora bootstrap e chama `create_http_app` diretamente | Estado/runtime e chamada de bootstrap ausentes | ✅ Killed |
+| M6 | Remove o handler de shutdown/dispose | `tests/backend/test_server.py`: 17 passed | ❌ Survived |
+
+**Sensor verdict:** 5/6 killed, 1 survived. FAIL ❌
+
+### Corrective Test Required
+
+Adicionar um teste persistido em `tests/backend/test_server.py` que resolva `app.server:create_central_app` pelo importador do Uvicorn, injete um `CentralRuntime` com router e control observáveis, entre e saia de `TestClient(factory())` e então afirme separadamente que `router.dispose()` e `control_database.dispose()` foram chamados. O teste deve falhar quando a linha `application.add_event_handler("shutdown", active_runtime.dispose)` for removida.
+
 ## Requirement Traceability Update
 
-| Requirement | Previous | Verification result |
-| ----------- | -------- | ------------------- |
-| MT-01 | Implementing | ✅ Verified |
-| MT-02 | Implementing | ✅ Verified |
-| MT-03 | Implementing | ✅ Verified |
-| MT-04 | Implementing | ✅ Verified |
-| MT-05 | Implementing | ✅ Verified |
-| MT-06 | Implementing | ✅ Verified |
-| MT-07 | Implementing | ✅ Verified |
+| Requirement | Current status | T36 verification result |
+| ----------- | -------------- | ----------------------- |
+| MT-01 | Verified | ✅ Retained |
+| MT-02 | Verified | ✅ Retained |
+| MT-03 | Verified | ✅ Retained |
+| MT-04 | Verified | ✅ Retained |
+| MT-05 | Implementing | ❌ Needs lifecycle test |
+| MT-06 | Implementing | ❌ Needs lifecycle test |
+| MT-07 | Verified | ✅ Retained |
 
-`spec.md` foi marcado Verified para MT-01..MT-07 e T27 foi concluída pelo Fresh Verifier.
+`spec.md` mantém MT-05 e MT-06 como Implementing; `tasks.md` permanece In Progress até a revalidação matar M6.
 
 ## Summary
 
-**Overall:** ✅ Ready
+**Overall:** ❌ Not Ready
 
 **Spec-anchored check:** 50/50 listed ACs and every listed edge matched.
-**Sensor:** rodada 3 matou 6/6; extensão T35 matou 7/7; 0 sobreviveu.
-**Gate:** 554 backend + 93 browser passed; compatibility 27/27, runbook 41/41 and Apache 32/32.
+**Sensor:** T36 matou 5/6; M6 sobre shutdown/dispose sobreviveu.
+**Gate:** 555 backend + 93 browser passed; compatibility 27/27, runbook 41/41 and Apache 32/32.
 
-A implementação satisfaz o modelo multiempresa com banco físico por tenant, sessão opaca central, fail-closed, TLS remoto verificado, RLS, autorização server-side, auditoria redigida, provisionamento/frota e frontend/cache isolados. T34 fechou o edge de cookie da tenant shell e T35 conectou o opt-in local estrito aos três caminhos reais sem enfraquecer TLS remoto; nenhum gap de implementação sobreviveu à verificação pós-PASS.
+O factory T36 resolve pelo importador real, é zero-arg, delega ao bootstrap e falha fechado. O comportamento de shutdown atual também descarta router e control, mas a suíte não detecta sua remoção. A feature permanece aberta até o teste corretivo de lifecycle matar M6.
