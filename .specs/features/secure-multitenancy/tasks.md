@@ -698,7 +698,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 ### T29: Enforce verified TLS for remote PostgreSQL
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Validate server-resolved PostgreSQL connection profiles before router, administration or fleet engines are created, requiring certificate and hostname verification for remote hosts while allowing explicit localhost development.
 **Where:** app/security/database_urls.py, app/tenant_database.py, app/admin_cli.py, app/fleet.py
@@ -709,10 +709,10 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Remote PostgreSQL URLs fail closed unless sslmode=verify-full and a root CA is configured; certificate and hostname checks cannot be downgraded by duplicate parameters.
-- [ ] Loopback development is allowed only by explicit configuration and remains disabled by default in production constructors.
-- [ ] Router, admin provisioning and fleet preflight/migration share the same validator before create_engine.
-- [ ] Tests cover remote insecure/verified URLs, localhost explicit allow/deny, redaction and all three callers; full gate passes.
+- [x] Remote PostgreSQL URLs fail closed unless sslmode=verify-full and a root CA is configured; certificate and hostname checks cannot be downgraded by duplicate parameters.
+- [x] Loopback development is allowed only by explicit configuration and remains disabled by default in production constructors.
+- [x] Router, admin provisioning and fleet preflight/migration share the same validator before create_engine.
+- [x] Tests cover remote insecure/verified URLs, localhost explicit allow/deny, redaction and all three callers; full gate passes.
 
 **Tests:** unit + integration
 **Gate:** full

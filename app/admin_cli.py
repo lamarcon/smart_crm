@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.control_database import ControlDatabase, ControlRepository
 from app.models import CrmUser, TenantIdentity, Workspace
 from app.schemas import normalize_tenant_identifier
+from app.security.database_urls import validate_tenant_database_url
 from app.security.passwords import hash_password
 from app.security.secrets import DpapiFileSecretProvider, SecretError, SecretProvider
 
@@ -76,11 +77,13 @@ class AdminService:
         *,
         password_hasher: Callable[[str], str] = hash_password,
         now: Callable[[], datetime] | None = None,
+        allow_insecure_loopback: bool = False,
     ) -> None:
         self.control_database = control_database
         self._secret_provider = secret_provider
         self._password_hasher = password_hasher
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._allow_insecure_loopback = allow_insecure_loopback
 
     @staticmethod
     def _slug(value: str) -> str:
@@ -144,6 +147,10 @@ class AdminService:
     def _engine(self, tenant):  # noqa: ANN001, ANN201
         try:
             database_url = self._secret_provider.get_database_secret(tenant.secret_ref)
+            database_url = validate_tenant_database_url(
+                database_url,
+                allow_insecure_loopback=self._allow_insecure_loopback,
+            )
             return create_engine(
                 database_url,
                 pool_pre_ping=True,

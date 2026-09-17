@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.control_database import ControlDatabase
 from app.control_models import ControlTenant
+from app.security.database_urls import validate_tenant_database_url
 from app.security.secrets import SecretError, SecretProvider
 
 
@@ -55,10 +56,12 @@ class FleetService:
         secret_provider: SecretProvider,
         *,
         migrations_dir: Path | None = None,
+        allow_insecure_loopback: bool = False,
     ) -> None:
         self._control_database = control_database
         self._secret_provider = secret_provider
         self._migrations_dir = migrations_dir or Path(__file__).resolve().parents[1] / "migrations"
+        self._allow_insecure_loopback = allow_insecure_loopback
 
     def _select(self, selectors: Sequence[str] | None) -> list[ControlTenant]:
         with self._control_database.session_scope() as session:
@@ -83,6 +86,10 @@ class FleetService:
 
     def _engine(self, tenant: ControlTenant):  # noqa: ANN201
         database_url = self._secret_provider.get_database_secret(tenant.secret_ref)
+        database_url = validate_tenant_database_url(
+            database_url,
+            allow_insecure_loopback=self._allow_insecure_loopback,
+        )
         return create_engine(
             database_url,
             pool_pre_ping=True,

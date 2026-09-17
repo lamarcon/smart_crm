@@ -14,6 +14,7 @@ from sqlalchemy.exc import DBAPIError, DisconnectionError, OperationalError, SQL
 from sqlalchemy.orm import Session
 
 from app.control_database import ControlDatabase, ControlRepository
+from app.security.database_urls import validate_tenant_database_url
 from app.security.secrets import SecretError, SecretProvider
 
 
@@ -65,6 +66,7 @@ class TenantDatabaseRouterSettings:
     max_overflow: int = 2
     pool_timeout: float = 5.0
     connect_timeout: int = 3
+    allow_insecure_loopback: bool = False
     supported_schema_contract: str = "tenant-v1"
 
     def __post_init__(self) -> None:
@@ -149,6 +151,10 @@ class TenantDatabaseRouter:
                     stale_engine = self._engines.pop(profile.tenant_id).engine
 
                 database_url = self._secret_provider.get_database_secret(profile.secret_ref)
+                database_url = validate_tenant_database_url(
+                    database_url,
+                    allow_insecure_loopback=self._settings.allow_insecure_loopback,
+                )
                 engine = self._engine_factory(
                     database_url,
                     pool_pre_ping=True,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
+from types import SimpleNamespace
 from pathlib import Path
 from uuid import uuid4
 
@@ -104,7 +105,7 @@ def fleet_setup():  # noqa: ANN201
     secrets = InMemorySecretProvider(
         {f"db-{name}": url for name, url in tenant_urls.items()}
     )
-    service = FleetService(control_database, secrets)
+    service = FleetService(control_database, secrets, allow_insecure_loopback=True)
     try:
         yield service, control_database, secrets, tenant_ids, tenant_urls
     finally:
@@ -113,6 +114,33 @@ def fleet_setup():  # noqa: ANN201
             for schema in schemas.values():
                 connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         root_engine.dispose()
+
+
+def test_fleet_rejects_insecure_remote_profile_before_engine_creation(monkeypatch) -> None:
+    insecure = "postgresql+psycopg://tenant:top-secret@db.example.test/tenant"
+    calls: list[str] = []
+
+    def recording_create_engine(url: str, **_kwargs):  # noqa: ANN001, ANN201
+        calls.append(url)
+        return object()
+
+    monkeypatch.setattr("app.fleet.create_engine", recording_create_engine)
+    service = FleetService(
+        object(),  # type: ignore[arg-type]
+        InMemorySecretProvider({"remote": insecure}),
+    )
+    tenant = SimpleNamespace(
+        id=uuid4(), slug="cliente-a", status="active", secret_ref="remote",
+        expected_tenant_revision=TENANT_HEAD,
+    )
+
+    result = service._probe(tenant)  # type: ignore[arg-type]
+
+    assert result.connected is False
+    assert result.code == "unavailable"
+    assert calls == []
+    assert "top-secret" not in repr(result)
+    assert "db.example.test" not in repr(result)
 
 
 def test_preflight_reports_ready_identity_and_revision(fleet_setup) -> None:  # noqa: ANN001

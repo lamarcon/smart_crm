@@ -148,6 +148,8 @@ def router_factory(tenant_databases):  # noqa: ANN001
         settings: TenantDatabaseRouterSettings | None = None,
         engine_factory=None,  # noqa: ANN001
     ) -> tuple[TenantDatabaseRouter, MutableProfileLoader]:
+        if settings is None:
+            settings = TenantDatabaseRouterSettings(allow_insecure_loopback=True)
         loader = MutableProfileLoader(profiles or _profiles(tenant_databases))
         provider = InMemorySecretProvider(
             secrets or {"tenant-a": tenant_databases.dsn_a, "tenant-b": tenant_databases.dsn_b}
@@ -196,6 +198,28 @@ def test_unknown_tenant_has_no_default_or_engine_creation(router_factory) -> Non
 
     assert factory_calls == []
     assert router.cached_tenant_ids == ()
+
+
+def test_remote_profile_without_verified_tls_fails_before_engine_factory(
+    router_factory,
+    tenant_databases,
+) -> None:  # noqa: ANN001
+    factory_calls: list[str] = []
+    insecure = "postgresql+psycopg://tenant:top-secret@db.example.test/tenant"
+
+    def recording_factory(url: str, **_kwargs):  # noqa: ANN001, ANN201
+        factory_calls.append(url)
+        return object()
+
+    router, _loader = router_factory(
+        secrets={"tenant-a": insecure},
+        engine_factory=recording_factory,
+    )
+
+    with pytest.raises(TenantUnavailableError, match="tenant database unavailable"):
+        router.get_engine(tenant_databases.tenant_a)
+    assert factory_calls == []
+
 
 
 def test_inactive_tenant_fails_before_secret_or_engine(router_factory, tenant_databases) -> None:  # noqa: ANN001
@@ -337,7 +361,10 @@ def test_profile_rotation_disposes_only_stale_engine(router_factory, tenant_data
 
 
 def test_lru_cache_is_bounded_and_disposes_oldest(router_factory, tenant_databases) -> None:  # noqa: ANN001
-    settings = TenantDatabaseRouterSettings(max_cached_engines=1)
+    settings = TenantDatabaseRouterSettings(
+        max_cached_engines=1,
+        allow_insecure_loopback=True,
+    )
     router, _loader = router_factory(settings=settings)
     old_engine = router.get_engine(tenant_databases.tenant_a)
 

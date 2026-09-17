@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -76,6 +77,7 @@ def admin_setup():  # noqa: ANN201
         secrets,
         password_hasher=fake_hash,
         now=lambda: NOW,
+        allow_insecure_loopback=True,
     )
     try:
         yield service, control_database, secrets, tenant_url, hashes
@@ -104,6 +106,28 @@ def _activate(service: AdminService, slug: str = "cliente-a"):  # noqa: ANN201
         admin_name="Administrador",
         password="senha segura 123",
     )
+
+
+def test_admin_rejects_insecure_remote_profile_before_engine_creation(monkeypatch) -> None:
+    insecure = "postgresql+psycopg://tenant:top-secret@db.example.test/tenant"
+    calls: list[str] = []
+
+    def recording_create_engine(url: str, **_kwargs):  # noqa: ANN001, ANN201
+        calls.append(url)
+        return object()
+
+    monkeypatch.setattr("app.admin_cli.create_engine", recording_create_engine)
+    service = AdminService(
+        object(),  # type: ignore[arg-type]
+        InMemorySecretProvider({"remote": insecure}),
+    )
+
+    with pytest.raises(AdminOperationError, match="tenant provisioning failed") as raised:
+        service._engine(SimpleNamespace(secret_ref="remote"))
+
+    assert calls == []
+    assert "top-secret" not in str(raised.value)
+    assert "db.example.test" not in str(raised.value)
 
 
 def test_register_keeps_tenant_non_active_and_stores_only_secret_reference(admin_setup) -> None:  # noqa: ANN001
