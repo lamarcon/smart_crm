@@ -113,8 +113,8 @@ Seen once or not yet corroborated. Tracked, not trusted.
 ### L-017 - Every rejected opaque session cookie must be expired in the same HTTP response.
 - signal: `ac_gap` · recurrence: 1 feature(s) · scope: `sessions` · harmful: 0
 - features: secure-multitenancy
-- evidence: validation.md:92 (sessions) (+1 more)
-- last seen: 2026-09-16T23:32:04Z
+- evidence: validation.md:92 (sessions) (+2 more)
+- last seen: 2026-09-17T15:03:19Z
 
 ### L-018 - Exercise every required security-event class and assert its redacted persisted audit record.
 - signal: `ac_gap` · recurrence: 1 feature(s) · scope: `audit` · harmful: 0

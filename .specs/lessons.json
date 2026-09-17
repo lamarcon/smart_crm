@@ -307,10 +307,11 @@
       "harmful": 0,
       "evidence": [
         "validation.md:92 (sessions)",
-        "validation.md:87 (sessions)"
+        "validation.md:87 (sessions)",
+        ".specs/features/secure-multitenancy/validation.md:tenant-shell-cookie-edge (sessions)"
       ],
       "created": "2026-09-16T23:31:30Z",
-      "last_seen": "2026-09-16T23:32:04Z"
+      "last_seen": "2026-09-17T15:03:19Z"
     },
     {
       "id": "L-018",
