@@ -20,6 +20,7 @@ from app.auth import (
     CookiePrincipalResolver,
     ResolvedPrincipal,
     SESSION_COOKIE_NAME,
+    unauthenticated_error,
 )
 from app.database import Database, database
 from app.policies import Action, can_perform_action
@@ -550,7 +551,7 @@ def create_app(
                 )
             except AuthenticationError:
                 audit_request_denial(request, "unauthenticated")
-                return _error(401, "unauthenticated", "Sessão inválida.")
+                raise unauthenticated_error(request) from None
             request.state.session_context = context
             if context.tenant_slug != normalized_slug:
                 raise HTTPException(

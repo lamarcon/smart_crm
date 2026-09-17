@@ -46,7 +46,7 @@ def _received_session_cookie(request: Request) -> bool:
     )
 
 
-def _unauthenticated_error(request: Request) -> HTTPException:
+def unauthenticated_error(request: Request) -> HTTPException:
     return _http_error(
         401,
         "unauthenticated",
@@ -153,10 +153,10 @@ class CookiePrincipalResolver:
     async def _reject_alternate_session_sources(self, request: Request) -> None:
         if any(key.lower() in _ALTERNATE_QUERY_KEYS for key in request.query_params.keys()):
             self._audit_denial("unauthenticated", request=request)
-            raise _unauthenticated_error(request)
+            raise unauthenticated_error(request)
         if any(request.headers.get(key) is not None for key in _ALTERNATE_HEADER_KEYS):
             self._audit_denial("unauthenticated", request=request)
-            raise _unauthenticated_error(request)
+            raise unauthenticated_error(request)
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if request.method.upper() not in _SAFE_METHODS and content_type == "application/json":
             try:
@@ -165,7 +165,7 @@ class CookiePrincipalResolver:
                 return
             if _contains_alternate_body_key(payload):
                 self._audit_denial("unauthenticated", request=request)
-                raise _unauthenticated_error(request)
+                raise unauthenticated_error(request)
 
     async def __call__(self, request: Request) -> AsyncIterator[ResolvedPrincipal]:
         self._validate_origin(request)
@@ -173,7 +173,7 @@ class CookiePrincipalResolver:
         token = request.cookies.get(SESSION_COOKIE_NAME)
         if token is None or not _TOKEN_PATTERN.fullmatch(token):
             self._audit_denial("unauthenticated", request=request, token=token)
-            raise _unauthenticated_error(request)
+            raise unauthenticated_error(request)
         try:
             context = self._auth_service.current_session(
                 token,
@@ -181,7 +181,7 @@ class CookiePrincipalResolver:
             )
         except AuthenticationError:
             self._audit_denial("unauthenticated", request=request, token=token)
-            raise _unauthenticated_error(request) from None
+            raise unauthenticated_error(request) from None
 
         changed_user_ids: tuple[str, ...] = ()
         try:

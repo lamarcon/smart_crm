@@ -178,6 +178,34 @@ def assert_expired_session_cookie(response) -> None:  # noqa: ANN001
     assert "Path=/" in cookie
     assert "Domain=" not in cookie
 
+@pytest.mark.parametrize("state", ["malformed", "unknown", "expired", "revoked"])
+def test_tenant_shell_expires_invalid_received_cookie(secure_client_factory, state: str) -> None:  # noqa: ANN001
+    client, gateway, _router, _workspace = secure_client_factory()
+    token = "short" if state == "malformed" else TOKEN
+    if state != "malformed":
+        gateway.session_failure = AuthenticationError(state)
+
+    response = client.get(
+        "/cliente-a",
+        headers={"cookie": f"{SESSION_COOKIE_NAME}={token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthenticated"
+    assert_expired_session_cookie(response)
+    assert gateway.calls == [("session", token)]
+
+
+def test_tenant_shell_without_cookie_renders_login_without_set_cookie(secure_client_factory) -> None:  # noqa: ANN001
+    client, gateway, _router, _workspace = secure_client_factory()
+
+    response = client.get("/cliente-a")
+
+    assert response.status_code == 200
+    assert "<title>tenant shell</title>" in response.text
+    assert SESSION_COOKIE_NAME not in response.headers.get("set-cookie", "")
+    assert gateway.calls == []
+
 
 def test_locate_returns_canonical_active_tenant_without_session(secure_client_factory) -> None:  # noqa: ANN001
     client, gateway, router, _workspace = secure_client_factory()

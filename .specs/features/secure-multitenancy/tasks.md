@@ -20,7 +20,7 @@ Implement these tasks with the tlc-spec-driven skill and follow its Execute flow
 | Password/session/auth | unit + integration | Every MT-01/MT-02 branch, dummy hash, expiry, revocation, concurrency and outage | tests/backend/test_security.py, tests/backend/test_auth_service.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_security.py tests/backend/test_auth_service.py -q |
 | Authorization policy | unit | Complete role/action/record matrix | tests/backend/test_authorization.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_authorization.py -q |
 | Tenant repository | PostgreSQL integration | Two databases, identical IDs, all mutations/restores and forced RLS | tests/backend/test_repository.py, tests/backend/test_repository_tenant_scope.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_repository.py tests/backend/test_repository_tenant_scope.py -q |
-| Workspace service/auth API | unit + PostgreSQL + API integration | Projection/merge for every role plus happy/anonymous/forbidden/forged/CSRF/version/503 paths | tests/backend/test_workspace_authorization.py, tests/backend/test_workspace_service.py, tests/backend/test_api.py, tests/backend/test_auth_api.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_workspace_authorization.py tests/backend/test_workspace_service.py tests/backend/test_api.py tests/backend/test_auth_api.py -q |
+| Workspace service/auth API | unit + PostgreSQL + API integration | Projection/merge for every role plus tenant-shell cookie, happy/anonymous/forbidden/forged/CSRF/version/503 paths | tests/backend/test_workspace_authorization.py, tests/backend/test_workspace_service.py, tests/backend/test_api.py, tests/backend/test_auth_api.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_workspace_authorization.py tests/backend/test_workspace_service.py tests/backend/test_api.py tests/backend/test_auth_api.py -q |
 | Models/schemas/migrations | unit + PostgreSQL integration | Both lineages, identity, preservation, RLS and downgrade | tests/backend/test_models.py, tests/backend/test_schemas.py, tests/backend/test_migrations.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_models.py tests/backend/test_schemas.py tests/backend/test_migrations.py -q |
 | Admin/fleet | integration | Activation, checkpoints/resume, hidden secrets, preflight, selection and independent failures | tests/backend/test_admin.py, tests/backend/test_fleet.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_admin.py tests/backend/test_fleet.py -q |
 | Frontend route/auth/cache | browser e2e | Locator, login, cookie session, immutable profile, logout and namespaced preferences | tests/ui-prototype.spec.cjs | pnpm test |
@@ -66,7 +66,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 ### Phase 5: Independent-validation corrections
 
 ```
-T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
+T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34
 ```
 
 ## Task Breakdown
@@ -807,6 +807,28 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 **Gate:** build
 **Commit:** docs(spec): reconcile foundation task evidence
 
+### T34: Expire invalid cookies on the tenant shell
+
+**Status:** Complete
+
+**What:** Apply the shared rejected-session cookie contract to GET /{slug} without changing the anonymous tenant login shell.
+**Where:** app/main.py
+**Integration touchpoints:** app/auth.py, tests/backend/test_auth_api.py
+**Depends on:** T33
+**Reuses:** Existing unauthenticated response helper, tenant-shell audit and hardened cookie attributes.
+**Requirement:** MT-02, MT-06, MT-07
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [x] Malformed, unknown, expired and revoked cookies received by GET /{slug} return 401 and expire __Host-smartcrm_session with Max-Age=0, Expires, Secure, HttpOnly, SameSite=Strict, Path=/ and no Domain.
+- [x] GET /{slug} without a cookie continues to return the tenant login shell with 200 and no Set-Cookie.
+- [x] Tenant shell and protected API/dependency paths reuse one cookie-expiration rule, and route-level tests plus the full gate pass without test deletion.
+
+**Tests:** API integration
+**Gate:** full
+**Commit:** fix(auth): expire invalid tenant shell cookies
+
 ## Phase Execution Map
 
 ```
@@ -814,7 +836,7 @@ Phase 1: T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9
 Phase 2: T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17
 Phase 3: T17 → T18 → T19 → T20 → T21 → T22
 Phase 4: T22 → T23 → T24 → T25 → T26 → T27
-Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33
+Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34
 ```
 
 Execution is sequential and phase boundaries are batch boundaries. Plan approval permits local implementation/commits only, never push, deploy, remote connection, production migration or server change.
@@ -828,7 +850,7 @@ Execution is sequential and phase boundaries are batch boundaries. Plan approval
 | T10-T17 | One security/schema/policy/service/API/repository boundary each | OK |
 | T18-T22 | One admin/fleet/UI/runtime boundary each | OK |
 | T23-T27 | One config/package/proxy/runbook/doc boundary each | OK |
-| T28-T33 | One revocation/TLS/audit/cookie/coverage/evidence boundary each | OK |
+| T28-T34 | One revocation/TLS/audit/cookie/coverage/evidence/tenant-shell boundary each | OK |
 
 Every source task co-locates required tests; there is no deferred test task.
 
@@ -869,6 +891,7 @@ Every source task co-locates required tests; there is no deferred test task.
 | T31 | T30 | T30 → T31 | OK |
 | T32 | T31 | T31 → T32 | OK |
 | T33 | T32 | T32 → T33 | OK |
+| T34 | T33 | T33 → T34 | OK |
 
 ## Test Co-location Validation
 
@@ -889,20 +912,21 @@ Every source task co-locates required tests; there is no deferred test task.
 | T29 | Secret/router/admin/fleet | Unit + PostgreSQL | Unit/integration | OK |
 | T30-T32 | Auth/API/audit | Unit + API/PostgreSQL | Unit/API/PostgreSQL | OK |
 | T33 | Spec evidence | Structural/build | Structural/build/full | OK |
+| T34 | Tenant shell/auth | API integration | API integration | OK |
 
 ## Requirement Coverage
 
 | Requirement | Tasks | Evidence target |
 | ----------- | ----- | --------------- |
 | MT-01 Locate/login | T1,T3-T6,T10-T15,T18,T20,T33 | Tenant-local credentials and generic failures |
-| MT-02 Central session | T3,T6,T10-T15,T18,T20-T23,T28,T31,T33 | Cookie, digest, TTL, revocation and no-token |
+| MT-02 Central session | T3,T6,T10-T15,T18,T20-T23,T28,T31,T33-T34 | Cookie, digest, TTL, revocation and no-token |
 | MT-03 Database isolation | T5,T7-T9,T13-T17,T20-T26,T29-T30,T33 | Two DBs, forged routing, verified TLS and RLS |
 | MT-04 Authorization | T12,T14-T17,T21,T28,T30 | Role/action/record matrix and denial audit |
 | MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33 | Default preservation, checkpoints and fleet |
-| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T33 | Redaction, audit, TLS, cache, health, package and runbook |
-| MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26,T29,T31,T33 | Locks, outage, mismatch, retry and rollback |
+| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T34 | Redaction, audit, TLS, cache, health, package and runbook |
+| MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26,T29,T31,T33-T34 | Locks, invalid-cookie cleanup, outage, mismatch, retry and rollback |
 
-**Coverage:** 7 requirement groups, 33 mapped tasks, 0 unmapped.
+**Coverage:** 7 requirement groups, 34 mapped tasks, 0 unmapped.
 
 ## Approval Gate Before Execute
 
