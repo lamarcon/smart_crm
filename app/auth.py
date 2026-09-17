@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import AsyncIterator
 from urllib.parse import urlsplit
 
@@ -72,16 +73,59 @@ class CookiePrincipalResolver:
         self._router = router
         self._settings = settings
 
+    def _audit_denial(
+        self,
+        code: str,
+        *,
+        request: Request | None = None,
+        context: SessionContext | None = None,
+        token: str | None = None,
+    ) -> None:
+        if context is not None:
+            tenant_id = context.principal.tenant_id
+            user_id = context.principal.user_id
+            source = context.token_digest
+        else:
+            tenant_id = None
+            user_id = None
+            source = token or (
+                f"{request.method}\0{request.url.path}" if request is not None else "anonymous"
+            )
+        correlation_digest = sha256(
+            f"request-denial\0{source}".encode("utf-8")
+        ).hexdigest()
+        try:
+            self._auth_service.record_security_event(
+                event_type="request.denied",
+                tenant_id=tenant_id,
+                user_id=user_id,
+                correlation_digest=correlation_digest,
+                outcome_code=code,
+                occurred_at=datetime.now(timezone.utc),
+            )
+        except Exception:
+            pass
+        if request is not None:
+            request.state.security_audited = True
+
+
     def _validate_origin(self, request: Request) -> None:
         if request.method.upper() in _SAFE_METHODS:
             return
         if request.headers.get("origin") != self._settings.expected_origin:
+            self._audit_denial(
+                "invalid_origin",
+                request=request,
+                token=request.cookies.get(SESSION_COOKIE_NAME),
+            )
             raise _http_error(403, "invalid_origin", "Origem da requisição inválida.")
 
     async def _reject_alternate_session_sources(self, request: Request) -> None:
         if any(key.lower() in _ALTERNATE_QUERY_KEYS for key in request.query_params.keys()):
+            self._audit_denial("unauthenticated", request=request)
             raise _http_error(401, "unauthenticated", "Sessão inválida.")
         if any(request.headers.get(key) is not None for key in _ALTERNATE_HEADER_KEYS):
+            self._audit_denial("unauthenticated", request=request)
             raise _http_error(401, "unauthenticated", "Sessão inválida.")
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if request.method.upper() not in _SAFE_METHODS and content_type == "application/json":
@@ -90,6 +134,7 @@ class CookiePrincipalResolver:
             except Exception:
                 return
             if _contains_alternate_body_key(payload):
+                self._audit_denial("unauthenticated", request=request)
                 raise _http_error(401, "unauthenticated", "Sessão inválida.")
 
     async def __call__(self, request: Request) -> AsyncIterator[ResolvedPrincipal]:
@@ -97,6 +142,7 @@ class CookiePrincipalResolver:
         await self._reject_alternate_session_sources(request)
         token = request.cookies.get(SESSION_COOKIE_NAME)
         if token is None or not _TOKEN_PATTERN.fullmatch(token):
+            self._audit_denial("unauthenticated", request=request, token=token)
             raise _http_error(401, "unauthenticated", "Sessão inválida.")
         try:
             context = self._auth_service.current_session(
@@ -104,6 +150,7 @@ class CookiePrincipalResolver:
                 now=datetime.now(timezone.utc),
             )
         except AuthenticationError:
+            self._audit_denial("unauthenticated", request=request, token=token)
             raise _http_error(401, "unauthenticated", "Sessão inválida.") from None
 
         changed_user_ids: tuple[str, ...] = ()
@@ -131,7 +178,7 @@ class CookiePrincipalResolver:
                 now=revoked_at,
             )
 
-    @staticmethod
-    def require_tenant_route(context: SessionContext, route_slug: str) -> None:
+    def require_tenant_route(self, context: SessionContext, route_slug: str) -> None:
         if route_slug != context.tenant_slug:
+            self._audit_denial("tenant_mismatch", context=context)
             raise _http_error(403, "tenant_mismatch", "Empresa da sessão não corresponde à rota.")

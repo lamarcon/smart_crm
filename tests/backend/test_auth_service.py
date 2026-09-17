@@ -42,6 +42,7 @@ class FakeControlRepository:
         self.created_sessions: list[dict] = []
         self.revocations: list[tuple] = []
         self.failure_limits: list[tuple[str, int]] = []
+        self.fail_audit = False
         self.session = self
 
     def find_tenant_by_slug(self, slug: str):  # noqa: ANN201
@@ -107,8 +108,11 @@ class FakeControlRepository:
         return count
 
     def append_security_event(self, **values):  # noqa: ANN003, ANN201
-        self.events.append(values)
-        return SimpleNamespace(**values)
+        if self.fail_audit:
+            raise RuntimeError("central audit unavailable")
+        stored = {"event_id": uuid4(), **values}
+        self.events.append(stored)
+        return SimpleNamespace(id=stored["event_id"], **values)
 
 
 class FakeRouter:
@@ -394,6 +398,29 @@ def test_explicit_access_change_revokes_all_prior_user_sessions(auth_setup) -> N
     assert count == 2
     assert repository.sessions[digest_session_token(first.token)].revoked_at == NOW
     assert repository.sessions[digest_session_token(second.token)].revoked_at == NOW
+    event = repository.events[-1]
+    assert event["event_type"] == "session.revoked"
+    assert event["tenant_id"] == tenant_a.id
+    assert event["user_id"] == "user-a"
+    assert event["outcome_code"] == "auth_changed"
+    assert len(event["correlation_digest"]) == 64
+    assert event["event_id"].version == 4
+    assert first.token not in repr(event)
+    assert second.token not in repr(event)
+
+
+def test_audit_failure_never_rolls_back_session_revocation(auth_setup) -> None:  # noqa: ANN001
+    service, repository, _router, tenant_a, _tenant_b = auth_setup
+    result = login(service)
+    repository.fail_audit = True
+
+    count = service.revoke_user_sessions(
+        tenant_a.id, "user-a", now=NOW, reason="auth_changed"
+    )
+
+    assert count == 1
+    assert repository.sessions[digest_session_token(result.token)].revoked_at == NOW
+
 
 def test_logout_revokes_only_digest_and_never_records_raw_token(auth_setup) -> None:  # noqa: ANN001
     service, repository, _router, _tenant_a, _tenant_b = auth_setup

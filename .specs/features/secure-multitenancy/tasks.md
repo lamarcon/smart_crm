@@ -720,7 +720,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 ### T30: Complete redacted security auditing
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Emit central audit events for session revocation, database identity mismatch/routing failure and protected 401/403 denials without secrets.
 **Where:** app/services/auth.py, app/tenant_database.py, app/auth.py, app/main.py
@@ -731,10 +731,10 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Revocation, identity mismatch/routing failure and every protected 401/403 path append event_id, known tenant/user and a correlation digest.
-- [ ] Events never contain raw password, cookie/token, DSN, host credential or commercial payload.
-- [ ] Missing context stays nullable instead of fabricating tenant/user identity, and audit failure cannot grant access.
-- [ ] Tests assert event types, outcomes, linkage/redaction and denial status; full gate passes.
+- [x] Revocation, identity mismatch/routing failure and every protected 401/403 path append event_id, known tenant/user and a correlation digest.
+- [x] Events never contain raw password, cookie/token, DSN, host credential or commercial payload.
+- [x] Missing context stays nullable instead of fabricating tenant/user identity, and audit failure cannot grant access.
+- [x] Tests assert event types, outcomes, linkage/redaction and denial status; full gate passes.
 
 **Tests:** unit + API + PostgreSQL integration
 **Gate:** full

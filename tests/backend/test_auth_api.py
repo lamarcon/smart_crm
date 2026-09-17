@@ -63,6 +63,7 @@ class FakeAuthGateway:
         self.login_failure: Exception | None = None
         self.session_failure: Exception | None = None
         self.calls: list[tuple] = []
+        self.security_events: list[dict] = []
 
     def locate_tenant(self, slug: str):  # noqa: ANN201
         self.calls.append(("locate", slug))
@@ -85,6 +86,12 @@ class FakeAuthGateway:
     def logout(self, token: str, *, now):  # noqa: ANN001, ANN201
         self.calls.append(("logout", token))
         return token == TOKEN
+    def record_security_event(self, **values):  # noqa: ANN003, ANN201
+        stored = {"event_id": uuid4(), **values}
+        self.security_events.append(stored)
+        return stored["event_id"]
+
+
 
 
 class FakeRouter:
@@ -256,7 +263,7 @@ def test_logout_revokes_server_session_and_expires_same_cookie(secure_client_fac
     ],
 )
 def test_every_workspace_route_rejects_anonymous_access(secure_client_factory, method: str, path: str, json_body) -> None:  # noqa: ANN001
-    client, _gateway, _router, workspace = secure_client_factory()
+    client, gateway, _router, workspace = secure_client_factory()
     headers = {"origin": ORIGIN} if method not in {"GET", "HEAD"} else {}
 
     response = client.request(method, path, headers=headers, json=json_body)
@@ -264,6 +271,10 @@ def test_every_workspace_route_rejects_anonymous_access(secure_client_factory, m
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "unauthenticated"
     assert workspace.calls == []
+    assert gateway.security_events[-1]["outcome_code"] == "unauthenticated"
+    assert gateway.security_events[-1]["tenant_id"] is None
+    assert gateway.security_events[-1]["user_id"] is None
+    assert gateway.security_events[-1]["event_id"].version == 4
 
 
 @pytest.mark.parametrize(
@@ -276,7 +287,7 @@ def test_every_workspace_route_rejects_anonymous_access(secure_client_factory, m
     ],
 )
 def test_non_admin_cannot_call_privileged_workspace_routes(secure_client_factory, method: str, path: str, json_body) -> None:  # noqa: ANN001
-    client, _gateway, _router, workspace = secure_client_factory("Vendedor")
+    client, gateway, _router, workspace = secure_client_factory("Vendedor")
     headers = auth_headers(origin=method != "GET")
 
     response = client.request(method, path, headers=headers, json=json_body)
@@ -284,6 +295,11 @@ def test_non_admin_cannot_call_privileged_workspace_routes(secure_client_factory
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "forbidden"
     assert workspace.calls == []
+    event = gateway.security_events[-1]
+    assert event["outcome_code"] == "forbidden"
+    assert event["tenant_id"] == TENANT_ID
+    assert event["user_id"] == "u-1"
+    assert len(event["correlation_digest"]) == 64
 
 
 def test_forged_browser_authority_does_not_change_workspace_session(secure_client_factory) -> None:  # noqa: ANN001
@@ -338,6 +354,10 @@ def test_session_cookie_on_other_tenant_path_is_rejected_without_switch(secure_c
     assert gateway.calls == [("session", TOKEN)]
     assert router.calls == []
 
+    assert gateway.security_events[-1]["outcome_code"] == "tenant_mismatch"
+    assert gateway.security_events[-1]["tenant_id"] == TENANT_ID
+    assert gateway.security_events[-1]["user_id"] == "u-1"
+    assert TOKEN not in repr(gateway.security_events[-1])
 
 @pytest.mark.parametrize("path", ["/api/auth/locate", "/api/auth/login", "/api/auth/logout"])
 def test_unsafe_auth_routes_require_expected_origin(secure_client_factory, path: str) -> None:  # noqa: ANN001
@@ -353,3 +373,7 @@ def test_unsafe_auth_routes_require_expected_origin(secure_client_factory, path:
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "invalid_origin"
     assert gateway.calls == []
+    assert gateway.security_events[-1]["outcome_code"] == "invalid_origin"
+    assert gateway.security_events[-1]["tenant_id"] is None
+    assert gateway.security_events[-1]["user_id"] is None
+    assert "correct horse battery staple" not in repr(gateway.security_events[-1])

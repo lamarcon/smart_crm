@@ -147,6 +147,7 @@ def router_factory(tenant_databases):  # noqa: ANN001
         secrets: dict[str, str] | None = None,
         settings: TenantDatabaseRouterSettings | None = None,
         engine_factory=None,  # noqa: ANN001
+        security_event_recorder=None,  # noqa: ANN001
     ) -> tuple[TenantDatabaseRouter, MutableProfileLoader]:
         if settings is None:
             settings = TenantDatabaseRouterSettings(allow_insecure_loopback=True)
@@ -159,6 +160,7 @@ def router_factory(tenant_databases):  # noqa: ANN001
             provider,
             settings=settings,
             engine_factory=engine_factory,
+            security_event_recorder=security_event_recorder,
         )
         routers.append(router)
         return router, loader
@@ -206,6 +208,7 @@ def test_remote_profile_without_verified_tls_fails_before_engine_factory(
 ) -> None:  # noqa: ANN001
     factory_calls: list[str] = []
     insecure = "postgresql+psycopg://tenant:top-secret@db.example.test/tenant"
+    events: list[dict] = []
 
     def recording_factory(url: str, **_kwargs):  # noqa: ANN001, ANN201
         factory_calls.append(url)
@@ -214,11 +217,20 @@ def test_remote_profile_without_verified_tls_fails_before_engine_factory(
     router, _loader = router_factory(
         secrets={"tenant-a": insecure},
         engine_factory=recording_factory,
+        security_event_recorder=lambda **values: events.append({"event_id": uuid.uuid4(), **values}),
     )
 
     with pytest.raises(TenantUnavailableError, match="tenant database unavailable"):
         router.get_engine(tenant_databases.tenant_a)
     assert factory_calls == []
+
+    event = events[-1]
+    assert event["event_type"] == "tenant.routing_failed"
+    assert event["tenant_id"] == tenant_databases.tenant_a
+    assert event["user_id"] is None
+    assert event["outcome_code"] == "connection_rejected"
+    assert len(event["correlation_digest"]) == 64
+    assert "top-secret" not in repr(event)
 
 
 
@@ -255,6 +267,7 @@ def test_two_physical_databases_isolate_identical_public_ids(router_factory, ten
 def test_swapped_profile_is_rejected_before_business_sql(router_factory, tenant_databases) -> None:  # noqa: ANN001
     statements: list[str] = []
 
+    events: list[dict] = []
     def recording_factory(url: str, **kwargs):  # noqa: ANN001
         engine = create_engine(url, **kwargs)
         event.listen(
@@ -267,6 +280,7 @@ def test_swapped_profile_is_rejected_before_business_sql(router_factory, tenant_
     router, _loader = router_factory(
         secrets={"tenant-a": tenant_databases.dsn_b, "tenant-b": tenant_databases.dsn_a},
         engine_factory=recording_factory,
+        security_event_recorder=lambda **values: events.append({"event_id": uuid.uuid4(), **values}),
     )
 
     with pytest.raises(TenantUnavailableError, match="tenant database unavailable"):
@@ -276,6 +290,13 @@ def test_swapped_profile_is_rejected_before_business_sql(router_factory, tenant_
     assert any("tenant_identity" in statement for statement in statements)
     assert not any("teams" in statement for statement in statements)
     assert router.cached_tenant_ids == ()
+
+    security_event = events[-1]
+    assert security_event["event_type"] == "tenant.identity_mismatch"
+    assert security_event["tenant_id"] == tenant_databases.tenant_a
+    assert security_event["outcome_code"] == "identity_mismatch"
+    assert security_event["user_id"] is None
+    assert len(security_event["correlation_digest"]) == 64
 
 
 def test_expected_revision_mismatch_fails_closed(router_factory, tenant_databases) -> None:  # noqa: ANN001

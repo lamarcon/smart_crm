@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -139,6 +140,41 @@ def create_app(
 
     app = FastAPI(title="Smart CRM API", docs_url=None, redoc_url=None)
 
+    def audit_request_denial(
+        request: Request,
+        outcome_code: str,
+        context: SessionContext | None = None,
+    ) -> None:
+        if getattr(request.state, "security_audited", False) or auth_service is None:
+            return
+        active_context = context or getattr(request.state, "session_context", None)
+        if active_context is None:
+            tenant_id = None
+            user_id = None
+            source = request.cookies.get(SESSION_COOKIE_NAME) or (
+                f"{request.method}\0{request.url.path}"
+            )
+        else:
+            tenant_id = active_context.principal.tenant_id
+            user_id = active_context.principal.user_id
+            source = active_context.token_digest
+        correlation_digest = sha256(
+            f"request-denial\0{source}".encode("utf-8")
+        ).hexdigest()
+        try:
+            auth_service.record_security_event(
+                event_type="request.denied",
+                tenant_id=tenant_id,
+                user_id=user_id,
+                correlation_digest=correlation_digest,
+                outcome_code=outcome_code,
+                occurred_at=datetime.now(timezone.utc),
+            )
+        except Exception:
+            pass
+        request.state.security_audited = True
+
+
     @app.middleware("http")
     async def contract_middleware(request: Request, call_next):  # noqa: ANN001
         if (
@@ -178,7 +214,14 @@ def create_app(
         return _add_security_headers(response)
 
     @app.exception_handler(HTTPException)
-    async def http_error(_request: Request, error: HTTPException) -> JSONResponse:
+    async def http_error(request: Request, error: HTTPException) -> JSONResponse:
+        if error.status_code in {401, 403}:
+            outcome_code = (
+                str(error.detail.get("code", "request_rejected"))
+                if isinstance(error.detail, dict)
+                else "request_rejected"
+            )
+            audit_request_denial(request, outcome_code)
         if isinstance(error.detail, dict):
             code = str(error.detail.get("code", "request_rejected"))
             message = str(error.detail.get("message", "Requisição rejeitada."))
@@ -258,9 +301,10 @@ def create_app(
 
     @app.exception_handler(WorkspaceAuthorizationError)
     async def authorization_error(
-        _request: Request,
+        request: Request,
         _error_value: WorkspaceAuthorizationError,
     ) -> JSONResponse:
+        audit_request_denial(request, "forbidden")
         return _error(403, "forbidden", "Acesso negado.")
 
     @app.exception_handler(SQLAlchemyError)
@@ -501,8 +545,17 @@ def create_app(
                     now=datetime.now(timezone.utc),
                 )
             except AuthenticationError:
+                audit_request_denial(request, "unauthenticated")
                 return _error(401, "unauthenticated", "Sessão inválida.")
-            CookiePrincipalResolver.require_tenant_route(context, normalized_slug)
+            request.state.session_context = context
+            if context.tenant_slug != normalized_slug:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "tenant_mismatch",
+                        "message": "Empresa da sess\u00e3o n\u00e3o corresponde \u00e0 rota.",
+                    },
+                )
         return FileResponse(static_dir / "index.html")
 
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")

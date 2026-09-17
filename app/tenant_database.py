@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from hashlib import sha256
 from threading import Lock
 from typing import Callable, Iterator, Protocol
 from uuid import UUID
@@ -95,6 +97,7 @@ class _TenantGuardFailure(RuntimeError):
 
 
 EngineFactory = Callable[..., Engine]
+SecurityEventRecorder = Callable[..., object | None]
 
 
 class TenantDatabaseRouter:
@@ -107,11 +110,13 @@ class TenantDatabaseRouter:
         *,
         settings: TenantDatabaseRouterSettings | None = None,
         engine_factory: EngineFactory | None = None,
+        security_event_recorder: SecurityEventRecorder | None = None,
     ) -> None:
         self._profile_loader = profile_loader
         self._secret_provider = secret_provider
         self._settings = settings or TenantDatabaseRouterSettings()
         self._engine_factory = engine_factory or create_engine
+        self._security_event_recorder = security_event_recorder
         self._engines: OrderedDict[UUID, _EngineEntry] = OrderedDict()
         self._lock = Lock()
 
@@ -121,11 +126,40 @@ class TenantDatabaseRouter:
             raise TenantSelectorError("tenant routing requires a trusted UUID")
         return tenant_id
 
+    def _audit_failure(
+        self,
+        tenant_id: UUID,
+        *,
+        event_type: str,
+        outcome_code: str,
+    ) -> None:
+        if self._security_event_recorder is None:
+            return
+        try:
+            self._security_event_recorder(
+                event_type=event_type,
+                tenant_id=tenant_id,
+                user_id=None,
+                correlation_digest=sha256(
+                    f"tenant-routing\0{tenant_id}\0{outcome_code}".encode("ascii")
+                ).hexdigest(),
+                outcome_code=outcome_code,
+                occurred_at=datetime.now(timezone.utc),
+            )
+        except Exception:
+            pass
+
+
     def _load_profile(self, tenant_id: UUID) -> TenantDatabaseProfile:
         trusted_id = self._require_trusted_tenant_id(tenant_id)
         try:
             profile = self._profile_loader(trusted_id)
         except Exception:
+            self._audit_failure(
+                trusted_id,
+                event_type="tenant.routing_failed",
+                outcome_code="profile_lookup_failed",
+            )
             raise TenantUnavailableError("tenant database unavailable") from None
         if (
             profile is None
@@ -135,6 +169,11 @@ class TenantDatabaseRouter:
             or not profile.secret_ref
             or not profile.expected_tenant_revision
         ):
+            self._audit_failure(
+                trusted_id,
+                event_type="tenant.routing_failed",
+                outcome_code="profile_rejected",
+            )
             raise TenantUnavailableError("tenant database unavailable")
         return profile
 
@@ -171,6 +210,11 @@ class TenantDatabaseRouter:
                     _evicted_id, evicted = self._engines.popitem(last=False)
                     evicted_engines.append(evicted.engine)
         except (SecretError, SQLAlchemyError, TypeError, ValueError):
+            self._audit_failure(
+                profile.tenant_id,
+                event_type="tenant.routing_failed",
+                outcome_code="connection_rejected",
+            )
             if stale_engine is not None:
                 stale_engine.dispose()
             raise TenantUnavailableError("tenant database unavailable") from None
@@ -222,9 +266,19 @@ class TenantDatabaseRouter:
                     raise _TenantGuardFailure from None
                 yield session
         except _TenantGuardFailure:
+            self._audit_failure(
+                profile.tenant_id,
+                event_type="tenant.identity_mismatch",
+                outcome_code="identity_mismatch",
+            )
             self.invalidate(profile.tenant_id)
             raise TenantUnavailableError("tenant database unavailable") from None
         except (OperationalError, DisconnectionError):
+            self._audit_failure(
+                profile.tenant_id,
+                event_type="tenant.routing_failed",
+                outcome_code="connection_lost",
+            )
             self.invalidate(profile.tenant_id)
             raise TenantUnavailableError("tenant database unavailable") from None
         finally:

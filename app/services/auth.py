@@ -82,6 +82,48 @@ UserByEmailLoader = Callable[[object, str], TenantUserIdentity | None]
 UserByIdLoader = Callable[[object, str], TenantUserIdentity | None]
 
 
+class SecurityAuditService:
+    """Append redacted central events without weakening the guarded operation."""
+
+    def __init__(
+        self,
+        control_database: ControlDatabase,
+        *,
+        repository_factory: RepositoryFactory = ControlRepository,
+    ) -> None:
+        self._control_database = control_database
+        self._repository_factory = repository_factory
+
+    @staticmethod
+    def correlation_digest(*parts: object) -> str:
+        encoded = "\0".join(str(part) for part in parts).encode("utf-8")
+        return sha256(encoded).hexdigest()
+
+    def record(
+        self,
+        *,
+        event_type: str,
+        tenant_id: UUID | None,
+        user_id: str | None,
+        correlation_digest: str,
+        outcome_code: str,
+        occurred_at: datetime,
+    ) -> UUID | None:
+        try:
+            with self._control_database.session_scope() as session:
+                event = self._repository_factory(session).append_security_event(
+                    event_type=event_type,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    correlation_digest=correlation_digest,
+                    outcome_code=outcome_code,
+                    occurred_at=occurred_at,
+                )
+            return event.id
+        except Exception:
+            return None
+
+
 def _workspace_id(session: Session) -> str:
     workspace_id = session.scalar(text("SELECT current_setting('smartcrm.workspace_id', true)"))
     if not workspace_id:
@@ -139,12 +181,24 @@ class AuthService:
         repository_factory: RepositoryFactory = ControlRepository,
         user_by_email_loader: UserByEmailLoader = load_tenant_user_by_email,
         user_by_id_loader: UserByIdLoader = load_tenant_user_by_id,
+        security_audit: SecurityAuditService | None = None,
     ) -> None:
         self._control_database = control_database
         self._router = router
         self._repository_factory = repository_factory
+        self._security_audit = security_audit or SecurityAuditService(
+            control_database,
+            repository_factory=repository_factory,
+        )
         self._user_by_email_loader = user_by_email_loader
         self._user_by_id_loader = user_by_id_loader
+
+    def record_security_event(self, **values) -> UUID | None:  # noqa: ANN003
+        return self._security_audit.record(**values)
+
+    @staticmethod
+    def security_correlation(*parts: object) -> str:
+        return SecurityAuditService.correlation_digest(*parts)
 
     def locate_tenant(self, slug: str) -> TenantLocation | None:
         with self._control_database.session_scope() as session:
@@ -391,13 +445,23 @@ class AuthService:
         now: datetime,
     ) -> int:
         with self._control_database.session_scope() as session:
-            return self._repository_factory(session).revoke_user_sessions(
+            count = self._repository_factory(session).revoke_user_sessions(
                 tenant_id,
                 user_id,
                 reason=reason,
                 revoked_at=now,
             )
-
+        self.record_security_event(
+            event_type="session.revoked",
+            tenant_id=tenant_id,
+            user_id=user_id,
+            correlation_digest=self.security_correlation(
+                "session-revocation", tenant_id, user_id, reason, now.isoformat()
+            ),
+            outcome_code=reason,
+            occurred_at=now,
+        )
+        return count
 
     def logout(self, token: str, *, now: datetime) -> bool:
         token_digest = digest_session_token(token)

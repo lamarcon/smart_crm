@@ -14,7 +14,7 @@ from app.auth import AuthSettings
 from app.control_database import ControlDatabase
 from app.main import STATIC_DIR, create_app as create_http_app
 from app.security.secrets import DpapiFileSecretProvider, SecretProvider
-from app.services.auth import AuthService
+from app.services.auth import AuthService, SecurityAuditService
 from app.tenant_database import ControlTenantProfileLoader, TenantDatabaseRouter
 
 
@@ -72,14 +72,20 @@ def bootstrap_runtime(
         if _control_revision(active_control) != CONTROL_SCHEMA_REVISION:
             raise RuntimeBootstrapError("central runtime unavailable")
         provider = secret_provider or _default_secret_provider()
+        security_audit = SecurityAuditService(active_control)
         router = TenantDatabaseRouter(
             ControlTenantProfileLoader(active_control),
             provider,
+            security_event_recorder=security_audit.record,
         )
         return CentralRuntime(
             control_database=active_control,
             tenant_router=router,
-            auth_service=AuthService(active_control, router),
+            auth_service=AuthService(
+                active_control,
+                router,
+                security_audit=security_audit,
+            ),
         )
     except Exception:
         if active_control is not None:

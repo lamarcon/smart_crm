@@ -46,6 +46,7 @@ class FakeAuthService:
         self.failures: dict[str, Exception] = {}
         self.revocations: list[tuple] = []
 
+        self.security_events: list[dict] = []
     def current_session(self, token: str, *, now):  # noqa: ANN001, ANN201
         self.calls.append(token)
         failure = self.failures.get(token)
@@ -56,6 +57,12 @@ class FakeAuthService:
     def revoke_user_sessions(self, tenant_id, user_id: str, *, now, reason: str):  # noqa: ANN001, ANN201
         self.revocations.append((tenant_id, user_id, reason))
         return 1
+    def record_security_event(self, **values):  # noqa: ANN003, ANN201
+        stored = {"event_id": uuid4(), **values}
+        self.security_events.append(stored)
+        return stored["event_id"]
+
+
 
 
 
@@ -153,6 +160,13 @@ def test_missing_cookie_is_401_without_auth_lookup(auth_client) -> None:  # noqa
     assert response.json()["detail"]["code"] == "unauthenticated"
     assert service.calls == []
     assert router.opened == []
+    event = service.security_events[-1]
+    assert event["event_type"] == "request.denied"
+    assert event["outcome_code"] == "unauthenticated"
+    assert event["tenant_id"] is None and event["user_id"] is None
+    assert len(event["correlation_digest"]) == 64
+    assert event["event_id"].version == 4
+
 
 
 @pytest.mark.parametrize("token", ["", "short", "invalid.token", "x" * 129])
@@ -253,6 +267,14 @@ def test_route_tenant_mismatch_is_403_without_remapping(auth_client) -> None:  #
     assert router.opened == [TENANT_ID]
     assert router.closed == [TENANT_ID]
 
+    event = service.security_events[-1]
+    assert event["event_type"] == "request.denied"
+    assert event["outcome_code"] == "tenant_mismatch"
+    assert event["tenant_id"] == TENANT_ID
+    assert event["user_id"] == "u-1"
+    assert len(event["correlation_digest"]) == 64
+    assert VALID_TOKEN not in repr(event)
+
 
 @pytest.mark.parametrize("origin", [None, "http://sc2030.brbots.com", "https://evil.example", EXPECTED_ORIGIN + "/"])
 def test_unsafe_methods_require_exact_expected_https_origin(auth_client, origin: str | None) -> None:  # noqa: ANN001
@@ -268,6 +290,11 @@ def test_unsafe_methods_require_exact_expected_https_origin(auth_client, origin:
     assert service.calls == []
     assert router.opened == []
 
+
+    event = service.security_events[-1]
+    assert event["outcome_code"] == "invalid_origin"
+    assert event["tenant_id"] is None and event["user_id"] is None
+    assert VALID_TOKEN not in repr(event)
 
 def test_exact_expected_origin_allows_unsafe_method(auth_client) -> None:  # noqa: ANN001
     client, service, router = auth_client
