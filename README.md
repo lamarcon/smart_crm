@@ -91,20 +91,38 @@ python -m app.admin_cli resume-provisioning cliente-b --admin-email admin-b@exam
 
 `register-tenant` pede a URL completa do banco e a protege no Windows com DPAPI. Os comandos seguintes pedem a senha inicial e persistem somente hash Argon2id. `SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1` vale somente neste setup local de três bancos; qualquer outro valor mantém o bloqueio e não autoriza PostgreSQL remoto sem verify-full e CA. Em produção, secret refs, autorizações, backup e UAT seguem o runbook; não existe cadastro público de empresa ou primeiro administrador.
 
-Depois de confirmar as revisões e provisionar ambos os tenants, inicie a aplicação central sem executar migração:
+Depois de confirmar as revisões e provisionar ambos os tenants, gere um certificado temporário para o loopback e inicie a aplicação central sem executar migração. O comando usa o OpenSSL disponível no `PATH` ou o distribuído com Git for Windows:
 
 ```powershell
-$env:SMART_CRM_EXPECTED_ORIGIN = "http://127.0.0.1:8080"
-python -m uvicorn app.server:create_central_app --factory --host 127.0.0.1 --port 8080
+$openssl = (Get-Command openssl.exe -ErrorAction SilentlyContinue).Source
+if (-not $openssl) { $openssl = Join-Path $env:ProgramFiles "Git\usr\bin\openssl.exe" }
+if (-not (Test-Path -LiteralPath $openssl)) { throw "OpenSSL local não encontrado." }
+
+$tlsDir = Join-Path $PWD ".local\dev-tls"
+$keyPath = Join-Path $tlsDir "loopback-key.pem"
+$certPath = Join-Path $tlsDir "loopback-cert.pem"
+New-Item -ItemType Directory -Force -Path $tlsDir | Out-Null
+
+& $openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 7 `
+  -keyout $keyPath -out $certPath `
+  -subj "/CN=127.0.0.1" `
+  -addext "subjectAltName=IP:127.0.0.1" `
+  -addext "extendedKeyUsage=serverAuth"
+if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar o certificado TLS local." }
+
+$env:SMART_CRM_EXPECTED_ORIGIN = "https://127.0.0.1:8080"
+python -m uvicorn app.server:create_central_app --factory --host 127.0.0.1 --port 8080 --ssl-keyfile $keyPath --ssl-certfile $certPath
 ```
 
-Ao encerrar o runtime local, remova o opt-in da sessão:
+Esse certificado autoassinado é apenas para desenvolvimento local. O aviso de confiança do navegador é esperado; não instale esse material como autoridade confiável e nunca reutilize a chave ou o certificado em produção. O diretório `.local/` é ignorado pelo Git.
+
+Abra `https://127.0.0.1:8080/`, localize `cliente-a` ou `cliente-b` e autentique com o administrador do respectivo banco. Encerre o Uvicorn antes da limpeza. Ao encerrar o runtime local, remova o opt-in, a origem temporária e o material TLS:
 
 ```powershell
 Remove-Item Env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK -ErrorAction SilentlyContinue
+Remove-Item Env:SMART_CRM_EXPECTED_ORIGIN -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $tlsDir -Recurse -Force
 ```
-
-Abra `http://127.0.0.1:8080/`, localize `cliente-a` ou `cliente-b` e autentique com o administrador do respectivo banco.
 
 ### Gate local de isolamento
 

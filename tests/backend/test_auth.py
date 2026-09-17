@@ -22,6 +22,27 @@ EXPECTED_ORIGIN = "https://sc2030.brbots.com"
 TENANT_ID = uuid4()
 
 
+def test_expected_origin_accepts_https_with_explicit_port() -> None:
+    settings = AuthSettings(expected_origin="https://127.0.0.1:8080")
+
+    assert settings.expected_origin == "https://127.0.0.1:8080"
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://127.0.0.1:8080",
+        "https://127.0.0.1:8080/path",
+        "https://user@127.0.0.1:8080",
+        "https://127.0.0.1:0",
+        "https://127.0.0.1:70000",
+    ],
+)
+def test_expected_origin_with_port_still_rejects_insecure_or_non_origin_values(origin: str) -> None:
+    with pytest.raises(ValueError, match="expected_origin must be an HTTPS origin without path"):
+        AuthSettings(expected_origin=origin)
+
+
 def context(slug: str = "cliente-a") -> SessionContext:
     return SessionContext(
         principal=PrincipalScope(

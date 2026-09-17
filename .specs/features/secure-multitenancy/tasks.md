@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** Complete
+**Status:** In Progress
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -25,7 +25,7 @@ Implement these tasks with the tlc-spec-driven skill and follow its Execute flow
 | Admin/fleet | integration | Activation, checkpoints/resume, local-only loopback opt-in, remote TLS, hidden secrets, preflight, selection and independent failures | tests/backend/test_admin.py, tests/backend/test_fleet.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_admin.py tests/backend/test_fleet.py -q |
 | Frontend route/auth/cache | browser e2e | Locator, login, cookie session, immutable profile, logout and namespaced preferences | tests/ui-prototype.spec.cjs | pnpm test |
 | Windows/Apache/offline | contract + outcome | Env allowlist, secret placeholders, both migrations, wheels and no production mutation | tests/backend/test_manual_windows_pg11_*.py, scripts/verify_windows_*.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_manual_windows_pg11_deployment.py tests/backend/test_manual_windows_pg11_outcomes.py -q |
-| Dependency/config/docs | build/contract | Exact pins, Python 3.11 parse, Compose, executable documented import targets, lifecycle disposal and documentation contracts | manifests and verifier scripts | Build gate only |
+| Dependency/config/docs | build/contract | Exact pins, Python 3.11 parse, Compose, executable documented import targets, HTTPS/TLS local startup, lifecycle disposal and documentation contracts | manifests and verifier scripts | Build gate only |
 
 ## Gate Check Commands
 
@@ -66,7 +66,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 ### Phase 5: Independent-validation corrections
 
 ```
-T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35 -> T36 -> T37
+T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35 -> T36 -> T37 -> T38
 ```
 
 ## Task Breakdown
@@ -895,6 +895,28 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35 -> T36 -> T37
 **Gate:** build
 **Commit:** test(server): cover central factory shutdown disposal
 
+### T38: Secure the documented local central runtime startup
+
+**Status:** Complete
+
+**What:** Make the real README local runtime contract HTTPS-valid with an explicit temporary loopback certificate, exact origin/command alignment and cleanup guidance without weakening secure cookies or production defaults.
+**Where:** README.md
+**Integration touchpoints:** .gitignore, app/auth.py, tests/backend/test_auth.py, tests/backend/test_readme_multidatabase.py
+**Depends on:** T37
+**Reuses:** AuthSettings exact-origin policy, public central Uvicorn factory and the ignored .local workspace.
+**Requirement:** MT-02, MT-05, MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [x] The documented expected origin is HTTPS, exactly matches the Uvicorn host and port, and is accepted by AuthSettings while HTTP remains rejected.
+- [x] The documented Uvicorn factory command supplies ssl-keyfile and ssl-certfile generated only under ignored .local with an IP SAN for 127.0.0.1; no certificate or private-key material is committed.
+- [x] The local-only trust warning and cleanup remove certificate files and temporary environment settings; production origin/defaults remain unchanged and targeted/full build gates pass.
+
+**Tests:** unit + documentation/startup contract
+**Gate:** build
+**Commit:** fix(auth): secure documented local runtime origin
+
 ## Phase Execution Map
 
 ```
@@ -902,7 +924,7 @@ Phase 1: T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9
 Phase 2: T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17
 Phase 3: T17 → T18 → T19 → T20 → T21 → T22
 Phase 4: T22 → T23 → T24 → T25 → T26 → T27
-Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37
+Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → T38
 ```
 
 Execution is sequential and phase boundaries are batch boundaries. Plan approval permits local implementation/commits only, never push, deploy, remote connection, production migration or server change.
@@ -916,7 +938,7 @@ Execution is sequential and phase boundaries are batch boundaries. Plan approval
 | T10-T17 | One security/schema/policy/service/API/repository boundary each | OK |
 | T18-T22 | One admin/fleet/UI/runtime boundary each | OK |
 | T23-T27 | One config/package/proxy/runbook/doc boundary each | OK |
-| T28-T37 | One revocation/TLS/audit/cookie/coverage/evidence/config/runtime/test boundary each | OK |
+| T28-T38 | One revocation/TLS/audit/cookie/coverage/evidence/config/runtime/test/docs boundary each | OK |
 
 Every source task co-locates required tests; there is no deferred test task.
 
@@ -961,6 +983,7 @@ Every source task co-locates required tests; there is no deferred test task.
 | T35 | T34 | T34 → T35 | OK |
 | T36 | T35 | T35 → T36 | OK |
 | T37 | T36 | T36 → T37 | OK |
+| T38 | T37 | T37 → T38 | OK |
 
 ## Test Co-location Validation
 
@@ -985,20 +1008,21 @@ Every source task co-locates required tests; there is no deferred test task.
 | T35 | Config/admin/server/fleet/docs | Unit + integration + contract | Unit/integration/contract/build | OK |
 | T36 | Central runtime/docs | Runtime integration + documentation contract | Runtime integration/documentation contract/build | OK |
 | T37 | Central runtime lifecycle | Runtime lifecycle integration | Runtime lifecycle integration/build | OK |
+| T38 | Local HTTPS runtime/docs | Unit + documentation/startup contract | Unit/documentation contract/build | OK |
 
 ## Requirement Coverage
 
 | Requirement | Tasks | Evidence target |
 | ----------- | ----- | --------------- |
 | MT-01 Locate/login | T1,T3-T6,T10-T15,T18,T20,T33 | Tenant-local credentials and generic failures |
-| MT-02 Central session | T3,T6,T10-T15,T18,T20-T23,T28,T31,T33-T34 | Cookie, digest, TTL, revocation and no-token |
+| MT-02 Central session | T3,T6,T10-T15,T18,T20-T23,T28,T31,T33-T34,T38 | Cookie, digest, TTL, revocation, exact HTTPS origin and no-token |
 | MT-03 Database isolation | T5,T7-T9,T13-T17,T20-T26,T29-T30,T33,T35 | Two DBs, forged routing, verified TLS, explicit local opt-in and RLS |
 | MT-04 Authorization | T12,T14-T17,T21,T28,T30 | Role/action/record matrix and denial audit |
-| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33,T35-T37 | Default preservation, checkpoints, local provisioning, fleet and executable central startup lifecycle |
-| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T37 | Redaction, audit, TLS, explicit local config, cache, health, executable startup/shutdown, package and runbook |
+| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33,T35-T38 | Default preservation, checkpoints, local provisioning, fleet and executable central HTTPS startup lifecycle |
+| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T38 | Redaction, audit, TLS, explicit local config, cache, health, executable HTTPS startup/shutdown, package and runbook |
 | MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26,T29,T31,T33-T35 | Locks, strict opt-in, invalid-cookie cleanup, outage, mismatch, retry and rollback |
 
-**Coverage:** 7 requirement groups, 37 mapped tasks, 0 unmapped.
+**Coverage:** 7 requirement groups, 38 mapped tasks, 0 unmapped.
 
 ## Approval Gate Before Execute
 

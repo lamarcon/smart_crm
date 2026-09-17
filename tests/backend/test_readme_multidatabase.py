@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import shutil
+import subprocess
+from urllib.parse import urlsplit
+
+from app.auth import AuthSettings
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -64,6 +70,93 @@ def test_local_loopback_opt_in_is_explicit_scoped_and_removed() -> None:
     assert "somente neste setup local de três bancos" in text
     assert "não autoriza PostgreSQL remoto sem verify-full e CA" in text
     assert "Remove-Item Env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK -ErrorAction SilentlyContinue" in text
+
+
+def test_documented_local_runtime_origin_matches_tls_uvicorn_command() -> None:
+    text = read_readme()
+    origin_line = next(
+        line for line in text.splitlines() if line.startswith("$env:SMART_CRM_EXPECTED_ORIGIN")
+    )
+    origin = origin_line.split('"', 2)[1]
+    command = next(
+        line for line in text.splitlines() if "python -m uvicorn app.server:create_central_app" in line
+    )
+    tokens = command.split()
+    parsed = urlsplit(origin)
+
+    assert parsed.scheme == "https"
+    assert parsed.hostname == tokens[tokens.index("--host") + 1]
+    assert parsed.port == int(tokens[tokens.index("--port") + 1])
+    assert tokens[tokens.index("--ssl-keyfile") + 1] == "$keyPath"
+    assert tokens[tokens.index("--ssl-certfile") + 1] == "$certPath"
+    assert AuthSettings(expected_origin=origin).expected_origin == origin
+
+
+def test_documented_local_tls_material_is_temporary_ignored_and_cleaned() -> None:
+    text = read_readme()
+    gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+    assert ".local/" in gitignore
+    assert r'$tlsDir = Join-Path $PWD ".local\dev-tls"' in text
+    assert '$keyPath = Join-Path $tlsDir "loopback-key.pem"' in text
+    assert '$certPath = Join-Path $tlsDir "loopback-cert.pem"' in text
+    assert "subjectAltName=IP:127.0.0.1" in text
+    assert "--ssl-keyfile $keyPath --ssl-certfile $certPath" in text
+    assert "certificado autoassinado é apenas para desenvolvimento local" in text
+    assert "aviso de confiança do navegador" in text
+    assert "Remove-Item -LiteralPath $tlsDir -Recurse -Force" in text
+    assert "Remove-Item Env:SMART_CRM_EXPECTED_ORIGIN -ErrorAction SilentlyContinue" in text
+
+
+def test_documented_openssl_recipe_generates_loopback_ip_san(tmp_path: Path) -> None:
+    text = read_readme()
+    openssl = shutil.which("openssl")
+    if openssl is None and os.name == "nt":
+        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+        candidate = Path(program_files) / "Git" / "usr" / "bin" / "openssl.exe"
+        if candidate.is_file():
+            openssl = str(candidate)
+
+    assert openssl is not None
+    assert "& $openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 7" in text
+    assert '-addext "subjectAltName=IP:127.0.0.1"' in text
+
+    key_path = tmp_path / "loopback-key.pem"
+    cert_path = tmp_path / "loopback-cert.pem"
+    subprocess.run(
+        [
+            openssl,
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-sha256",
+            "-nodes",
+            "-days",
+            "1",
+            "-keyout",
+            str(key_path),
+            "-out",
+            str(cert_path),
+            "-subj",
+            "/CN=127.0.0.1",
+            "-addext",
+            "subjectAltName=IP:127.0.0.1",
+            "-addext",
+            "extendedKeyUsage=serverAuth",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    inspected = subprocess.run(
+        [openssl, "x509", "-in", str(cert_path), "-noout", "-ext", "subjectAltName"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "IP Address:127.0.0.1" in inspected.stdout
 
 
 def test_multidatabase_negative_test_command_uses_isolated_basetemp() -> None:

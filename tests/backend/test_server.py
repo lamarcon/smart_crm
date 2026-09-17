@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from uvicorn.importer import import_from_string
 
@@ -187,6 +188,21 @@ def test_runtime_uses_strict_local_loopback_environment_setting(
     )
 
     assert runtime.tenant_router._settings.allow_insecure_loopback is expected
+
+
+def test_runtime_default_expected_origin_remains_production(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_create_http_app(**kwargs):  # noqa: ANN003, ANN202
+        captured.update(kwargs)
+        return FastAPI()
+
+    monkeypatch.delenv("SMART_CRM_EXPECTED_ORIGIN", raising=False)
+    monkeypatch.setattr("app.server.create_http_app", fake_create_http_app)
+
+    create_app(runtime=runtime_with(FakeControlDatabase()))
+
+    assert captured["auth_settings"].expected_origin == "https://sc2030.brbots.com"
 
 
 def test_health_reports_only_redacted_ready_status() -> None:

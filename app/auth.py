@@ -61,12 +61,16 @@ class AuthSettings:
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.expected_origin)
+        try:
+            port = parsed.port
+        except ValueError:
+            raise ValueError("expected_origin must be an HTTPS origin without path") from None
         if (
             parsed.scheme != "https"
             or not parsed.hostname
             or parsed.username is not None
             or parsed.password is not None
-            or parsed.port is not None
+            or port == 0
             or parsed.path not in ("", "/")
             or parsed.query
             or parsed.fragment
