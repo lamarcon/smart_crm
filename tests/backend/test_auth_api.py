@@ -167,6 +167,16 @@ def auth_headers(*, origin: bool = False) -> dict[str, str]:
     if origin:
         headers["origin"] = ORIGIN
     return headers
+def assert_expired_session_cookie(response) -> None:  # noqa: ANN001
+    cookie = response.headers["set-cookie"]
+    assert cookie.startswith(f'{SESSION_COOKIE_NAME}="";')
+    assert "Max-Age=0" in cookie
+    assert "expires=" in cookie.lower()
+    assert "HttpOnly" in cookie
+    assert "Secure" in cookie
+    assert "SameSite=strict" in cookie
+    assert "Path=/" in cookie
+    assert "Domain=" not in cookie
 
 
 def test_locate_returns_canonical_active_tenant_without_session(secure_client_factory) -> None:  # noqa: ANN001
@@ -236,6 +246,21 @@ def test_session_returns_current_immutable_identity_without_token(secure_client_
     assert response.json()["role"] == "Administrador"
     assert "token" not in response.text
     assert response.headers["cache-control"] == "no-store"
+@pytest.mark.parametrize("state", ["malformed", "unknown", "expired", "revoked"])
+def test_invalid_received_session_cookie_is_expired_on_401(secure_client_factory, state: str) -> None:  # noqa: ANN001
+    client, gateway, _router, _workspace = secure_client_factory()
+    token = "short" if state == "malformed" else TOKEN
+    if state != "malformed":
+        gateway.session_failure = AuthenticationError(state)
+
+    response = client.get(
+        "/api/auth/session",
+        headers={"cookie": f"{SESSION_COOKIE_NAME}={token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthenticated"
+    assert_expired_session_cookie(response)
 
 
 def test_logout_revokes_server_session_and_expires_same_cookie(secure_client_factory) -> None:  # noqa: ANN001

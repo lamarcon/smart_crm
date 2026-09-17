@@ -113,6 +113,16 @@ def auth_client():  # noqa: ANN201
 
 def cookie_header(token: str = VALID_TOKEN) -> dict[str, str]:
     return {"cookie": f"{SESSION_COOKIE_NAME}={token}"}
+def assert_expired_session_cookie(response) -> None:  # noqa: ANN001
+    cookie = response.headers["set-cookie"]
+    assert cookie.startswith(f'{SESSION_COOKIE_NAME}="";')
+    assert "Max-Age=0" in cookie
+    assert "expires=" in cookie.lower()
+    assert "HttpOnly" in cookie
+    assert "Secure" in cookie
+    assert "SameSite=strict" in cookie
+    assert "Path=/" in cookie
+    assert "Domain=" not in cookie
 
 
 def test_valid_cookie_resolves_immutable_principal_and_closes_tenant_session(auth_client) -> None:  # noqa: ANN001
@@ -166,6 +176,7 @@ def test_missing_cookie_is_401_without_auth_lookup(auth_client) -> None:  # noqa
     assert event["tenant_id"] is None and event["user_id"] is None
     assert len(event["correlation_digest"]) == 64
     assert event["event_id"].version == 4
+    assert SESSION_COOKIE_NAME not in response.headers.get("set-cookie", "")
 
 
 
@@ -179,6 +190,7 @@ def test_malformed_cookie_is_rejected_before_auth_lookup(auth_client, token: str
     assert response.json()["detail"]["code"] == "unauthenticated"
     assert service.calls == []
     assert router.opened == []
+    assert_expired_session_cookie(response)
 
 
 @pytest.mark.parametrize("state", ["unknown", "expired", "revoked"])
@@ -192,6 +204,7 @@ def test_unknown_expired_or_revoked_cookie_is_401(auth_client, state: str) -> No
     assert response.json()["detail"]["code"] == "unauthenticated"
     assert service.calls == [VALID_TOKEN]
     assert router.opened == []
+    assert_expired_session_cookie(response)
 
 
 @pytest.mark.parametrize(

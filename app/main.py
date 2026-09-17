@@ -230,8 +230,12 @@ def create_app(
                 for key, value in error.detail.items()
                 if key not in {"code", "message"}
             }
-            return _error(error.status_code, code, message, **details)
-        return _error(error.status_code, "request_rejected", str(error.detail))
+            response = _error(error.status_code, code, message, **details)
+        else:
+            response = _error(error.status_code, "request_rejected", str(error.detail))
+        if error.headers:
+            response.headers.update(error.headers)
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error(

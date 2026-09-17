@@ -19,10 +19,40 @@ _ALTERNATE_QUERY_KEYS = frozenset({"token", "session", "session_token", "access_
 _ALTERNATE_HEADER_KEYS = frozenset({"authorization", "x-session-token"})
 _ALTERNATE_BODY_KEYS = frozenset({"token", "session", "session_token", "access_token"})
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_SESSION_COOKIE_EXPIRATION = (
+    f'{SESSION_COOKIE_NAME}=""; expires=Thu, 01 Jan 1970 00:00:00 GMT; '
+    "HttpOnly; Max-Age=0; Path=/; SameSite=strict; Secure"
+)
 
 
-def _http_error(status_code: int, code: str, message: str) -> HTTPException:
-    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+def _http_error(
+    status_code: int,
+    code: str,
+    message: str,
+    *,
+    expire_session_cookie: bool = False,
+) -> HTTPException:
+    headers = {"Set-Cookie": _SESSION_COOKIE_EXPIRATION} if expire_session_cookie else None
+    return HTTPException(
+        status_code=status_code, detail={"code": code, "message": message}, headers=headers
+    )
+
+
+def _received_session_cookie(request: Request) -> bool:
+    raw_cookie = request.headers.get("cookie", "")
+    return any(
+        part.strip().partition("=")[0].strip() == SESSION_COOKIE_NAME
+        for part in raw_cookie.split(";")
+    )
+
+
+def _unauthenticated_error(request: Request) -> HTTPException:
+    return _http_error(
+        401,
+        "unauthenticated",
+        "Sess\u00e3o inv\u00e1lida.",
+        expire_session_cookie=_received_session_cookie(request),
+    )
 
 
 @dataclass(frozen=True)
@@ -123,10 +153,10 @@ class CookiePrincipalResolver:
     async def _reject_alternate_session_sources(self, request: Request) -> None:
         if any(key.lower() in _ALTERNATE_QUERY_KEYS for key in request.query_params.keys()):
             self._audit_denial("unauthenticated", request=request)
-            raise _http_error(401, "unauthenticated", "Sessão inválida.")
+            raise _unauthenticated_error(request)
         if any(request.headers.get(key) is not None for key in _ALTERNATE_HEADER_KEYS):
             self._audit_denial("unauthenticated", request=request)
-            raise _http_error(401, "unauthenticated", "Sessão inválida.")
+            raise _unauthenticated_error(request)
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if request.method.upper() not in _SAFE_METHODS and content_type == "application/json":
             try:
@@ -135,7 +165,7 @@ class CookiePrincipalResolver:
                 return
             if _contains_alternate_body_key(payload):
                 self._audit_denial("unauthenticated", request=request)
-                raise _http_error(401, "unauthenticated", "Sessão inválida.")
+                raise _unauthenticated_error(request)
 
     async def __call__(self, request: Request) -> AsyncIterator[ResolvedPrincipal]:
         self._validate_origin(request)
@@ -143,7 +173,7 @@ class CookiePrincipalResolver:
         token = request.cookies.get(SESSION_COOKIE_NAME)
         if token is None or not _TOKEN_PATTERN.fullmatch(token):
             self._audit_denial("unauthenticated", request=request, token=token)
-            raise _http_error(401, "unauthenticated", "Sessão inválida.")
+            raise _unauthenticated_error(request)
         try:
             context = self._auth_service.current_session(
                 token,
@@ -151,7 +181,7 @@ class CookiePrincipalResolver:
             )
         except AuthenticationError:
             self._audit_denial("unauthenticated", request=request, token=token)
-            raise _http_error(401, "unauthenticated", "Sessão inválida.") from None
+            raise _unauthenticated_error(request) from None
 
         changed_user_ids: tuple[str, ...] = ()
         try:

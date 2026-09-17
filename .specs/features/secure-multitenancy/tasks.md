@@ -742,7 +742,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 ### T31: Expire invalid session cookies on 401
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Ensure every protected 401 caused by a received malformed, unknown, expired or revoked session cookie returns an expiration Set-Cookie with the hardened cookie attributes.
 **Where:** app/auth.py, app/main.py
@@ -753,9 +753,9 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Malformed, unknown, expired and revoked received cookies return 401 plus Max-Age=0/Expires, Secure, HttpOnly, SameSite=Strict, Path=/ and no Domain.
-- [ ] A request with no cookie remains 401 without inventing a Set-Cookie, and alternate token sources remain rejected.
-- [ ] Tests assert the exact response header contract for every edge; full gate passes.
+- [x] Malformed, unknown, expired and revoked received cookies return 401 plus Max-Age=0/Expires, Secure, HttpOnly, SameSite=Strict, Path=/ and no Domain.
+- [x] A request with no cookie remains 401 without inventing a Set-Cookie, and alternate token sources remain rejected.
+- [x] Tests assert the exact response header contract for every edge; full gate passes.
 
 **Tests:** API integration
 **Gate:** full
