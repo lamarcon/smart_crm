@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from collections.abc import Mapping
 from typing import Any
 
@@ -9,12 +11,22 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 
+INSECURE_TENANT_LOOPBACK_ENV = "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK"
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _GENERIC_ERROR = "database transport is not permitted"
 
 
 class DatabaseTransportSecurityError(ValueError):
     """Raised without echoing connection details when transport is unsafe."""
+
+
+def insecure_tenant_loopback_enabled(
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    """Enable insecure tenant loopback only for the exact local opt-in literal."""
+
+    source = os.environ if environ is None else environ
+    return source.get(INSECURE_TENANT_LOOPBACK_ENV) == "1"
 
 
 def _single_query_value(query: Mapping[str, Any], key: str) -> str | None:

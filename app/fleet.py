@@ -15,7 +15,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.control_database import ControlDatabase
 from app.control_models import ControlTenant
-from app.security.database_urls import validate_tenant_database_url
+from app.security.database_urls import (
+    insecure_tenant_loopback_enabled,
+    validate_tenant_database_url,
+)
 from app.security.secrets import SecretError, SecretProvider
 
 
@@ -56,12 +59,16 @@ class FleetService:
         secret_provider: SecretProvider,
         *,
         migrations_dir: Path | None = None,
-        allow_insecure_loopback: bool = False,
+        allow_insecure_loopback: bool | None = None,
     ) -> None:
         self._control_database = control_database
         self._secret_provider = secret_provider
         self._migrations_dir = migrations_dir or Path(__file__).resolve().parents[1] / "migrations"
-        self._allow_insecure_loopback = allow_insecure_loopback
+        self._allow_insecure_loopback = (
+            insecure_tenant_loopback_enabled()
+            if allow_insecure_loopback is None
+            else allow_insecure_loopback
+        )
 
     def _select(self, selectors: Sequence[str] | None) -> list[ControlTenant]:
         with self._control_database.session_scope() as session:

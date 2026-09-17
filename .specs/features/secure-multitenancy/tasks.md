@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** Complete
+**Status:** In Progress
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -22,7 +22,7 @@ Implement these tasks with the tlc-spec-driven skill and follow its Execute flow
 | Tenant repository | PostgreSQL integration | Two databases, identical IDs, all mutations/restores and forced RLS | tests/backend/test_repository.py, tests/backend/test_repository_tenant_scope.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_repository.py tests/backend/test_repository_tenant_scope.py -q |
 | Workspace service/auth API | unit + PostgreSQL + API integration | Projection/merge for every role plus tenant-shell cookie, happy/anonymous/forbidden/forged/CSRF/version/503 paths | tests/backend/test_workspace_authorization.py, tests/backend/test_workspace_service.py, tests/backend/test_api.py, tests/backend/test_auth_api.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_workspace_authorization.py tests/backend/test_workspace_service.py tests/backend/test_api.py tests/backend/test_auth_api.py -q |
 | Models/schemas/migrations | unit + PostgreSQL integration | Both lineages, identity, preservation, RLS and downgrade | tests/backend/test_models.py, tests/backend/test_schemas.py, tests/backend/test_migrations.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_models.py tests/backend/test_schemas.py tests/backend/test_migrations.py -q |
-| Admin/fleet | integration | Activation, checkpoints/resume, hidden secrets, preflight, selection and independent failures | tests/backend/test_admin.py, tests/backend/test_fleet.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_admin.py tests/backend/test_fleet.py -q |
+| Admin/fleet | integration | Activation, checkpoints/resume, local-only loopback opt-in, remote TLS, hidden secrets, preflight, selection and independent failures | tests/backend/test_admin.py, tests/backend/test_fleet.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_admin.py tests/backend/test_fleet.py -q |
 | Frontend route/auth/cache | browser e2e | Locator, login, cookie session, immutable profile, logout and namespaced preferences | tests/ui-prototype.spec.cjs | pnpm test |
 | Windows/Apache/offline | contract + outcome | Env allowlist, secret placeholders, both migrations, wheels and no production mutation | tests/backend/test_manual_windows_pg11_*.py, scripts/verify_windows_*.py | python -m pytest -p no:cacheprovider --basetemp .pytest-tmp tests/backend/test_manual_windows_pg11_deployment.py tests/backend/test_manual_windows_pg11_outcomes.py -q |
 | Dependency/config/docs | build/contract | Exact pins, Python 3.11 parse, Compose and documentation contracts | manifests and verifier scripts | Build gate only |
@@ -66,7 +66,7 @@ T22 → T23 → T24 → T25 → T26 → T27
 ### Phase 5: Independent-validation corrections
 
 ```
-T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34
+T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35
 ```
 
 ## Task Breakdown
@@ -828,6 +828,27 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34
 **Tests:** API integration
 **Gate:** full
 **Commit:** fix(auth): expire invalid tenant shell cookies
+### T35: Wire explicit local tenant loopback opt-in
+
+**Status:** Complete
+
+**What:** Expose one strict local-development setting through the real admin, server and fleet configuration paths while keeping remote PostgreSQL certificate and hostname verification mandatory.
+**Where:** app/security/database_urls.py
+**Integration touchpoints:** app/admin_cli.py, app/server.py, app/fleet.py, README.md, tests/backend/test_admin.py, tests/backend/test_server.py, tests/backend/test_fleet.py, tests/backend/test_readme_multidatabase.py
+**Depends on:** T34
+**Reuses:** Shared tenant DSN validator and existing allow_insecure_loopback constructor boundary.
+**Requirement:** MT-03, MT-05, MT-06, MT-07
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [x] Default admin/server/fleet configuration rejects insecure loopback, and only literal SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1 enables it.
+- [x] Admin CLI default service, central server router and fleet default configuration consume the same strict parser; insecure remote DSNs still fail unless verify-full plus root CA are present.
+- [x] README scopes the setting to the local three-database setup and removes it afterward; targeted, backend, browser and contract/build gates pass without test deletion.
+
+**Tests:** unit + integration + contract
+**Gate:** build
+**Commit:** fix(config): wire local tenant loopback opt-in
 
 ## Phase Execution Map
 
@@ -836,7 +857,7 @@ Phase 1: T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9
 Phase 2: T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17
 Phase 3: T17 → T18 → T19 → T20 → T21 → T22
 Phase 4: T22 → T23 → T24 → T25 → T26 → T27
-Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34
+Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35
 ```
 
 Execution is sequential and phase boundaries are batch boundaries. Plan approval permits local implementation/commits only, never push, deploy, remote connection, production migration or server change.
@@ -850,7 +871,7 @@ Execution is sequential and phase boundaries are batch boundaries. Plan approval
 | T10-T17 | One security/schema/policy/service/API/repository boundary each | OK |
 | T18-T22 | One admin/fleet/UI/runtime boundary each | OK |
 | T23-T27 | One config/package/proxy/runbook/doc boundary each | OK |
-| T28-T34 | One revocation/TLS/audit/cookie/coverage/evidence/tenant-shell boundary each | OK |
+| T28-T35 | One revocation/TLS/audit/cookie/coverage/evidence/config boundary each | OK |
 
 Every source task co-locates required tests; there is no deferred test task.
 
@@ -892,6 +913,7 @@ Every source task co-locates required tests; there is no deferred test task.
 | T32 | T31 | T31 → T32 | OK |
 | T33 | T32 | T32 → T33 | OK |
 | T34 | T33 | T33 → T34 | OK |
+| T35 | T34 | T34 → T35 | OK |
 
 ## Test Co-location Validation
 
@@ -913,6 +935,7 @@ Every source task co-locates required tests; there is no deferred test task.
 | T30-T32 | Auth/API/audit | Unit + API/PostgreSQL | Unit/API/PostgreSQL | OK |
 | T33 | Spec evidence | Structural/build | Structural/build/full | OK |
 | T34 | Tenant shell/auth | API integration | API integration | OK |
+| T35 | Config/admin/server/fleet/docs | Unit + integration + contract | Unit/integration/contract/build | OK |
 
 ## Requirement Coverage
 
@@ -920,13 +943,13 @@ Every source task co-locates required tests; there is no deferred test task.
 | ----------- | ----- | --------------- |
 | MT-01 Locate/login | T1,T3-T6,T10-T15,T18,T20,T33 | Tenant-local credentials and generic failures |
 | MT-02 Central session | T3,T6,T10-T15,T18,T20-T23,T28,T31,T33-T34 | Cookie, digest, TTL, revocation and no-token |
-| MT-03 Database isolation | T5,T7-T9,T13-T17,T20-T26,T29-T30,T33 | Two DBs, forged routing, verified TLS and RLS |
+| MT-03 Database isolation | T5,T7-T9,T13-T17,T20-T26,T29-T30,T33,T35 | Two DBs, forged routing, verified TLS, explicit local opt-in and RLS |
 | MT-04 Authorization | T12,T14-T17,T21,T28,T30 | Role/action/record matrix and denial audit |
-| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33 | Default preservation, checkpoints and fleet |
-| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T34 | Redaction, audit, TLS, cache, health, package and runbook |
-| MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26,T29,T31,T33-T34 | Locks, invalid-cookie cleanup, outage, mismatch, retry and rollback |
+| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33,T35 | Default preservation, checkpoints, local provisioning and fleet |
+| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T35 | Redaction, audit, TLS, explicit local config, cache, health, package and runbook |
+| MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26,T29,T31,T33-T35 | Locks, strict opt-in, invalid-cookie cleanup, outage, mismatch, retry and rollback |
 
-**Coverage:** 7 requirement groups, 34 mapped tasks, 0 unmapped.
+**Coverage:** 7 requirement groups, 35 mapped tasks, 0 unmapped.
 
 ## Approval Gate Before Execute
 

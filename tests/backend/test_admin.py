@@ -15,6 +15,7 @@ from sqlalchemy.engine import make_url
 from app.admin_cli import (
     AdminOperationError,
     AdminService,
+    _default_service,
     main,
 )
 from app.control_database import ControlDatabase, ControlRepository
@@ -124,6 +125,62 @@ def test_admin_rejects_insecure_remote_profile_before_engine_creation(monkeypatc
 
     with pytest.raises(AdminOperationError, match="tenant provisioning failed") as raised:
         service._engine(SimpleNamespace(secret_ref="remote"))
+
+    assert calls == []
+    assert "top-secret" not in str(raised.value)
+    assert "db.example.test" not in str(raised.value)
+
+
+def _default_admin_service_for_url(monkeypatch, database_url: str):  # noqa: ANN001, ANN201
+    calls: list[str] = []
+    provider = InMemorySecretProvider({"tenant": database_url})
+
+    def recording_create_engine(url: str, **_kwargs):  # noqa: ANN001, ANN201
+        calls.append(url)
+        return object()
+
+    monkeypatch.setenv("SMART_CRM_SECRET_STORE", "ignored-by-test-provider")
+    monkeypatch.setattr("app.admin_cli.ControlDatabase", lambda: object())
+    monkeypatch.setattr("app.admin_cli.DpapiFileSecretProvider", lambda _path: provider)
+    monkeypatch.setattr("app.admin_cli.create_engine", recording_create_engine)
+    return _default_service(), calls
+
+
+@pytest.mark.parametrize("setting", [None, "", "0", "true", " 1"])
+def test_default_admin_service_rejects_loopback_without_literal_opt_in(
+    monkeypatch, setting: str | None
+) -> None:
+    local = "postgresql+psycopg://tenant:local@127.0.0.1:5432/tenant"
+    if setting is None:
+        monkeypatch.delenv("SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK", raising=False)
+    else:
+        monkeypatch.setenv("SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK", setting)
+    service, calls = _default_admin_service_for_url(monkeypatch, local)
+
+    with pytest.raises(AdminOperationError, match="tenant provisioning failed"):
+        service._engine(SimpleNamespace(secret_ref="tenant"))
+
+    assert calls == []
+
+
+def test_default_admin_service_accepts_loopback_with_literal_opt_in(monkeypatch) -> None:
+    local = "postgresql+psycopg://tenant:local@127.0.0.1:5432/tenant"
+    monkeypatch.setenv("SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK", "1")
+    service, calls = _default_admin_service_for_url(monkeypatch, local)
+
+    engine = service._engine(SimpleNamespace(secret_ref="tenant"))
+
+    assert engine is not None
+    assert calls == [local]
+
+
+def test_default_admin_service_opt_in_never_allows_insecure_remote(monkeypatch) -> None:
+    remote = "postgresql+psycopg://tenant:top-secret@db.example.test/tenant"
+    monkeypatch.setenv("SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK", "1")
+    service, calls = _default_admin_service_for_url(monkeypatch, remote)
+
+    with pytest.raises(AdminOperationError, match="tenant provisioning failed") as raised:
+        service._engine(SimpleNamespace(secret_ref="tenant"))
 
     assert calls == []
     assert "top-secret" not in str(raised.value)

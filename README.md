@@ -81,6 +81,7 @@ $secretStore = Join-Path $PWD ".local\tenant-secrets"
 $env:SMART_CRM_SECRET_STORE = $secretStore
 $env:SMART_CRM_TENANT_SECRET_STORE = $secretStore
 $env:SMART_CRM_CONTROL_DATABASE_URL = $controlUrl
+$env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK = "1"
 
 python -m app.admin_cli register-tenant cliente-a --display-name "Cliente A" --secret-ref local-cliente-a --expected-revision a4c9d2e7f1b6
 python -m app.admin_cli register-tenant cliente-b --display-name "Cliente B" --secret-ref local-cliente-b --expected-revision a4c9d2e7f1b6
@@ -88,13 +89,19 @@ python -m app.admin_cli activate-default cliente-a --admin-email admin-a@example
 python -m app.admin_cli resume-provisioning cliente-b --admin-email admin-b@example.test --admin-name "Admin B"
 ```
 
-`register-tenant` pede a URL completa do banco e a protege no Windows com DPAPI. Os comandos seguintes pedem a senha inicial e persistem somente hash Argon2id. Em produção, secret refs, autorizações, backup e UAT seguem o runbook; não existe cadastro público de empresa ou primeiro administrador.
+`register-tenant` pede a URL completa do banco e a protege no Windows com DPAPI. Os comandos seguintes pedem a senha inicial e persistem somente hash Argon2id. `SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1` vale somente neste setup local de três bancos; qualquer outro valor mantém o bloqueio e não autoriza PostgreSQL remoto sem verify-full e CA. Em produção, secret refs, autorizações, backup e UAT seguem o runbook; não existe cadastro público de empresa ou primeiro administrador.
 
 Depois de confirmar as revisões e provisionar ambos os tenants, inicie a aplicação central sem executar migração:
 
 ```powershell
 $env:SMART_CRM_EXPECTED_ORIGIN = "http://127.0.0.1:8080"
 python -m uvicorn app.server:create_central_app --factory --host 127.0.0.1 --port 8080
+```
+
+Ao encerrar o runtime local, remova o opt-in da sessão:
+
+```powershell
+Remove-Item Env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK -ErrorAction SilentlyContinue
 ```
 
 Abra `http://127.0.0.1:8080/`, localize `cliente-a` ou `cliente-b` e autentique com o administrador do respectivo banco.

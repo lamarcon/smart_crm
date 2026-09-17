@@ -13,9 +13,14 @@ from sqlalchemy import text
 from app.auth import AuthSettings
 from app.control_database import ControlDatabase
 from app.main import STATIC_DIR, create_app as create_http_app
+from app.security.database_urls import insecure_tenant_loopback_enabled
 from app.security.secrets import DpapiFileSecretProvider, SecretProvider
 from app.services.auth import AuthService, SecurityAuditService
-from app.tenant_database import ControlTenantProfileLoader, TenantDatabaseRouter
+from app.tenant_database import (
+    ControlTenantProfileLoader,
+    TenantDatabaseRouter,
+    TenantDatabaseRouterSettings,
+)
 
 
 CONTROL_SCHEMA_REVISION = "c01a5d8e4f20"
@@ -77,6 +82,9 @@ def bootstrap_runtime(
             ControlTenantProfileLoader(active_control),
             provider,
             security_event_recorder=security_audit.record,
+            settings=TenantDatabaseRouterSettings(
+                allow_insecure_loopback=insecure_tenant_loopback_enabled(),
+            ),
         )
         return CentralRuntime(
             control_database=active_control,

@@ -57,6 +57,15 @@ def test_provisioning_is_local_prompted_and_has_no_public_registration() -> None
     assert "não existe cadastro público de empresa ou primeiro administrador" in text
 
 
+def test_local_loopback_opt_in_is_explicit_scoped_and_removed() -> None:
+    text = read_readme()
+
+    assert '$env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK = "1"' in text
+    assert "somente neste setup local de três bancos" in text
+    assert "não autoriza PostgreSQL remoto sem verify-full e CA" in text
+    assert "Remove-Item Env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK -ErrorAction SilentlyContinue" in text
+
+
 def test_multidatabase_negative_test_command_uses_isolated_basetemp() -> None:
     text = read_readme()
 

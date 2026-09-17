@@ -116,6 +116,26 @@ def test_compatible_control_revision_builds_router_without_opening_tenant_engine
     assert runtime.tenant_router.cached_tenant_ids == ()
 
 
+@pytest.mark.parametrize(
+    ("setting", "expected"),
+    [(None, False), ("", False), ("0", False), ("true", False), (" 1", False), ("1", True)],
+)
+def test_runtime_uses_strict_local_loopback_environment_setting(
+    monkeypatch, setting: str | None, expected: bool
+) -> None:
+    if setting is None:
+        monkeypatch.delenv("SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK", raising=False)
+    else:
+        monkeypatch.setenv("SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK", setting)
+
+    runtime = bootstrap_runtime(
+        control_database=FakeControlDatabase(),
+        secret_provider=InMemorySecretProvider(),
+    )
+
+    assert runtime.tenant_router._settings.allow_insecure_loopback is expected
+
+
 def test_health_reports_only_redacted_ready_status() -> None:
     with TestClient(create_app(runtime=runtime_with(FakeControlDatabase()))) as client:
         response = client.get("/health")

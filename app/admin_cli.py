@@ -19,7 +19,10 @@ from sqlalchemy.orm import Session
 from app.control_database import ControlDatabase, ControlRepository
 from app.models import CrmUser, TenantIdentity, Workspace
 from app.schemas import normalize_tenant_identifier
-from app.security.database_urls import validate_tenant_database_url
+from app.security.database_urls import (
+    insecure_tenant_loopback_enabled,
+    validate_tenant_database_url,
+)
 from app.security.passwords import hash_password
 from app.security.secrets import DpapiFileSecretProvider, SecretError, SecretProvider
 
@@ -440,7 +443,11 @@ def _default_service() -> AdminService:
     secret_store = os.getenv("SMART_CRM_SECRET_STORE")
     if not secret_store:
         raise AdminOperationError("SMART_CRM_SECRET_STORE is required")
-    return AdminService(ControlDatabase(), DpapiFileSecretProvider(Path(secret_store)))
+    return AdminService(
+        ControlDatabase(),
+        DpapiFileSecretProvider(Path(secret_store)),
+        allow_insecure_loopback=insecure_tenant_loopback_enabled(),
+    )
 
 
 def main(

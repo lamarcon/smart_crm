@@ -15,6 +15,7 @@ from sqlalchemy.engine import make_url
 from app.control_database import ControlDatabase, ControlRepository
 from app.control_models import ControlBase
 from app.fleet import FleetOperationError, FleetService, format_preflight
+from app.security.database_urls import DatabaseTransportSecurityError
 from app.security.secrets import InMemorySecretProvider
 
 
@@ -116,7 +117,39 @@ def fleet_setup():  # noqa: ANN201
         root_engine.dispose()
 
 
+@pytest.mark.parametrize("setting", [None, "", "0", "true", " 1", "1"])
+def test_fleet_default_config_allows_loopback_only_for_literal_one(
+    monkeypatch, setting: str | None
+) -> None:
+    local = "postgresql+psycopg://tenant:local@127.0.0.1:5432/tenant"
+    calls: list[str] = []
+
+    def recording_create_engine(url: str, **_kwargs):  # noqa: ANN001, ANN201
+        calls.append(url)
+        return object()
+
+    if setting is None:
+        monkeypatch.delenv("SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK", raising=False)
+    else:
+        monkeypatch.setenv("SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK", setting)
+    monkeypatch.setattr("app.fleet.create_engine", recording_create_engine)
+    service = FleetService(
+        object(),  # type: ignore[arg-type]
+        InMemorySecretProvider({"local": local}),
+    )
+    tenant = SimpleNamespace(secret_ref="local")
+
+    if setting == "1":
+        assert service._engine(tenant) is not None
+        assert calls == [local]
+    else:
+        with pytest.raises(DatabaseTransportSecurityError):
+            service._engine(tenant)
+        assert calls == []
+
+
 def test_fleet_rejects_insecure_remote_profile_before_engine_creation(monkeypatch) -> None:
+    monkeypatch.setenv("SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK", "1")
     insecure = "postgresql+psycopg://tenant:top-secret@db.example.test/tenant"
     calls: list[str] = []
 
