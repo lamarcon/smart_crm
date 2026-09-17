@@ -129,3 +129,9 @@ def create_app(
     application.state.central_runtime = active_runtime
     application.add_event_handler("shutdown", active_runtime.dispose)
     return application
+
+
+def create_central_app() -> FastAPI:
+    """Return the production central app for Uvicorn's --factory contract."""
+
+    return create_app()

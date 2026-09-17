@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from uvicorn.importer import import_from_string
 
 from app.security.secrets import InMemorySecretProvider
 from app.server import (
@@ -59,6 +61,27 @@ def runtime_with(control: FakeControlDatabase, router: CountingRouter | None = N
         tenant_router=router or CountingRouter(),
         auth_service=object(),
     )
+
+
+def test_documented_uvicorn_factory_target_resolves_and_bootstraps(monkeypatch) -> None:
+    readme = (Path(__file__).parents[2] / "README.md").read_text(encoding="utf-8")
+    command = next(line for line in readme.splitlines() if "python -m uvicorn " in line)
+    target = command.split()[3]
+    runtime = runtime_with(FakeControlDatabase())
+    bootstrap_calls: list[None] = []
+
+    def fake_bootstrap() -> CentralRuntime:
+        bootstrap_calls.append(None)
+        return runtime
+
+    monkeypatch.setattr("app.server.bootstrap_runtime", fake_bootstrap)
+
+    factory = import_from_string(target)
+    application = factory()
+
+    assert target == "app.server:create_central_app"
+    assert application.state.central_runtime is runtime
+    assert bootstrap_calls == [None]
 
 
 def test_missing_control_configuration_blocks_bootstrap_without_leaking_value() -> None:
