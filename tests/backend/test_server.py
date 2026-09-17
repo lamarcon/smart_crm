@@ -34,25 +34,30 @@ class FakeControlDatabase:
     revision: str | None = CONTROL_SCHEMA_REVISION
     failure: Exception | None = None
     disposed: bool = False
+    dispose_calls: int = 0
 
     @contextmanager
     def session_scope(self):
         yield FakeSession(self.revision, self.failure)
 
     def dispose(self) -> None:
+        self.dispose_calls += 1
         self.disposed = True
 
 
 class CountingRouter:
     def __init__(self):
         self.health_calls = 0
+        self.disposed = False
+        self.dispose_calls = 0
 
     def health(self, _tenant_id) -> bool:  # noqa: ANN001
         self.health_calls += 1
         raise AssertionError("global health must not probe a tenant")
 
     def dispose(self) -> None:
-        pass
+        self.dispose_calls += 1
+        self.disposed = True
 
 
 def runtime_with(control: FakeControlDatabase, router: CountingRouter | None = None):
@@ -82,6 +87,31 @@ def test_documented_uvicorn_factory_target_resolves_and_bootstraps(monkeypatch) 
     assert target == "app.server:create_central_app"
     assert application.state.central_runtime is runtime
     assert bootstrap_calls == [None]
+
+
+def test_documented_uvicorn_factory_lifespan_disposes_router_and_control(
+    monkeypatch,
+) -> None:
+    readme = (Path(__file__).parents[2] / "README.md").read_text(encoding="utf-8")
+    command = next(line for line in readme.splitlines() if "python -m uvicorn " in line)
+    target = command.split()[3]
+    control = FakeControlDatabase()
+    router = CountingRouter()
+    runtime = runtime_with(control, router)
+
+    monkeypatch.setattr("app.server.bootstrap_runtime", lambda: runtime)
+
+    factory = import_from_string(target)
+
+    with TestClient(factory()) as client:
+        assert client.app.state.central_runtime is runtime
+        assert router.dispose_calls == 0
+        assert control.dispose_calls == 0
+
+    assert router.dispose_calls == 1
+    assert control.dispose_calls == 1
+    assert router.disposed is True
+    assert control.disposed is True
 
 
 def test_missing_control_configuration_blocks_bootstrap_without_leaking_value() -> None:
