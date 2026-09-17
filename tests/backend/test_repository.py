@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     Company,
     Contact,
+    CrmUser,
     CustomFieldValue,
     DealAssistant,
     ExternalSourceField,
@@ -114,6 +115,79 @@ def test_every_ui_user_status_round_trips_through_postgres(repository) -> None:
         "u-3": "Inativo",
         "u-4": "Cancelado",
     }
+
+
+@pytest.mark.parametrize(
+    ("user_id", "field", "value"),
+    [
+        ("u-1", "role", "Vendedor"),
+        ("u-2", "role", "Administrador"),
+        ("u-2", "status", "Inativo"),
+    ],
+)
+def test_access_change_increments_auth_version_once_and_queues_revocation(
+    repository,
+    user_id: str,
+    field: str,
+    value: str,
+) -> None:
+    repo, session = repository
+    original = sample_state()
+    persist(repo, original)
+    session.info.clear()
+    changed = deepcopy(original)
+    target = next(user for user in changed["users"] if user["id"] == user_id)
+    target[field] = value
+
+    repo.reconcile(WorkspaceState.model_validate(changed))
+    session.flush()
+
+    row = session.scalar(
+        select(CrmUser).where(
+            CrmUser.workspace_id == "default",
+            CrmUser.id == user_id,
+        )
+    )
+    assert row.auth_version == 1
+    assert session.info["auth_changed_user_ids"] == {user_id}
+
+
+def test_non_access_user_change_does_not_increment_or_queue_revocation(repository) -> None:
+    repo, session = repository
+    original = sample_state()
+    persist(repo, original)
+    session.info.clear()
+    changed = deepcopy(original)
+    changed["users"][0]["name"] = "Ana atualizada"
+
+    repo.reconcile(WorkspaceState.model_validate(changed))
+    session.flush()
+
+    row = session.scalar(
+        select(CrmUser).where(
+            CrmUser.workspace_id == "default",
+            CrmUser.id == "u-1",
+        )
+    )
+    assert row.auth_version == 0
+    assert "auth_changed_user_ids" not in session.info
+
+
+def test_access_change_auth_version_rolls_back_with_tenant_transaction(repository) -> None:
+    repo, session = repository
+    original = sample_state()
+    persist(repo, original)
+    session.info.clear()
+    changed = deepcopy(original)
+    changed["users"][0]["status"] = "Inativo"
+
+    repo.reconcile(WorkspaceState.model_validate(changed))
+    session.flush()
+    assert session.scalar(select(CrmUser.auth_version).where(CrmUser.id == "u-1")) == 1
+    session.rollback()
+    session.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+
+    assert session.scalar(select(CrmUser.auth_version).where(CrmUser.id == "u-1")) == 0
 
 
 def test_every_table_family_receives_rows(repository) -> None:

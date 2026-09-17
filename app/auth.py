@@ -106,17 +106,30 @@ class CookiePrincipalResolver:
         except AuthenticationError:
             raise _http_error(401, "unauthenticated", "Sessão inválida.") from None
 
+        changed_user_ids: tuple[str, ...] = ()
         try:
             with self._router.tenant_session_scope(context.principal.tenant_id) as tenant_session:
                 resolved = ResolvedPrincipal(context=context, tenant_session=tenant_session)
                 request.state.session_context = context
                 yield resolved
+                changed_user_ids = tuple(
+                    sorted(getattr(tenant_session, "info", {}).get("auth_changed_user_ids", ()))
+                )
         except TenantUnavailableError:
             raise _http_error(
                 503,
                 "tenant_unavailable",
                 "Banco da empresa temporariamente indisponível.",
             ) from None
+
+        revoked_at = datetime.now(timezone.utc)
+        for user_id in changed_user_ids:
+            self._auth_service.revoke_user_sessions(
+                context.principal.tenant_id,
+                user_id,
+                reason="auth_changed",
+                now=revoked_at,
+            )
 
     @staticmethod
     def require_tenant_route(context: SessionContext, route_slug: str) -> None:

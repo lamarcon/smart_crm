@@ -675,7 +675,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 ### T28: Revoke sessions after profile or status changes
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Detect tenant-user role/status changes during an authorized workspace transaction, increment auth_version once and revoke that user's central sessions after the tenant commit succeeds.
 **Where:** app/repositories/workspace.py, app/services/auth.py, app/auth.py
@@ -686,10 +686,11 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Role upgrade, downgrade and status change each increment auth_version exactly once in the tenant transaction.
-- [ ] A successful tenant commit revokes every prior central session for each changed user; rollback performs no eager central revocation and auth_version remains unchanged.
-- [ ] Tests prove the old session is unusable and unchanged user fields do not revoke sessions.
-- [ ] Full gate passes without weakening existing tests.
+- [x] Role upgrade, downgrade and status change each increment auth_version exactly once in the tenant transaction.
+- [x] A successful tenant commit revokes every prior central session for each changed user; rollback performs no eager central revocation and auth_version remains unchanged.
+- [x] Tests prove the old session is unusable and unchanged user fields do not revoke sessions.
+- [x] Full gate passes without weakening existing tests.
+
 
 **Tests:** PostgreSQL integration + auth dependency/service
 **Gate:** full

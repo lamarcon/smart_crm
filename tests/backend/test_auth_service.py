@@ -378,6 +378,23 @@ def test_auth_version_change_revokes_all_user_sessions(auth_setup) -> None:  # n
     assert repository.revocations == [(digest_session_token(result.token), "auth_changed")]
 
 
+
+def test_explicit_access_change_revokes_all_prior_user_sessions(auth_setup) -> None:  # noqa: ANN001
+    service, repository, _router, tenant_a, _tenant_b = auth_setup
+    first = login(service)
+    second = login(service)
+
+    count = service.revoke_user_sessions(
+        tenant_a.id,
+        "user-a",
+        now=NOW,
+        reason="auth_changed",
+    )
+
+    assert count == 2
+    assert repository.sessions[digest_session_token(first.token)].revoked_at == NOW
+    assert repository.sessions[digest_session_token(second.token)].revoked_at == NOW
+
 def test_logout_revokes_only_digest_and_never_records_raw_token(auth_setup) -> None:  # noqa: ANN001
     service, repository, _router, _tenant_a, _tenant_b = auth_setup
     result = login(service)

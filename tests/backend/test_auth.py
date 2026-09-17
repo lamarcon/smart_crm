@@ -44,6 +44,7 @@ class FakeAuthService:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.failures: dict[str, Exception] = {}
+        self.revocations: list[tuple] = []
 
     def current_session(self, token: str, *, now):  # noqa: ANN001, ANN201
         self.calls.append(token)
@@ -52,17 +53,30 @@ class FakeAuthService:
             raise failure
         return context()
 
+    def revoke_user_sessions(self, tenant_id, user_id: str, *, now, reason: str):  # noqa: ANN001, ANN201
+        self.revocations.append((tenant_id, user_id, reason))
+        return 1
+
+
 
 class FakeRouter:
     def __init__(self) -> None:
         self.opened: list = []
         self.closed: list = []
+        self.changed_user_ids: set[str] = set()
+        self.fail_commit = False
 
     @contextmanager
     def tenant_session_scope(self, tenant_id):  # noqa: ANN001, ANN201
         self.opened.append(tenant_id)
+        tenant_session = SimpleNamespace(
+            marker="tenant-session",
+            info={"auth_changed_user_ids": set(self.changed_user_ids)},
+        )
         try:
-            yield SimpleNamespace(marker="tenant-session")
+            yield tenant_session
+            if self.fail_commit:
+                raise RuntimeError("tenant commit failed")
         finally:
             self.closed.append(tenant_id)
 
@@ -104,6 +118,30 @@ def test_valid_cookie_resolves_immutable_principal_and_closes_tenant_session(aut
     assert service.calls == [VALID_TOKEN]
     assert router.opened == [TENANT_ID]
     assert router.closed == [TENANT_ID]
+
+
+def test_committed_access_changes_revoke_every_changed_user_session(auth_client) -> None:  # noqa: ANN001
+    client, service, router = auth_client
+    router.changed_user_ids = {"u-2", "u-3"}
+
+    response = client.get("/protected/cliente-a", headers=cookie_header())
+
+    assert response.status_code == 200
+    assert service.revocations == [
+        (TENANT_ID, "u-2", "auth_changed"),
+        (TENANT_ID, "u-3", "auth_changed"),
+    ]
+
+
+def test_failed_tenant_commit_never_eagerly_revokes_central_sessions(auth_client) -> None:  # noqa: ANN001
+    client, service, router = auth_client
+    router.changed_user_ids = {"u-2"}
+    router.fail_commit = True
+
+    with pytest.raises(RuntimeError, match="tenant commit failed"):
+        client.get("/protected/cliente-a", headers=cookie_header())
+
+    assert service.revocations == []
 
 
 def test_missing_cookie_is_401_without_auth_lookup(auth_client) -> None:  # noqa: ANN001

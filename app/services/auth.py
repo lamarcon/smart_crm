@@ -365,13 +365,12 @@ class AuthService:
             or user.role not in CURRENT_ROLES
             or user.auth_version != auth_session.auth_version
         ):
-            with self._control_database.session_scope() as session:
-                self._repository_factory(session).revoke_user_sessions(
-                    auth_session.tenant_id,
-                    auth_session.user_id,
-                    reason="auth_changed",
-                    revoked_at=now,
-                )
+            self.revoke_user_sessions(
+                auth_session.tenant_id,
+                auth_session.user_id,
+                reason="auth_changed",
+                now=now,
+            )
             raise AuthenticationError("Sessão inválida")
 
         idle_expires_at = min(now + IDLE_SESSION_TTL, auth_session.absolute_expires_at)
@@ -382,6 +381,23 @@ class AuthService:
                 idle_expires_at=idle_expires_at,
             )
         return self._context(tenant, user, token_digest)
+
+    def revoke_user_sessions(
+        self,
+        tenant_id: UUID,
+        user_id: str,
+        *,
+        reason: str,
+        now: datetime,
+    ) -> int:
+        with self._control_database.session_scope() as session:
+            return self._repository_factory(session).revoke_user_sessions(
+                tenant_id,
+                user_id,
+                reason=reason,
+                revoked_at=now,
+            )
+
 
     def logout(self, token: str, *, now: datetime) -> bool:
         token_digest = digest_session_token(token)

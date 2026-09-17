@@ -279,6 +279,11 @@ class WorkspaceRepository:
             if row is None:
                 self.session.add(CrmUser(id=record["id"], **values))
             else:
+                access_changed = row.role != values["role"] or row.status != values["status"]
+                if access_changed:
+                    row.auth_version += 1
+                    changed_user_ids = self.session.info.setdefault("auth_changed_user_ids", set())
+                    changed_user_ids.add(row.id)
                 for key, value in values.items():
                     setattr(row, key, value)
 
