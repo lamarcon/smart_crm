@@ -217,6 +217,7 @@ def test_login_sets_only_hardened_cookie_and_never_returns_token(secure_client_f
     assert cookie.startswith(f"{SESSION_COOKIE_NAME}={TOKEN};")
     assert "HttpOnly" in cookie and "Secure" in cookie and "SameSite=strict" in cookie and "Path=/" in cookie
     assert "Domain=" not in cookie
+    assert response.headers["cache-control"] == "no-store"
     assert gateway.calls[0][0] == "login"
 
 

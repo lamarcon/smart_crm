@@ -763,7 +763,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 ### T32: Prove no-store on successful login
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Add the missing spec-derived assertion that successful login responses are never cacheable.
 **Where:** tests/backend/test_auth_api.py
@@ -774,9 +774,9 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] A successful POST /api/auth/login asserts Cache-Control: no-store alongside the secure cookie contract.
-- [ ] The test would fail if login stopped receiving no-store, and no production behavior is weakened.
-- [ ] Full gate passes.
+- [x] A successful POST /api/auth/login asserts Cache-Control: no-store alongside the secure cookie contract.
+- [x] The test would fail if login stopped receiving no-store, and no production behavior is weakened.
+- [x] Full gate passes.
 
 **Tests:** API integration
 **Gate:** full
