@@ -63,6 +63,12 @@ T17 → T18 → T19 → T20 → T21 → T22
 T22 → T23 → T24 → T25 → T26 → T27
 ```
 
+### Phase 5: Independent-validation corrections
+
+```
+T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
+```
+
 ## Task Breakdown
 
 ### T1: Pin the Argon2 dependency
@@ -667,6 +673,135 @@ T22 → T23 → T24 → T25 → T26 → T27
 **Gate:** build
 **Commit:** docs(tenancy): document isolated tenant databases
 
+### T28: Revoke sessions after profile or status changes
+
+**Status:** Pending
+
+**What:** Detect tenant-user role/status changes during an authorized workspace transaction, increment auth_version once and revoke that user's central sessions after the tenant commit succeeds.
+**Where:** app/repositories/workspace.py, app/services/auth.py, app/auth.py
+**Depends on:** T27
+**Reuses:** Tenant transaction lifecycle, auth_version validation and central revoke operation.
+**Requirement:** MT-02, MT-04, MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] Role upgrade, downgrade and status change each increment auth_version exactly once in the tenant transaction.
+- [ ] A successful tenant commit revokes every prior central session for each changed user; rollback performs no eager central revocation and auth_version remains unchanged.
+- [ ] Tests prove the old session is unusable and unchanged user fields do not revoke sessions.
+- [ ] Full gate passes without weakening existing tests.
+
+**Tests:** PostgreSQL integration + auth dependency/service
+**Gate:** full
+**Commit:** fix(auth): revoke sessions on access changes
+
+### T29: Enforce verified TLS for remote PostgreSQL
+
+**Status:** Pending
+
+**What:** Validate server-resolved PostgreSQL connection profiles before router, administration or fleet engines are created, requiring certificate and hostname verification for remote hosts while allowing explicit localhost development.
+**Where:** app/security/database_urls.py, app/tenant_database.py, app/admin_cli.py, app/fleet.py
+**Depends on:** T28
+**Reuses:** Server-side SecretProvider boundary and engine factories.
+**Requirement:** MT-03, MT-05, MT-06, MT-07
+**Tools:** MCP official Psycopg/PostgreSQL docs only if codebase evidence is insufficient; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] Remote PostgreSQL URLs fail closed unless sslmode=verify-full and a root CA is configured; certificate and hostname checks cannot be downgraded by duplicate parameters.
+- [ ] Loopback development is allowed only by explicit configuration and remains disabled by default in production constructors.
+- [ ] Router, admin provisioning and fleet preflight/migration share the same validator before create_engine.
+- [ ] Tests cover remote insecure/verified URLs, localhost explicit allow/deny, redaction and all three callers; full gate passes.
+
+**Tests:** unit + integration
+**Gate:** full
+**Commit:** fix(database): require verified tls for remote tenants
+
+### T30: Complete redacted security auditing
+
+**Status:** Pending
+
+**What:** Emit central audit events for session revocation, database identity mismatch/routing failure and protected 401/403 denials without secrets.
+**Where:** app/services/auth.py, app/tenant_database.py, app/auth.py, app/main.py
+**Depends on:** T29
+**Reuses:** ControlRepository.append_security_event and request/session correlation digests.
+**Requirement:** MT-03, MT-04, MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] Revocation, identity mismatch/routing failure and every protected 401/403 path append event_id, known tenant/user and a correlation digest.
+- [ ] Events never contain raw password, cookie/token, DSN, host credential or commercial payload.
+- [ ] Missing context stays nullable instead of fabricating tenant/user identity, and audit failure cannot grant access.
+- [ ] Tests assert event types, outcomes, linkage/redaction and denial status; full gate passes.
+
+**Tests:** unit + API + PostgreSQL integration
+**Gate:** full
+**Commit:** fix(audit): record tenant security denials
+
+### T31: Expire invalid session cookies on 401
+
+**Status:** Pending
+
+**What:** Ensure every protected 401 caused by a received malformed, unknown, expired or revoked session cookie returns an expiration Set-Cookie with the hardened cookie attributes.
+**Where:** app/auth.py, app/main.py
+**Depends on:** T30
+**Reuses:** Existing logout cookie contract and stable unauthenticated envelope.
+**Requirement:** MT-02, MT-06, MT-07
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] Malformed, unknown, expired and revoked received cookies return 401 plus Max-Age=0/Expires, Secure, HttpOnly, SameSite=Strict, Path=/ and no Domain.
+- [ ] A request with no cookie remains 401 without inventing a Set-Cookie, and alternate token sources remain rejected.
+- [ ] Tests assert the exact response header contract for every edge; full gate passes.
+
+**Tests:** API integration
+**Gate:** full
+**Commit:** fix(auth): expire invalid session cookies
+
+### T32: Prove no-store on successful login
+
+**Status:** Pending
+
+**What:** Add the missing spec-derived assertion that successful login responses are never cacheable.
+**Where:** tests/backend/test_auth_api.py
+**Depends on:** T31
+**Reuses:** Existing login success API test and contract middleware.
+**Requirement:** MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] A successful POST /api/auth/login asserts Cache-Control: no-store alongside the secure cookie contract.
+- [ ] The test would fail if login stopped receiving no-store, and no production behavior is weakened.
+- [ ] Full gate passes.
+
+**Tests:** API integration
+**Gate:** full
+**Commit:** test(auth): assert login response is not cacheable
+
+### T33: Reconcile early task completion evidence
+
+**Status:** Pending
+
+**What:** Align the T1-T7 Done-when checkboxes with their already committed green gates and evidence, without rewriting implementation history.
+**Where:** .specs/features/secure-multitenancy/tasks.md
+**Depends on:** T32
+**Reuses:** Existing T1-T7 commits, test totals and validation evidence.
+**Requirement:** MT-01, MT-02, MT-03, MT-05, MT-06, MT-07
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] Every T1-T7 Done-when item marked complete has matching committed evidence and no implementation claim is invented.
+- [ ] validate_spec and validate_tasks pass; T27 and feature verification remain open for the fresh Verifier.
+- [ ] Build gate passes with no test deletion.
+
+**Tests:** structural validators + full regression
+**Gate:** build
+**Commit:** docs(spec): reconcile foundation task evidence
+
 ## Phase Execution Map
 
 ```
@@ -674,6 +809,7 @@ Phase 1: T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9
 Phase 2: T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17
 Phase 3: T17 → T18 → T19 → T20 → T21 → T22
 Phase 4: T22 → T23 → T24 → T25 → T26 → T27
+Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33
 ```
 
 Execution is sequential and phase boundaries are batch boundaries. Plan approval permits local implementation/commits only, never push, deploy, remote connection, production migration or server change.
@@ -687,6 +823,7 @@ Execution is sequential and phase boundaries are batch boundaries. Plan approval
 | T10-T17 | One security/schema/policy/service/API/repository boundary each | OK |
 | T18-T22 | One admin/fleet/UI/runtime boundary each | OK |
 | T23-T27 | One config/package/proxy/runbook/doc boundary each | OK |
+| T28-T33 | One revocation/TLS/audit/cookie/coverage/evidence boundary each | OK |
 
 Every source task co-locates required tests; there is no deferred test task.
 
@@ -721,6 +858,12 @@ Every source task co-locates required tests; there is no deferred test task.
 | T25 | T24 | T24 → T25 | OK |
 | T26 | T25 | T25 → T26 | OK |
 | T27 | T26 | T26 → T27 | OK |
+| T28 | T27 | T27 → T28 | OK |
+| T29 | T28 | T28 → T29 | OK |
+| T30 | T29 | T29 → T30 | OK |
+| T31 | T30 | T30 → T31 | OK |
+| T32 | T31 | T31 → T32 | OK |
+| T33 | T32 | T32 → T33 | OK |
 
 ## Test Co-location Validation
 
@@ -737,20 +880,24 @@ Every source task co-locates required tests; there is no deferred test task.
 | T20-T21 | Frontend | Browser e2e | Browser e2e | OK |
 | T22 | Runtime/API | Unit + API | Unit/API | OK |
 | T23-T27 | Deploy/config/docs | Contract/build | Contract/build/full | OK |
+| T28 | Repository/auth lifecycle | PostgreSQL + auth integration | PostgreSQL/auth integration | OK |
+| T29 | Secret/router/admin/fleet | Unit + PostgreSQL | Unit/integration | OK |
+| T30-T32 | Auth/API/audit | Unit + API/PostgreSQL | Unit/API/PostgreSQL | OK |
+| T33 | Spec evidence | Structural/build | Structural/build/full | OK |
 
 ## Requirement Coverage
 
 | Requirement | Tasks | Evidence target |
 | ----------- | ----- | --------------- |
-| MT-01 Locate/login | T1,T3-T6,T10-T15,T18,T20 | Tenant-local credentials and generic failures |
-| MT-02 Central session | T3,T6,T10-T15,T18,T20-T23 | Cookie, digest, TTL, revocation and no-token |
-| MT-03 Database isolation | T5,T7-T9,T13-T17,T20-T26 | Two DBs, forged routing and RLS |
-| MT-04 Authorization | T12,T14-T17,T21 | Role/action/record matrix |
-| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27 | Default preservation, checkpoints and fleet |
-| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T27 | Redaction, health, package and runbook |
-| MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26 | Locks, outage, mismatch, retry and rollback |
+| MT-01 Locate/login | T1,T3-T6,T10-T15,T18,T20,T33 | Tenant-local credentials and generic failures |
+| MT-02 Central session | T3,T6,T10-T15,T18,T20-T23,T28,T31,T33 | Cookie, digest, TTL, revocation and no-token |
+| MT-03 Database isolation | T5,T7-T9,T13-T17,T20-T26,T29-T30,T33 | Two DBs, forged routing, verified TLS and RLS |
+| MT-04 Authorization | T12,T14-T17,T21,T28,T30 | Role/action/record matrix and denial audit |
+| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33 | Default preservation, checkpoints and fleet |
+| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T33 | Redaction, audit, TLS, cache, health, package and runbook |
+| MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26,T29,T31,T33 | Locks, outage, mismatch, retry and rollback |
 
-**Coverage:** 7 requirement groups, 27 mapped tasks, 0 unmapped.
+**Coverage:** 7 requirement groups, 33 mapped tasks, 0 unmapped.
 
 ## Approval Gate Before Execute
 
