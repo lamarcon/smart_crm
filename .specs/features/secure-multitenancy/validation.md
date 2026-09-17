@@ -3,9 +3,9 @@
 ## Validation: Multiempresa Seguro - PASS ✅
 
 **Verdict:** PASS ✅
-**Date:** 2026-09-17 (independent revalidation round 3)
+**Date:** 2026-09-17 (independent post-PASS extension verification T35)
 **Spec:** `.specs/features/secure-multitenancy/spec.md`
-**Diff range:** `8aad0ac..93bdc73` (correction T34); implementation lineage remains `6962ca5..93bdc73`
+**Diff range:** `67e3f6c..e1eb1c0` (post-PASS extension T35); implementation lineage remains `6962ca5..e1eb1c0`
 **Verifier:** independent sub-agent (author ≠ verifier)
 
 ---
@@ -16,7 +16,7 @@
 | ---- | ------ | ----- |
 | T1-T26 | ✅ Done | Commits, checklists reconciliados e evidência de gate presentes. |
 | T27 | ✅ Done | Documentação, full gate, Fresh Verifier e validate_state concluídos. |
-| T28-T34 | ✅ Done | Correções de revogação, TLS, auditoria, cookies, no-store, checklists e tenant shell verificadas. |
+| T28-T35 | ✅ Done | Correções de revogação, TLS, auditoria, cookies, no-store, tenant shell e opt-in local estrito verificadas. |
 
 ## Spec-Anchored Acceptance Criteria
 
@@ -77,7 +77,7 @@
 
 ## Confirmed Security Decisions Rechecked
 
-A política de transporte agora falha fechada em `app/security/database_urls.py`: host remoto exige `sslmode=verify-full` e `sslrootcert`; parâmetros duplicados são rejeitados; loopback inseguro depende de opt-in explícito e os construtores de produção permanecem `False`. Router, administração e frota chamam o mesmo validador antes de `create_engine`. `tests/backend/test_database_urls.py`, `test_tenant_router.py`, `test_admin.py` e `test_fleet.py` passaram; a mutação que aceitou `sslmode=require` foi morta.
+A política de transporte agora falha fechada em `app/security/database_urls.py`: host remoto exige `sslmode=verify-full` e `sslrootcert`; parâmetros duplicados são rejeitados; loopback inseguro depende de opt-in explícito e somente o literal `SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1` o habilita nos caminhos reais. Router, administração e frota chamam o mesmo parser/validador antes de `create_engine`. `tests/backend/test_database_urls.py`, `test_tenant_router.py`, `test_admin.py`, `test_server.py` e `test_fleet.py` passaram; as mutações que relaxaram o literal, removeram consumidores ou aceitaram host remoto foram mortas.
 
 ## Edge Cases
 
@@ -113,11 +113,11 @@ As mutações foram aplicadas somente no worktree temporário `D:\Develop_CRM_Pr
 ## Gate Check
 
 - **Build:** `python -m compileall -q app migrations migrations_control`; compatibility; Compose; backend; browser; runbook; Apache.
-- **Gate totals:** 534 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 contract 27/27; runbook 41/41; Apache 32/32; Compose válido.
+- **Gate totals:** 554 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 contract 27/27; runbook 41/41; Apache 32/32; Compose válido.
 - **Warnings:** 2 (Starlette deprecation e Pydantic alias), sem falha.
 - **Before feature:** 97 backend e 69 browser.
-- **After corrections:** 534 backend e 93 browser.
-- **Delta from baseline:** +437 backend, +24 browser.
+- **After corrections/extensions:** 554 backend e 93 browser.
+- **Delta from baseline:** +457 backend, +24 browser.
 - **Structural validators after closure:** `validate_spec` 0/0; `validate_tasks --strict` 0/0; `validate_state` 0/0.
 
 ## Code Quality
@@ -141,6 +141,18 @@ O fluxo user-facing foi exercitado localmente por 93 cenários browser, incluind
 
 T34 centralizou a rejeição da tenant shell no mesmo `unauthenticated_error(request)` usado pelas APIs. A matriz independente confirmou: sem cookie → 200/no `Set-Cookie`; malformed/unknown/expired/revoked → 401 e cookie `__Host-` expirado com todos os atributos endurecidos. Não restam gaps de implementação nesta rodada.
 
+## Post-PASS Extension Verification — T35
+
+| T35 criterion | Independent evidence | Result |
+| ------------- | -------------------- | ------ |
+| Ausente ou qualquer valor diferente de `1` mantém deny | `app/security/database_urls.py:14,23-29`; `tests/backend/test_admin.py:150-164`; `tests/backend/test_server.py:123-136`; `tests/backend/test_fleet.py:121-146` | ✅ PASS |
+| Literal `1` habilita somente loopback | `app/security/database_urls.py:53-55`; `tests/backend/test_admin.py:166-174`; `tests/backend/test_database_urls.py:58-63` | ✅ PASS |
+| Host remoto continua exigindo `verify-full` + CA | `app/security/database_urls.py:53`; `tests/backend/test_admin.py:177-190`; `tests/backend/test_fleet.py:151-172` | ✅ PASS |
+| Admin, server router e fleet default propagam o parser central | `app/admin_cli.py:449`; `app/server.py:86`; `app/fleet.py:62-70,98`; testes targeted T35 84/84 | ✅ PASS |
+| README limita ao setup local e remove a variável ao fim | `README.md:84,92,104`; `tests/backend/test_readme_multidatabase.py:60-66` | ✅ PASS |
+
+O gate completo após T35 passou com 554 testes backend, 93 browser, compatibilidade Python 27/27, runbook 41/41, Apache 32/32, Compose válido e `compileall` limpo. O sensor independente em worktree scratch matou 7/7 mutações: parser permissivo, literal trocado, propagação removida em server/admin/fleet, host remoto liberado pelo opt-in e cleanup do README removido. O worktree scratch foi restaurado e removido; nenhum arquivo rastreado do principal foi alterado pelo sensor.
+
 ## Requirement Traceability Update
 
 | Requirement | Previous | Verification result |
@@ -160,7 +172,7 @@ T34 centralizou a rejeição da tenant shell no mesmo `unauthenticated_error(req
 **Overall:** ✅ Ready
 
 **Spec-anchored check:** 50/50 listed ACs and every listed edge matched.
-**Sensor:** 6/6 valid mutations killed; 0 survived.
-**Gate:** 534 backend + 93 browser passed; compatibility 27/27, runbook 41/41 and Apache 32/32.
+**Sensor:** rodada 3 matou 6/6; extensão T35 matou 7/7; 0 sobreviveu.
+**Gate:** 554 backend + 93 browser passed; compatibility 27/27, runbook 41/41 and Apache 32/32.
 
-A implementação satisfaz o modelo multiempresa com banco físico por tenant, sessão opaca central, fail-closed, TLS remoto verificado, RLS, autorização server-side, auditoria redigida, provisionamento/frota e frontend/cache isolados. T34 fechou o último edge de cookie da tenant shell; nenhum gap de implementação sobreviveu à rodada final.
+A implementação satisfaz o modelo multiempresa com banco físico por tenant, sessão opaca central, fail-closed, TLS remoto verificado, RLS, autorização server-side, auditoria redigida, provisionamento/frota e frontend/cache isolados. T34 fechou o edge de cookie da tenant shell e T35 conectou o opt-in local estrito aos três caminhos reais sem enfraquecer TLS remoto; nenhum gap de implementação sobreviveu à verificação pós-PASS.

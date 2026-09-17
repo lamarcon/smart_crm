@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** In Progress
+**Status:** Complete
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -845,6 +845,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35
 - [x] Default admin/server/fleet configuration rejects insecure loopback, and only literal SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1 enables it.
 - [x] Admin CLI default service, central server router and fleet default configuration consume the same strict parser; insecure remote DSNs still fail unless verify-full plus root CA are present.
 - [x] README scopes the setting to the local three-database setup and removes it afterward; targeted, backend, browser and contract/build gates pass without test deletion.
+- [x] Fresh Verifier confirms strict parsing, default propagation, remote TLS preservation and documentation cleanup: post-PASS extension PASS, 554 backend and 93 browser scenarios, sensor 7/7 killed.
 
 **Tests:** unit + integration + contract
 **Gate:** build

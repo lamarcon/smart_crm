@@ -45,8 +45,8 @@
 ## Handoff
 
 - **Feature**: Multiempresa Seguro / `.specs/features/secure-multitenancy`
-- **Phase / Task**: Execute concluído; T1-T34 e Fresh Verifier completos
-- **Completed**: validação independente PASS, 534 backend, 93 browser, contratos 27/41/32 e sensor 6/6; nenhum deploy executado
+- **Phase / Task**: Execute concluído; T1-T35 e Fresh Verifier pós-PASS completos
+- **Completed**: validação independente PASS incluindo T35, 554 backend, 93 browser, contratos 27/41/32 e sensor T35 7/7; nenhum deploy executado
 - **In-progress** (file:line): none
 - **Next step**: planejar UAT humano e cutover de produção conforme o runbook somente após autorização explícita separada
 - **Blockers**: nenhum de implementação; produção ainda depende de backup, CA/TLS, segredos DPAPI, seleção explícita dos bancos e autorização operacional
