@@ -84,8 +84,8 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Version/runtime support are exact and compatibility has at least 1 new assertion.
-- [ ] Build gate passes with recorded totals and no test deletion.
+- [x] Version/runtime support are exact and compatibility has at least 1 new assertion.
+- [x] Build gate passes with recorded totals and no test deletion.
 
 **Tests:** none for config; build/contract gate
 **Gate:** build
@@ -104,8 +104,8 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Project/runtime pins match and parity has at least 1 drift assertion.
-- [ ] Build gate passes.
+- [x] Project/runtime pins match and parity has at least 1 drift assertion.
+- [x] Build gate passes.
 
 **Tests:** none for config; build/contract gate
 **Gate:** build
@@ -124,9 +124,9 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Models/indexes match design and cannot store raw token, password, DSN or snapshot.
-- [ ] Tests add at least 8 assertions for fields, uniqueness, states and secret exclusions.
-- [ ] Full gate passes.
+- [x] Models/indexes match design and cannot store raw token, password, DSN or snapshot.
+- [x] Tests add at least 8 assertions for fields, uniqueness, states and secret exclusions.
+- [x] Full gate passes.
 
 **Tests:** unit + PostgreSQL integration
 **Gate:** full
@@ -145,9 +145,9 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Control upgrade/downgrade never creates business tables.
-- [ ] Tests add at least 5 cases for upgrade, head, constraints, downgrade and lineage separation.
-- [ ] Full gate passes.
+- [x] Control upgrade/downgrade never creates business tables.
+- [x] Tests add at least 5 cases for upgrade, head, constraints, downgrade and lineage separation.
+- [x] Full gate passes.
 
 **Tests:** PostgreSQL integration
 **Gate:** full
@@ -166,9 +166,9 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Production ciphertext is service-identity-bound and only secret_ref crosses module boundaries.
-- [ ] Unit tests add at least 8 cases for round-trip, wrong identity/corruption, redaction, missing ref and rotation.
-- [ ] Quick gate passes.
+- [x] Production ciphertext is service-identity-bound and only secret_ref crosses module boundaries.
+- [x] Unit tests add at least 8 cases for round-trip, wrong identity/corruption, redaction, missing ref and rotation.
+- [x] Quick gate passes.
 
 **Tests:** unit
 **Gate:** quick
@@ -187,9 +187,9 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Control DSN is required with no fallback; session/throttle/state operations are transactional.
-- [ ] Tests add at least 10 cases for concurrency, expiry, cleanup, duplicate slug, transitions and redaction.
-- [ ] Full gate passes.
+- [x] Control DSN is required with no fallback; session/throttle/state operations are transactional.
+- [x] Tests add at least 10 cases for concurrency, expiry, cleanup, duplicate slug, transitions and redaction.
+- [x] Full gate passes.
 
 **Tests:** PostgreSQL integration
 **Gate:** full
@@ -210,9 +210,9 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Identity binds control UUID to workspace; legacy auth is disabled with nullable hash.
-- [ ] Tests add at least 8 assertions for singleton, uniqueness, version and child scope.
-- [ ] Full gate passes.
+- [x] Identity binds control UUID to workspace; legacy auth is disabled with nullable hash.
+- [x] Tests add at least 8 assertions for singleton, uniqueness, version and child scope.
+- [x] Full gate passes.
 
 **Tests:** unit + PostgreSQL integration
 **Gate:** full
@@ -678,7 +678,8 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 **Status:** Complete
 
 **What:** Detect tenant-user role/status changes during an authorized workspace transaction, increment auth_version once and revoke that user's central sessions after the tenant commit succeeds.
-**Where:** app/repositories/workspace.py, app/services/auth.py, app/auth.py
+**Where:** app/repositories/workspace.py
+**Integration touchpoints:** app/services/auth.py, app/auth.py
 **Depends on:** T27
 **Reuses:** Tenant transaction lifecycle, auth_version validation and central revoke operation.
 **Requirement:** MT-02, MT-04, MT-06
@@ -701,7 +702,8 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 **Status:** Complete
 
 **What:** Validate server-resolved PostgreSQL connection profiles before router, administration or fleet engines are created, requiring certificate and hostname verification for remote hosts while allowing explicit localhost development.
-**Where:** app/security/database_urls.py, app/tenant_database.py, app/admin_cli.py, app/fleet.py
+**Where:** app/security/database_urls.py
+**Integration touchpoints:** app/tenant_database.py, app/admin_cli.py, app/fleet.py
 **Depends on:** T28
 **Reuses:** Server-side SecretProvider boundary and engine factories.
 **Requirement:** MT-03, MT-05, MT-06, MT-07
@@ -723,7 +725,8 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 **Status:** Complete
 
 **What:** Emit central audit events for session revocation, database identity mismatch/routing failure and protected 401/403 denials without secrets.
-**Where:** app/services/auth.py, app/tenant_database.py, app/auth.py, app/main.py
+**Where:** app/services/auth.py
+**Integration touchpoints:** app/tenant_database.py, app/auth.py, app/main.py, app/server.py
 **Depends on:** T29
 **Reuses:** ControlRepository.append_security_event and request/session correlation digests.
 **Requirement:** MT-03, MT-04, MT-06
@@ -745,7 +748,8 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 **Status:** Complete
 
 **What:** Ensure every protected 401 caused by a received malformed, unknown, expired or revoked session cookie returns an expiration Set-Cookie with the hardened cookie attributes.
-**Where:** app/auth.py, app/main.py
+**Where:** app/auth.py
+**Integration touchpoints:** app/main.py
 **Depends on:** T30
 **Reuses:** Existing logout cookie contract and stable unauthenticated envelope.
 **Requirement:** MT-02, MT-06, MT-07
@@ -784,7 +788,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 ### T33: Reconcile early task completion evidence
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Align the T1-T7 Done-when checkboxes with their already committed green gates and evidence, without rewriting implementation history.
 **Where:** .specs/features/secure-multitenancy/tasks.md
@@ -795,9 +799,9 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33
 
 **Done when:**
 
-- [ ] Every T1-T7 Done-when item marked complete has matching committed evidence and no implementation claim is invented.
-- [ ] validate_spec and validate_tasks pass; T27 and feature verification remain open for the fresh Verifier.
-- [ ] Build gate passes with no test deletion.
+- [x] Every T1-T7 Done-when item marked complete has matching committed evidence and no implementation claim is invented.
+- [x] validate_spec and validate_tasks pass; T27 and feature verification remain open for the fresh Verifier.
+- [x] Build gate passes with no test deletion.
 
 **Tests:** structural validators + full regression
 **Gate:** build
