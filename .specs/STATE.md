@@ -44,11 +44,11 @@
 
 ## Handoff
 
-- **Feature**: Implantação manual Windows/PostgreSQL 11 / `.specs/features/manual-windows-pg11-deployment`
-- **Phase / Task**: Caminho do servidor corrigido; instalação offline aguardando saída do servidor
-- **Completed**: ZIP `357113f7`, SHA-256, caminho `C:\brbots\apps\smart-crm`, 15 testes e validação independente PASS
+- **Feature**: Multiempresa Seguro / `.specs/features/secure-multitenancy`
+- **Phase / Task**: Execute concluído; T1-T34 e Fresh Verifier completos
+- **Completed**: validação independente PASS, 534 backend, 93 browser, contratos 27/41/32 e sensor 6/6; nenhum deploy executado
 - **In-progress** (file:line): none
-- **Next step**: Executar `test-package-integrity.ps1` e `install-offline.ps1` em `C:\brbots\apps\smart-crm`, depois enviar a saída antes de criar o banco.
-- **Blockers**: execução na máquina de destino, senha administrativa do PostgreSQL, descoberta do caminho do Apache e renovação TLS
+- **Next step**: planejar UAT humano e cutover de produção conforme o runbook somente após autorização explícita separada
+- **Blockers**: nenhum de implementação; produção ainda depende de backup, CA/TLS, segredos DPAPI, seleção explícita dos bancos e autorização operacional
 - **Uncommitted files**: `.specs/features/crm-mvp/tasks.md` (preexistente, preservado)
 - **Branch**: main

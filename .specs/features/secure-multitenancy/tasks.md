@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** In Progress
+**Status:** Complete
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -652,7 +652,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34
 
 ### T27: Document the multi-database model
 
-**Status:** In Progress
+**Status:** Complete
 
 **What:** Document control boundary, local three-database tests, provisioning and limitations.
 **Where:** README.md
@@ -667,7 +667,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34
 - [x] Local setup uses control, tenant A and tenant B databases and notes PostgreSQL 11 risk.
 - [x] Contract tests add at least 5 command/safety assertions: 8 cases added.
 - [x] Phase 4 Build gate passes with final totals: 503 backend and 93 browser scenarios; compatibility 26, runbook 41 and Apache 32 contracts passed.
-- [ ] Fresh Verifier runs spec evidence and discrimination sensor before validate_state passes.
+- [x] Fresh Verifier runs spec evidence and discrimination sensor before validate_state passes: round 3 PASS, 534 backend and 93 browser scenarios, sensor 6/6 killed.
 
 **Tests:** contract + full regression
 **Gate:** build

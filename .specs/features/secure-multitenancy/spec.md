@@ -6,12 +6,12 @@ O Smart CRM usa um único workspace default, aceita o estado completo enviado pe
 
 ## Goals
 
-- [ ] Autenticar usuários por empresa com senha Argon2id e sessão opaca armazenada no plano de controle central.
-- [ ] Manter usuários e dados de negócio de cada tenant em um PostgreSQL exclusivo e impedir seleção, leitura ou mutação em banco de outra empresa.
-- [ ] Aplicar perfis e visibilidade no backend, sem confiar em perfil, tenant, cache, rota ou localStorage enviados pelo navegador.
-- [ ] Transformar o banco atual do workspace default no banco do primeiro tenant sem copiar nem perder os dados existentes.
-- [ ] Provisionar tenants e o primeiro administrador por ferramenta administrativa idempotente, sem cadastro público.
-- [ ] Operar conexões, migrações, saúde e recuperação como uma frota de bancos compatível com PostgreSQL 11 e o pacote offline Windows.
+- [x] Autenticar usuários por empresa com senha Argon2id e sessão opaca armazenada no plano de controle central.
+- [x] Manter usuários e dados de negócio de cada tenant em um PostgreSQL exclusivo e impedir seleção, leitura ou mutação em banco de outra empresa.
+- [x] Aplicar perfis e visibilidade no backend, sem confiar em perfil, tenant, cache, rota ou localStorage enviados pelo navegador.
+- [x] Transformar o banco atual do workspace default no banco do primeiro tenant sem copiar nem perder os dados existentes.
+- [x] Provisionar tenants e o primeiro administrador por ferramenta administrativa idempotente, sem cadastro público.
+- [x] Operar conexões, migrações, saúde e recuperação como uma frota de bancos compatível com PostgreSQL 11 e o pacote offline Windows.
 
 ## Out of Scope
 
@@ -212,13 +212,13 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| MT-01 | Localizar e autenticar no banco correto | Execute | Implementing |
-| MT-02 | Sessão opaca central | Execute | Implementing |
-| MT-03 | Roteamento e isolamento de banco | Execute | Implementing |
-| MT-04 | Autorização por perfil | Execute | Implementing |
-| MT-05 | Migração e provisionamento distribuído | Execute | Implementing |
-| MT-06 | Operação segura da frota | Execute | Implementing |
-| MT-07 | Edge cases e concorrência | Execute | Implementing |
+| MT-01 | Localizar e autenticar no banco correto | Execute | Verified |
+| MT-02 | Sessão opaca central | Execute | Verified |
+| MT-03 | Roteamento e isolamento de banco | Execute | Verified |
+| MT-04 | Autorização por perfil | Execute | Verified |
+| MT-05 | Migração e provisionamento distribuído | Execute | Verified |
+| MT-06 | Operação segura da frota | Execute | Verified |
+| MT-07 | Edge cases e concorrência | Execute | Verified |
 
 **Coverage:** 7 requirement groups, 7 mapped to design/tasks, 0 unmapped.
 
@@ -226,10 +226,10 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 
 ## Success Criteria
 
-- [ ] Dois tenants em PostgreSQL distintos e com IDs públicos idênticos não conseguem ler, alterar, excluir ou restaurar dados cruzados por API, serviço, repositório ou conexão forjada.
-- [ ] Nenhuma rota de negócio aceita operação sem sessão válida e nenhum parâmetro do navegador seleciona tenant, perfil de conexão, usuário ou autorização.
-- [ ] Uma identidade de banco incompatível, schema incompatível ou banco indisponível falha fechado sem fallback.
-- [ ] O banco atual mantém contagens, payloads e vínculos e se torna o banco do primeiro tenant sem copiar dados comerciais.
-- [ ] O plano de controle não contém hash de senha, dados comerciais, DSN nem segredo de conexão em texto puro.
-- [ ] O pacote offline valida wheels e execução no contrato CPython 3.11 x64/PostgreSQL 11.
-- [ ] Todos os gates backend, UI, migração, frota, implantação e validadores do skill passam antes de qualquer deploy.
+- [x] Dois tenants em PostgreSQL distintos e com IDs públicos idênticos não conseguem ler, alterar, excluir ou restaurar dados cruzados por API, serviço, repositório ou conexão forjada.
+- [x] Nenhuma rota de negócio aceita operação sem sessão válida e nenhum parâmetro do navegador seleciona tenant, perfil de conexão, usuário ou autorização.
+- [x] Uma identidade de banco incompatível, schema incompatível ou banco indisponível falha fechado sem fallback.
+- [x] O banco atual mantém contagens, payloads e vínculos e se torna o banco do primeiro tenant sem copiar dados comerciais.
+- [x] O plano de controle não contém hash de senha, dados comerciais, DSN nem segredo de conexão em texto puro.
+- [x] O pacote offline valida wheels e execução no contrato CPython 3.11 x64/PostgreSQL 11.
+- [x] Todos os gates backend, UI, migração, frota, implantação e validadores do skill passam antes de qualquer deploy.

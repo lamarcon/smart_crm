@@ -1,11 +1,11 @@
 # Multiempresa Seguro Validation
 
-## Validation: Multiempresa Seguro - FAIL ❌
+## Validation: Multiempresa Seguro - PASS ✅
 
-**Verdict:** FAIL ❌
-**Date:** 2026-09-17 (independent revalidation round 2)
+**Verdict:** PASS ✅
+**Date:** 2026-09-17 (independent revalidation round 3)
 **Spec:** `.specs/features/secure-multitenancy/spec.md`
-**Diff range:** `ef29191..c6cba90` (corrections T28-T33); implementation lineage remains `6962ca5..c6cba90`
+**Diff range:** `8aad0ac..93bdc73` (correction T34); implementation lineage remains `6962ca5..93bdc73`
 **Verifier:** independent sub-agent (author ≠ verifier)
 
 ---
@@ -15,8 +15,8 @@
 | Task | Status | Notes |
 | ---- | ------ | ----- |
 | T1-T26 | ✅ Done | Commits, checklists reconciliados e evidência de gate presentes. |
-| T28-T33 | ✅ Done | Correções de revogação, TLS, auditoria, cookie em APIs, no-store e checklists verificadas. |
-| T27 | ⚠️ In Progress | Documentação e gate passaram; a revalidação independente ainda encontrou um edge funcional. |
+| T27 | ✅ Done | Documentação, full gate, Fresh Verifier e validate_state concluídos. |
+| T28-T34 | ✅ Done | Correções de revogação, TLS, auditoria, cookies, no-store, checklists e tenant shell verificadas. |
 
 ## Spec-Anchored Acceptance Criteria
 
@@ -73,7 +73,7 @@
 | MT-06.6 | Preflight relata conectividade/identidade/revisão sem segredo | `tests/backend/test_fleet.py:123-158,185-197` | ✅ PASS |
 | MT-06.7 | Migração exige seleção/backup/confirmação e isola resultados | `tests/backend/test_fleet.py:213-221,234-260` | ✅ PASS |
 
-**Status:** 50/50 critérios funcionais com evidência suficiente; o edge transversal de limpeza de cookie em `/{slug}` ainda falha.
+**Status:** ✅ 50/50 critérios funcionais e todos os edge cases com evidência suficiente.
 
 ## Confirmed Security Decisions Rechecked
 
@@ -84,7 +84,7 @@ A política de transporte agora falha fechada em `app/security/database_urls.py`
 | Edge case | Evidence | Result |
 | --------- | -------- | ------ |
 | Slug host externo/barra/caractere/reservado/>63 é rejeitado | `tests/backend/test_schemas.py:256-257`; `tests/ui-prototype.spec.cjs:436-441` | ✅ |
-| Cookie ausente não inventa header; cookie malformado/expirado/revogado/desconhecido retorna 401 e é apagado em toda superfície | APIs/dependency passam em `tests/backend/test_auth.py:164-207` e `tests/backend/test_auth_api.py:247-268`; prova independente em `GET /cliente-a` com cookie inválido retornou `401`, `Set-Cookie: None` | ❌ GAP em `/{slug}` |
+| Cookie ausente não inventa header; cookie malformado/expirado/revogado/desconhecido retorna 401 e é apagado em toda superfície | `tests/backend/test_auth_api.py:181-211` prova `/{slug}`: sem cookie 200/no header e quatro estados inválidos com 401 + flags; `tests/backend/test_auth.py:164-207` e `test_auth_api.py:271-296` cobrem dependency/API | ✅ |
 | Throttle concorrente não ultrapassa limite | `tests/backend/test_control_repository.py:216-218`; `tests/backend/test_auth_service.py:319-321` | ✅ |
 | Saves concorrentes conflitam por versão | suíte backend completa; `tests/backend/test_workspace_service.py` cobre conflito de versão | ✅ |
 | Referência ausente reverte transação | `tests/backend/test_schemas.py:103-105`; testes transacionais do workspace | ✅ |
@@ -96,30 +96,29 @@ A política de transporte agora falha fechada em `app/security/database_urls.py`
 
 ## Discrimination Sensor
 
-As mutações válidas foram aplicadas somente no worktree temporário `D:\Develop_CRM_Project_verifier_sensor_r2`, restauradas individualmente e o worktree foi removido. O porcelain do principal antes/depois permaneceu restrito aos untracked conhecidos.
+As mutações foram aplicadas somente no worktree temporário `D:\Develop_CRM_Project_verifier_sensor_r3`, restauradas individualmente e o worktree foi removido. O principal permaneceu restrito aos untracked conhecidos.
 
-| # | Mutation focused on corrections | Corrective test that killed it | Result |
-| - | ------------------------------- | ------------------------------ | ------ |
-| M1 | `auth_version += 1` → `+= 0` em mudança de perfil/status | `test_access_change_increments_auth_version_once_and_queues_revocation` (3 falhas) | ✅ Killed |
-| M2 | Desabilita revogação após commit | `test_committed_access_changes_revoke_every_changed_user_session` | ✅ Killed |
-| M3 | Aceita TLS remoto `sslmode=require` | `test_remote_database_requires_verify_full_and_root_ca` | ✅ Killed |
-| M4 | Identity mismatch registrado como routing genérico | `test_swapped_profile_is_rejected_before_business_sql` | ✅ Killed |
-| M5 | Não expira cookie inválido nas dependências/APIs | 7 casos malformed/unknown/expired/revoked | ✅ Killed |
-| M6 | Inventa expiração quando cookie está ausente | `test_missing_cookie_is_401_without_auth_lookup` | ✅ Killed |
-| M7 | Remove `no-store` das respostas `/api/auth` | `test_login_sets_only_hardened_cookie_and_never_returns_token` | ✅ Killed |
+| # | Mutation focused on final correction and retained controls | Corrective test that killed it | Result |
+| - | --------------------------------------------------------- | ------------------------------ | ------ |
+| M1 | Tenant shell volta a responder 401 sem expirar cookie | `test_tenant_shell_expires_invalid_received_cookie` (4 falhas) | ✅ Killed |
+| M2 | Helper compartilhado deixa de expirar cookie recebido | Matrizes tenant shell + auth API (8 falhas) | ✅ Killed |
+| M3 | Helper inventa `Set-Cookie` quando cookie está ausente | `test_missing_cookie_is_401_without_auth_lookup` | ✅ Killed |
+| M4 | `auth_version += 1` → `+= 0` em perfil/status | `test_access_change_increments_auth_version_once_and_queues_revocation` (3 falhas) | ✅ Killed |
+| M5 | TLS remoto aceita `sslmode=require` | `test_remote_database_requires_verify_full_and_root_ca` | ✅ Killed |
+| M6 | Identity mismatch é auditado como routing genérico | `test_swapped_profile_is_rejected_before_business_sql` | ✅ Killed |
 
-**Sensor depth:** P0-full manual, 7 mutações válidas focadas em T28-T32. Quatro invocações preparatórias com seletor/âncora/basetemp incorretos foram descartadas e repetidas corretamente; não contam como kill.
-**Sensor verdict:** 7/7 killed, 0 survived. PASS ✅
+**Sensor depth:** P0-full manual, 6 mutações válidas, incluindo a remoção exata do fix T34 e controles críticos anteriores.
+**Sensor verdict:** 6/6 killed, 0 survived. PASS ✅
 
 ## Gate Check
 
 - **Build:** `python -m compileall -q app migrations migrations_control`; compatibility; Compose; backend; browser; runbook; Apache.
-- **Gate totals:** 529 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 contract 27/27; runbook 41/41; Apache 32/32; Compose válido.
+- **Gate totals:** 534 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 contract 27/27; runbook 41/41; Apache 32/32; Compose válido.
 - **Warnings:** 2 (Starlette deprecation e Pydantic alias), sem falha.
 - **Before feature:** 97 backend e 69 browser.
-- **After corrections:** 529 backend e 93 browser.
-- **Delta from baseline:** +432 backend, +24 browser.
-- **Structural validators after report:** `validate_spec` 0/0; `validate_tasks --strict` 0/0; `validate_state` 1 erro esperado porque o veredito é FAIL e a feature permanece aberta.
+- **After corrections:** 534 backend e 93 browser.
+- **Delta from baseline:** +437 backend, +24 browser.
+- **Structural validators after closure:** `validate_spec` 0/0; `validate_tasks --strict` 0/0; `validate_state` 0/0.
 
 ## Code Quality
 
@@ -127,48 +126,41 @@ As mutações válidas foram aplicadas somente no worktree temporário `D:\Devel
 | --------- | ------ |
 | Minimum/surgical code and no unrelated scope | ✅ |
 | Physical database isolation, explicit workspace and forced RLS | ✅ |
-| Session/cookie core and role policy | ⚠️ Revogação completa; limpeza ainda falta em `/{slug}` |
+| Session/cookie core and role policy | ✅ Revogação e limpeza uniformes em dependency, API e tenant shell |
 | Redacted security observability | ✅ Revogação, routing/identity e 401/403 cobertos |
 | Remote database TLS contract | ✅ `verify-full` + CA; loopback somente opt-in |
-| Spec-anchored outcome check | ❌ 50/50 ACs, mas um edge transversal ainda falha |
+| Spec-anchored outcome check | ✅ 50/50 ACs e todos os edge cases |
 | Every in-scope test is claimed | ✅ |
 | Documented guidelines | ✅ `pyproject.toml`, `README.md`, feature design/tasks |
 
 ## Interactive UAT
 
-Não executado. A feature é user-facing, mas o protocolo para no gate automatizado FAIL. O UAT de locator/login/logout/identidade deverá ocorrer após corrigir e reverificar os gaps.
+O fluxo user-facing foi exercitado localmente por 93 cenários browser, incluindo locator, rota tenant, login, sessão, identidade imutável, cache namespaced e logout. O UAT humano no ambiente de destino permanece gate operacional do cutover e não foi executado porque deploy/produção estão fora do escopo autorizado desta validação.
 
-## Fix Plan
+## Resolved Gap
 
-### Fix 1: Expirar cookie inválido também em `GET /{slug}`
-
-- **Root cause:** `tenant_shell` em `app/main.py` captura `AuthenticationError` e cria `_error(401, ...)` diretamente; esse caminho não reutiliza `_unauthenticated_error`/header endurecido do resolver.
-- **Corrective test:** no factory/API test, chamar `GET /cliente-a` com cookie malformado e com gateway simulando unknown/expired/revoked; exigir `401` e `Set-Cookie` com `Max-Age=0`, `Expires`, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/` e sem `Domain`. Chamar sem cookie e exigir `200` da tela de login sem `Set-Cookie`.
-- **Fix:** extrair uma única rotina pública de expiração/endurecimento para todos os caminhos HTTP que rejeitam cookie recebido, preservando o comportamento público/session-aware sem cookie.
-- **Priority:** Major; bloqueia PASS/T27.
-
-Os gaps anteriores de revogação, TLS, auditoria, no-store e checklist estão encerrados por evidência nesta rodada.
+T34 centralizou a rejeição da tenant shell no mesmo `unauthenticated_error(request)` usado pelas APIs. A matriz independente confirmou: sem cookie → 200/no `Set-Cookie`; malformed/unknown/expired/revoked → 401 e cookie `__Host-` expirado com todos os atributos endurecidos. Não restam gaps de implementação nesta rodada.
 
 ## Requirement Traceability Update
 
 | Requirement | Previous | Verification result |
 | ----------- | -------- | ------------------- |
-| MT-01 | Implementing | ✅ Evidence complete |
-| MT-02 | Implementing | ✅ Acceptance criteria evidenced; shared cookie edge remains under MT-07 |
-| MT-03 | Implementing | ✅ Evidence complete, including remote TLS |
-| MT-04 | Implementing | ✅ Evidence complete |
-| MT-05 | Implementing | ✅ Evidence complete |
-| MT-06 | Implementing | ✅ Evidence complete |
-| MT-07 | Implementing | ❌ Needs Fix (invalid-cookie edge) |
+| MT-01 | Implementing | ✅ Verified |
+| MT-02 | Implementing | ✅ Verified |
+| MT-03 | Implementing | ✅ Verified |
+| MT-04 | Implementing | ✅ Verified |
+| MT-05 | Implementing | ✅ Verified |
+| MT-06 | Implementing | ✅ Verified |
+| MT-07 | Implementing | ✅ Verified |
 
-`spec.md` não foi marcado Verified e T27 permanece In Progress.
+`spec.md` foi marcado Verified para MT-01..MT-07 e T27 foi concluída pelo Fresh Verifier.
 
 ## Summary
 
-**Overall:** ❌ Not Ready
+**Overall:** ✅ Ready
 
-**Spec-anchored check:** 50/50 listed ACs matched; 1 failed cross-cutting edge case (`GET /{slug}` invalid-cookie cleanup).
-**Sensor:** 7/7 valid mutations killed; 0 survived.
-**Gate:** 529 backend + 93 browser passed; compatibility 27/27, runbook 41/41 and Apache 32/32.
+**Spec-anchored check:** 50/50 listed ACs and every listed edge matched.
+**Sensor:** 6/6 valid mutations killed; 0 survived.
+**Gate:** 534 backend + 93 browser passed; compatibility 27/27, runbook 41/41 and Apache 32/32.
 
-Os seis gaps da primeira rodada foram corrigidos nas APIs, dependências e operação. A feature ainda não pode ser concluída porque a rota session-aware `GET /{slug}` não apaga um cookie inválido ao responder 401. Após corrigir e adicionar o teste exato, é necessário repetir o gate proporcional, a verificação independente e o UAT.
+A implementação satisfaz o modelo multiempresa com banco físico por tenant, sessão opaca central, fail-closed, TLS remoto verificado, RLS, autorização server-side, auditoria redigida, provisionamento/frota e frontend/cache isolados. T34 fechou o último edge de cookie da tenant shell; nenhum gap de implementação sobreviveu à rodada final.
