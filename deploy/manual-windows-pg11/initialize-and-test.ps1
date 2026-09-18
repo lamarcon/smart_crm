@@ -14,6 +14,7 @@ $ErrorActionPreference = "Stop"
 & (Join-Path $PSScriptRoot "start-smart-crm.ps1") -AppRoot $AppRoot -EnvFile $EnvFile -ValidateOnly
 $settings = Get-Content -LiteralPath $EnvFile | Where-Object { $_ -and -not $_.StartsWith("#") } | Out-String | ConvertFrom-StringData
 $env:PGPASSWORD = $settings.SMART_CRM_DB_PASSWORD
+$env:SMART_CRM_CONTROL_DATABASE_URL = $settings.SMART_CRM_CONTROL_DATABASE_URL
 $env:SMART_CRM_DATABASE_URL = "postgresql+psycopg://smartcrm:$($settings.SMART_CRM_DB_PASSWORD)@127.0.0.1:5432/smartcrm?connect_timeout=5"
 
 try {
@@ -22,11 +23,23 @@ try {
 
     Push-Location $AppRoot
     try {
-        $alembicArguments = Get-SmartCrmAlembicUpgradeArguments
-        & ".\.venv\Scripts\python.exe" @alembicArguments
-        Assert-SmartCrmCommandSucceeded -ExitCode $LASTEXITCODE -FailureMessage "Migracao Alembic falhou. Apache permanece inalterado."
-        & ".\.venv\Scripts\python.exe" -m alembic current
-        if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel confirmar o head do Alembic." }
+        $controlUpgrade = Get-SmartCrmControlAlembicUpgradeArguments
+        & ".\.venv\Scripts\python.exe" @controlUpgrade
+        Assert-SmartCrmCommandSucceeded -ExitCode $LASTEXITCODE -FailureMessage "Migracao do banco de controle falhou. Apache permanece inalterado."
+
+        $controlCurrent = Get-SmartCrmControlAlembicCurrentArguments
+        $controlRevision = & ".\.venv\Scripts\python.exe" @controlCurrent 2>&1
+        Assert-SmartCrmCommandSucceeded -ExitCode $LASTEXITCODE -FailureMessage "Nao foi possivel confirmar a revisao do banco de controle."
+        Assert-SmartCrmAlembicRevision -Output $controlRevision -ExpectedRevision "c01a5d8e4f20" -DatabaseLabel "controle"
+
+        $tenantUpgrade = Get-SmartCrmTenantAlembicUpgradeArguments
+        & ".\.venv\Scripts\python.exe" @tenantUpgrade
+        Assert-SmartCrmCommandSucceeded -ExitCode $LASTEXITCODE -FailureMessage "Migracao do banco tenant smartcrm falhou. Apache permanece inalterado."
+
+        $tenantCurrent = Get-SmartCrmTenantAlembicCurrentArguments
+        $tenantRevision = & ".\.venv\Scripts\python.exe" @tenantCurrent 2>&1
+        Assert-SmartCrmCommandSucceeded -ExitCode $LASTEXITCODE -FailureMessage "Nao foi possivel confirmar a revisao do banco tenant smartcrm."
+        Assert-SmartCrmAlembicRevision -Output $tenantRevision -ExpectedRevision "a4c9d2e7f1b6" -DatabaseLabel "tenant smartcrm"
     }
     finally { Pop-Location }
 
@@ -41,5 +54,6 @@ try {
 }
 finally {
     Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    Remove-Item Env:SMART_CRM_CONTROL_DATABASE_URL -ErrorAction SilentlyContinue
     Remove-Item Env:SMART_CRM_DATABASE_URL -ErrorAction SilentlyContinue
 }

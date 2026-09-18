@@ -185,12 +185,77 @@ def test_environment_policy_emits_exact_external_database_contract():
     assert '$programData = "C:\\ProgramData\\SmartCRM"' in install
 
 
-def test_policy_emits_exact_alembic_and_loopback_uvicorn_commands():
-    alembic = run_policy("@(Get-SmartCrmAlembicUpgradeArguments) | ConvertTo-Json -Compress")
+def test_policy_emits_separate_exact_alembic_and_loopback_uvicorn_commands():
+    control_upgrade = run_policy(
+        "@(Get-SmartCrmControlAlembicUpgradeArguments) | ConvertTo-Json -Compress"
+    )
+    control_current = run_policy(
+        "@(Get-SmartCrmControlAlembicCurrentArguments) | ConvertTo-Json -Compress"
+    )
+    tenant_upgrade = run_policy(
+        "@(Get-SmartCrmTenantAlembicUpgradeArguments) | ConvertTo-Json -Compress"
+    )
+    tenant_current = run_policy(
+        "@(Get-SmartCrmTenantAlembicCurrentArguments) | ConvertTo-Json -Compress"
+    )
     uvicorn = run_policy("@(Get-SmartCrmUvicornArguments) | ConvertTo-Json -Compress")
 
-    assert json.loads(alembic.stdout) == ["-m", "alembic", "upgrade", "head"]
+    assert json.loads(control_upgrade.stdout) == [
+        "-m", "alembic", "-c", "alembic-control.ini", "upgrade", "c01a5d8e4f20"
+    ]
+    assert json.loads(control_current.stdout) == [
+        "-m", "alembic", "-c", "alembic-control.ini", "current"
+    ]
+    assert json.loads(tenant_upgrade.stdout) == [
+        "-m", "alembic", "-c", "alembic.ini", "upgrade", "a4c9d2e7f1b6"
+    ]
+    assert json.loads(tenant_current.stdout) == [
+        "-m", "alembic", "-c", "alembic.ini", "current"
+    ]
     assert json.loads(uvicorn.stdout) == ["-m", "uvicorn", "app.server:create_central_app", "--factory", "--host", "127.0.0.1", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
+
+
+def test_initializer_migrates_and_verifies_control_then_selected_tenant_before_publish():
+    deployment = PROJECT_ROOT / "deploy/manual-windows-pg11"
+    initialize = (deployment / "initialize-and-test.ps1").read_text(encoding="utf-8")
+    start = (deployment / "start-smart-crm.ps1").read_text(encoding="utf-8")
+    ordered_tokens = [
+        "Get-SmartCrmControlAlembicUpgradeArguments",
+        "Get-SmartCrmControlAlembicCurrentArguments",
+        "Get-SmartCrmTenantAlembicUpgradeArguments",
+        "Get-SmartCrmTenantAlembicCurrentArguments",
+        "install-scheduled-task.ps1",
+    ]
+
+    assert all(token in initialize for token in ordered_tokens)
+    assert [initialize.index(token) for token in ordered_tokens] == sorted(
+        initialize.index(token) for token in ordered_tokens
+    )
+    assert "$env:SMART_CRM_CONTROL_DATABASE_URL" in initialize
+    assert "$env:SMART_CRM_DATABASE_URL" in initialize
+    assert "Assert-SmartCrmAlembicRevision" in initialize
+    assert "c01a5d8e4f20" in initialize
+    assert "a4c9d2e7f1b6" in initialize
+    assert "alembic" not in start.lower()
+
+
+def test_alembic_revision_gate_rejects_wrong_or_unheaded_revision():
+    valid = run_policy(
+        "Assert-SmartCrmAlembicRevision -Output @('c01a5d8e4f20 (head)') "
+        "-ExpectedRevision 'c01a5d8e4f20' -DatabaseLabel 'controle'"
+    )
+    wrong = run_policy(
+        "Assert-SmartCrmAlembicRevision -Output @('revision-errada (head)') "
+        "-ExpectedRevision 'c01a5d8e4f20' -DatabaseLabel 'controle'"
+    )
+    unheaded = run_policy(
+        "Assert-SmartCrmAlembicRevision -Output @('c01a5d8e4f20') "
+        "-ExpectedRevision 'c01a5d8e4f20' -DatabaseLabel 'controle'"
+    )
+
+    assert valid.returncode == 0
+    assert wrong.returncode != 0
+    assert unheaded.returncode != 0
 
 
 def test_windows_startup_accepts_complete_central_runtime_environment(tmp_path: Path):

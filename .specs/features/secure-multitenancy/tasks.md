@@ -990,10 +990,10 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 ### T42: Separate control and tenant migration gates
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Replace the one-line legacy initializer with explicit control and selected-tenant migration/revision gates that run before task publication and never from web startup.
-**Where:** deploy/manual-windows-pg11/initialize-and-test.ps1, deploy/manual-windows-pg11/deployment-policy.ps1, scripts/verify_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_outcomes.py
+**Where:** deploy/manual-windows-pg11/initialize-and-test.ps1, deploy/manual-windows-pg11/deployment-policy.ps1, scripts/verify_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_outcomes.py, tests/backend/test_manual_windows_pg11_deployment.py
 **Depends on:** T41
 **Reuses:** Both Alembic configurations, exact revisions and migration failure gate.
 **Requirement:** MT-05, MT-06
@@ -1001,9 +1001,9 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 **Done when:**
 
-- [ ] Control migration uses alembic-control.ini and confirms c01a5d8e4f20 before any tenant step.
-- [ ] Tenant migration uses alembic.ini only for an explicit selected database and confirms a4c9d2e7f1b6 before task installation.
-- [ ] Any migration/revision failure blocks publication; no web startup contains Alembic.
+- [x] Control migration uses alembic-control.ini and confirms c01a5d8e4f20 before any tenant step.
+- [x] Tenant migration uses alembic.ini only for the explicit existing `smartcrm` database and confirms a4c9d2e7f1b6 before task installation.
+- [x] Outcome coverage passes at tests/backend/test_manual_windows_pg11_outcomes.py:188, :218 and :242; MPG-15 enforces exact revision gates and no web-startup migration; the full gate passes with PowerShell parsing, 580 backend tests, 93 browser scenarios, 15/15 package requirements, 27 Python 3.11 checks, 41 Windows runbook checks and 32 Apache checks.
 
 **Tests:** contract + outcome
 **Gate:** Build

@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = {
     "MPG-01", "MPG-02", "MPG-03", "MPG-04", "MPG-05", "MPG-06", "MPG-07",
     "MPG-08", "MPG-09", "MPG-10", "MPG-11", "MPG-12", "MPG-13", "MPG-14",
+    "MPG-15",
 }
 
 
@@ -47,12 +48,25 @@ def verify_source(root: Path) -> set[str]:
     _require("--no-index" in install and "--find-links" in install, "MPG-06", "offline-only pip flags missing", passed)
     _require(all(token in env_example for token in ("SMART_CRM_DB_NAME=smartcrm", "SMART_CRM_DB_USER=smartcrm", "SMART_CRM_DB_HOST=127.0.0.1", "SMART_CRM_DB_PORT=5432", "REPLACE_WITH_64_HEX_CHARACTERS")) and '"C:\\ProgramData\\SmartCRM"' in install and "New-SmartCrmEnvironmentLines" in install, "MPG-07", "database environment or external-secret contract mismatch", passed)
     _require(not re.search(r"(?i)\b(?:Stop|Restart|Set|Remove)-Service\b|ALTER\s+SYSTEM|pg_ctl", scripts), "MPG-08", "PG11 service mutation command found", passed)
-    _require('return @("-m", "alembic", "upgrade", "head")' in policy and "Get-SmartCrmAlembicUpgradeArguments" in initialize and "CREATE TABLE" not in scripts, "MPG-09", "Alembic-only schema creation contract missing", passed)
+    _require(all(token in policy for token in (
+        '"alembic-control.ini", "upgrade", "c01a5d8e4f20"',
+        '"alembic.ini", "upgrade", "a4c9d2e7f1b6"',
+    )) and all(token in initialize for token in (
+        "Get-SmartCrmControlAlembicUpgradeArguments",
+        "Get-SmartCrmTenantAlembicUpgradeArguments",
+    )) and "CREATE TABLE" not in scripts, "MPG-09", "separate Alembic-only schema migration contract missing", passed)
     _require('"--host", "127.0.0.1", "--port", "8080"' in policy and "Get-SmartCrmUvicornArguments" in start and "@uvicornArguments" in start, "MPG-10", "loopback Uvicorn binding missing", passed)
     _require('$Health.status -eq "ok" -and $Health.database -eq "ok"' in policy and "Test-SmartCrmHealth -Health $health" in initialize and "LOCAL GATE: PASS" in initialize, "MPG-11", "exact health gate before Apache missing", passed)
     _require('$_.LocalAddress -eq "127.0.0.1"' in policy and "$ipv4Loopback.Count -eq 0" in policy and "Assert-SmartCrmPostgresListeners -Listeners $listeners" in install, "MPG-12", "exact IPv4 PostgreSQL listener gate missing", passed)
     _require("\\du smartcrm" in readme and "\\l smartcrm" in readme and "não a recrie nem apague" in readme, "MPG-13", "existing role/database validation guidance missing", passed)
     _require("Assert-SmartCrmCommandSucceeded" in initialize and initialize.index("Assert-SmartCrmCommandSucceeded") < initialize.index("install-scheduled-task.ps1") and not re.search(r"(?i)httpd\.exe|apache.*restart", initialize), "MPG-14", "migration failure does not block publication", passed)
+    _require(all(token in initialize for token in (
+        "Get-SmartCrmControlAlembicCurrentArguments",
+        "Get-SmartCrmTenantAlembicCurrentArguments",
+        "Assert-SmartCrmAlembicRevision",
+        "c01a5d8e4f20",
+        "a4c9d2e7f1b6",
+    )) and "alembic" not in start.lower(), "MPG-15", "exact revisions are not verified separately before publication or web startup runs migrations", passed)
     _require(all("==" in line for line in requirements.splitlines() if line.strip()), "MPG-02", "runtime dependency is not pinned", passed)
     return passed
 
@@ -91,7 +105,7 @@ def main() -> int:
     missing = REQUIREMENTS - passed
     if missing:
         raise AssertionError(f"requirements without evidence: {sorted(missing)}")
-    print("manual Windows PostgreSQL 11 deployment: PASS (14/14 requirements)")
+    print("manual Windows PostgreSQL 11 deployment: PASS (15/15 requirements)")
     return 0
 
 

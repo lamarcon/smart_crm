@@ -40,8 +40,33 @@ function New-SmartCrmEnvironmentLines {
     )
 }
 
-function Get-SmartCrmAlembicUpgradeArguments {
-    return @("-m", "alembic", "upgrade", "head")
+function Get-SmartCrmControlAlembicUpgradeArguments {
+    return @("-m", "alembic", "-c", "alembic-control.ini", "upgrade", "c01a5d8e4f20")
+}
+
+function Get-SmartCrmControlAlembicCurrentArguments {
+    return @("-m", "alembic", "-c", "alembic-control.ini", "current")
+}
+
+function Get-SmartCrmTenantAlembicUpgradeArguments {
+    return @("-m", "alembic", "-c", "alembic.ini", "upgrade", "a4c9d2e7f1b6")
+}
+
+function Get-SmartCrmTenantAlembicCurrentArguments {
+    return @("-m", "alembic", "-c", "alembic.ini", "current")
+}
+
+function Assert-SmartCrmAlembicRevision {
+    param(
+        [object[]]$Output,
+        [string]$ExpectedRevision,
+        [string]$DatabaseLabel
+    )
+    $text = @($Output) -join [Environment]::NewLine
+    $pattern = "(?m)^\s*" + [regex]::Escape($ExpectedRevision) + "\s+\(head\)\s*$"
+    if (-not [regex]::IsMatch($text, $pattern)) {
+        throw "Revisao Alembic inesperada para $DatabaseLabel."
+    }
 }
 
 function Get-SmartCrmUvicornArguments {

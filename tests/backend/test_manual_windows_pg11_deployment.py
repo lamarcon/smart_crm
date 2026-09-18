@@ -108,6 +108,21 @@ def test_source_contract_rejects_postgresql_service_restart(tmp_path: Path):
         verifier.verify_source(tmp_path)
 
 
+def test_source_contract_rejects_missing_control_revision_gate(tmp_path: Path):
+    copy_contract_fixture(tmp_path)
+    initialize = tmp_path / "deploy/manual-windows-pg11/initialize-and-test.ps1"
+    initialize.write_text(
+        initialize.read_text(encoding="utf-8").replace(
+            "Get-SmartCrmControlAlembicCurrentArguments",
+            "Get-UnreviewedControlRevision",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AssertionError, match="MPG-15"):
+        verifier.verify_source(tmp_path)
+
+
 def test_runtime_dependencies_match_project_dependencies():
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project_dependencies = set(project["project"]["dependencies"])
