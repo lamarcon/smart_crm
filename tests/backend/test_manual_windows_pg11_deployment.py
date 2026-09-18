@@ -9,6 +9,7 @@ import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MANUAL_README = PROJECT_ROOT / "deploy/manual-windows-pg11/LEIA-ME.md"
 
 
 def load_script(name: str):
@@ -121,6 +122,24 @@ def test_source_contract_rejects_missing_control_revision_gate(tmp_path: Path):
 
     with pytest.raises(AssertionError, match="MPG-15"):
         verifier.verify_source(tmp_path)
+
+
+def test_brbots_cutover_is_versioned_preserves_data_and_keeps_secrets_interactive():
+    text = MANUAL_README.read_text(encoding="utf-8")
+
+    assert "smart-crm-<SHA>" in text
+    assert "Nao sobrescreva a release ativa" in text
+    assert "git pull" in text and "proibido" in text
+    assert "O database `smartcrm` permanece" in text
+    assert "tenant da BRBots" in text
+    assert "`smartcrm_control` contem somente" in text
+    assert "nao copie dados comerciais" in text
+    assert 'register-tenant brbots --display-name "brbots"' in text
+    assert "--secret-ref brbots-db --expected-revision a4c9d2e7f1b6" in text
+    assert "activate-default brbots --admin-email lfmarcon@brbots.com" in text
+    assert '--admin-name "Luiz Felipe"' in text
+    assert "senhas sao solicitadas interativamente" in text
+    assert "autorizacao de producao separada" in text
 
 
 def test_runtime_dependencies_match_project_dependencies():

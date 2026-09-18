@@ -25,9 +25,15 @@ function Assert-SmartCrmPostgresListeners {
 }
 
 function New-SmartCrmEnvironmentLines {
-    param([string]$Password)
+    param(
+        [string]$Password,
+        [string]$ControlPassword
+    )
     if ($Password -notmatch "^[0-9a-fA-F]{64}$") {
         throw "A senha do banco deve conter 64 caracteres hexadecimais."
+    }
+    if ($ControlPassword -notmatch "^[0-9a-fA-F]{64}$") {
+        throw "A senha do banco de controle deve conter 64 caracteres hexadecimais."
     }
     return @(
         "SMART_CRM_DB_NAME=smartcrm",
@@ -36,7 +42,16 @@ function New-SmartCrmEnvironmentLines {
         "SMART_CRM_DB_HOST=127.0.0.1",
         "SMART_CRM_DB_PORT=5432",
         "SMART_CRM_BIND_IP=127.0.0.1",
-        "SMART_CRM_PORT=8080"
+        "SMART_CRM_PORT=8080",
+        "SMART_CRM_CONTROL_DATABASE_URL=postgresql+psycopg://smartcrm_control:$ControlPassword@127.0.0.1:5432/smartcrm_control?connect_timeout=5",
+        "SMART_CRM_TENANT_SECRET_STORE=C:\ProgramData\SmartCRM\tenant-secrets",
+        "SMART_CRM_EXPECTED_ORIGIN=https://sc2030.brbots.com",
+        "SMART_CRM_TENANT_MAX_CACHED_ENGINES=16",
+        "SMART_CRM_TENANT_POOL_SIZE=2",
+        "SMART_CRM_TENANT_MAX_OVERFLOW=2",
+        "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS=5",
+        "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS=3",
+        "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1"
     )
 }
 

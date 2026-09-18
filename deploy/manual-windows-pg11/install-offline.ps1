@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$AppRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")),
-    [string]$PythonPath = "C:\brbots\python\python.exe"
+    [string]$PythonPath = "C:\brbots\python\python.exe",
+    [string]$ServiceAccount = "$env:COMPUTERNAME\SmartCRMService"
 )
 
 Set-StrictMode -Version Latest
@@ -12,6 +13,17 @@ $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal -ArgumentList $identity
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "Execute este script em PowerShell como Administrador."
+}
+if (($ServiceAccount -split "\\")[-1] -ne "SmartCRMService") {
+    throw "ServiceAccount deve apontar para a conta dedicada SmartCRMService."
+}
+try {
+    $serviceSid = (New-Object Security.Principal.NTAccount($ServiceAccount)).Translate(
+        [Security.Principal.SecurityIdentifier]
+    ).Value
+}
+catch {
+    throw "A conta Windows SmartCRMService deve existir antes da instalacao."
 }
 
 & (Join-Path $PSScriptRoot "test-package-integrity.ps1") -AppRoot $AppRoot
@@ -59,20 +71,38 @@ if ($LASTEXITCODE -ne 0) { throw "Falha ao compilar a aplicacao." }
 
 $programData = "C:\ProgramData\SmartCRM"
 $envPath = Join-Path $programData "server.env"
+$logDirectory = Join-Path $programData "logs"
+$secretDirectory = Join-Path $programData "tenant-secrets"
 New-Item -ItemType Directory -Path $programData -Force | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $programData "logs") -Force | Out-Null
+New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $secretDirectory -Force | Out-Null
 
 if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
     $bytes = New-Object byte[] 32
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     $dbPassword = -join ($bytes | ForEach-Object { $_.ToString("x2") })
-    $envLines = New-SmartCrmEnvironmentLines -Password $dbPassword
+    $controlBytes = New-Object byte[] 32
+    $controlRng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $controlRng.GetBytes($controlBytes) } finally { $controlRng.Dispose() }
+    $controlPassword = -join ($controlBytes | ForEach-Object { $_.ToString("x2") })
+    $envLines = New-SmartCrmEnvironmentLines -Password $dbPassword -ControlPassword $controlPassword
     [IO.File]::WriteAllLines($envPath, $envLines, (New-Object Text.UTF8Encoding($false)))
     Remove-Variable dbPassword
-    icacls $envPath /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
+    Remove-Variable controlPassword
 }
 
-& (Join-Path $PSScriptRoot "start-smart-crm.ps1") -AppRoot $AppRoot -ValidateOnly
+icacls $programData /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*$($serviceSid):(RX)" | Out-Null
+icacls $logDirectory /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*$($serviceSid):(OI)(CI)M" | Out-Null
+icacls $secretDirectory /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*$($serviceSid):(OI)(CI)M" | Out-Null
+icacls $envPath /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*$($serviceSid):R" | Out-Null
+
+$environmentText = Get-Content -LiteralPath $envPath -Raw
+if ($environmentText -match "(?m)^SMART_CRM_CONTROL_DATABASE_URL=") {
+    & (Join-Path $PSScriptRoot "start-smart-crm.ps1") -AppRoot $AppRoot -ValidateOnly
+}
+else {
+    Write-Output "legacy server.env detected: complete o upgrade multiempresa descrito no LEIA-ME.md"
+}
 Write-Output "offline install: PASS"
 Write-Output "Proximo passo: siga a secao 'Criar banco e role' do LEIA-ME.md."

@@ -1011,10 +1011,10 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 ### T43: Document side-by-side BRBots cutover and onboarding
 
-**Status:** Pending
+**Status:** In Progress (implementation complete; independent verification pending)
 
 **What:** Align the offline guide and package verifier with a versioned release, preserved existing tenant database, separate control database and the approved BRBots administrative commands.
-**Where:** deploy/manual-windows-pg11/LEIA-ME.md, scripts/verify_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_deployment.py, .specs/STATE.md
+**Where:** deploy/manual-windows-pg11/LEIA-ME.md, deploy/manual-windows-pg11/deployment-policy.ps1, deploy/manual-windows-pg11/install-offline.ps1, deploy/manual-windows-pg11/server.env.example, deploy/manual-windows-pg11/start-smart-crm.ps1, scripts/verify_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_outcomes.py, tests/backend/test_windows_multitenant_env.py, .specs/STATE.md
 **Depends on:** T42
 **Reuses:** Fleet cutover gates in RUNBOOK_DEPLOY_WINDOWS_SERVER_2016.md.
 **Requirement:** MT-05, MT-06
@@ -1022,9 +1022,9 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 **Done when:**
 
-- [ ] The guide uses `smart-crm-<SHA>`, preserves the active release and forbids overwrite/git pull.
-- [ ] `smartcrm` remains the BRBots tenant, `smartcrm_control` contains only control data, and no commercial copy is instructed.
-- [ ] The guide names `brbots`, `Luiz Felipe` and `lfmarcon@brbots.com`, keeps all passwords interactive, and requires a separate production authorization.
+- [x] The guide uses `smart-crm-<SHA>`, preserves the active release and forbids overwrite/git pull.
+- [x] `smartcrm` remains the BRBots tenant, `smartcrm_control` contains only control data, and no commercial copy is instructed.
+- [x] The guide names `brbots`, `Luiz Felipe` and `lfmarcon@brbots.com`, keeps all passwords interactive, and requires a separate production authorization.
 - [ ] Package verifier, build gate, independent Verifier and structural validators pass.
 
 **Tests:** documentation contract + build

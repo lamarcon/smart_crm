@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = {
     "MPG-01", "MPG-02", "MPG-03", "MPG-04", "MPG-05", "MPG-06", "MPG-07",
     "MPG-08", "MPG-09", "MPG-10", "MPG-11", "MPG-12", "MPG-13", "MPG-14",
-    "MPG-15",
+    "MPG-15", "MPG-16", "MPG-17", "MPG-18",
 }
 
 
@@ -58,7 +58,7 @@ def verify_source(root: Path) -> set[str]:
     _require('"--host", "127.0.0.1", "--port", "8080"' in policy and "Get-SmartCrmUvicornArguments" in start and "@uvicornArguments" in start, "MPG-10", "loopback Uvicorn binding missing", passed)
     _require('$Health.status -eq "ok" -and $Health.database -eq "ok"' in policy and "Test-SmartCrmHealth -Health $health" in initialize and "LOCAL GATE: PASS" in initialize, "MPG-11", "exact health gate before Apache missing", passed)
     _require('$_.LocalAddress -eq "127.0.0.1"' in policy and "$ipv4Loopback.Count -eq 0" in policy and "Assert-SmartCrmPostgresListeners -Listeners $listeners" in install, "MPG-12", "exact IPv4 PostgreSQL listener gate missing", passed)
-    _require("\\du smartcrm" in readme and "\\l smartcrm" in readme and "não a recrie nem apague" in readme, "MPG-13", "existing role/database validation guidance missing", passed)
+    _require("\\du smartcrm" in readme and "\\l smartcrm" in readme and "nao a recrie nem apague" in readme, "MPG-13", "existing role/database validation guidance missing", passed)
     _require("Assert-SmartCrmCommandSucceeded" in initialize and initialize.index("Assert-SmartCrmCommandSucceeded") < initialize.index("install-scheduled-task.ps1") and not re.search(r"(?i)httpd\.exe|apache.*restart", initialize), "MPG-14", "migration failure does not block publication", passed)
     _require(all(token in initialize for token in (
         "Get-SmartCrmControlAlembicCurrentArguments",
@@ -67,6 +67,30 @@ def verify_source(root: Path) -> set[str]:
         "c01a5d8e4f20",
         "a4c9d2e7f1b6",
     )) and "alembic" not in start.lower(), "MPG-15", "exact revisions are not verified separately before publication or web startup runs migrations", passed)
+    _require(all(token in readme for token in (
+        "smart-crm-<SHA>",
+        "Nao sobrescreva a release ativa",
+        "`git pull` e proibido",
+        "autorizacao de producao separada",
+    )), "MPG-16", "side-by-side release or separate production authorization missing", passed)
+    _require(all(token in readme for token in (
+        "O database `smartcrm` permanece",
+        "tenant da BRBots",
+        "`smartcrm_control` contem somente",
+        'register-tenant brbots --display-name "brbots"',
+        "activate-default brbots --admin-email lfmarcon@brbots.com",
+        '--admin-name "Luiz Felipe"',
+    )), "MPG-17", "BRBots data-preservation or administrative onboarding contract missing", passed)
+    _require(all(token in env_example for token in (
+        "SMART_CRM_CONTROL_DATABASE_URL=REPLACE_WITH_CONTROL_DATABASE_URL",
+        "SMART_CRM_TENANT_SECRET_STORE=C:\\ProgramData\\SmartCRM\\tenant-secrets",
+        "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1",
+    )) and all(token in install for token in (
+        "-ControlPassword $controlPassword",
+        "serviceSid",
+        "tenant-secrets",
+        "SmartCRMService",
+    )), "MPG-18", "complete central environment or SmartCRMService ACL contract missing", passed)
     _require(all("==" in line for line in requirements.splitlines() if line.strip()), "MPG-02", "runtime dependency is not pinned", passed)
     return passed
 
@@ -105,7 +129,7 @@ def main() -> int:
     missing = REQUIREMENTS - passed
     if missing:
         raise AssertionError(f"requirements without evidence: {sorted(missing)}")
-    print("manual Windows PostgreSQL 11 deployment: PASS (15/15 requirements)")
+    print("manual Windows PostgreSQL 11 deployment: PASS (18/18 requirements)")
     return 0
 
 

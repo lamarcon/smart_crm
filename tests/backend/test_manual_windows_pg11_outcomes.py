@@ -167,7 +167,11 @@ def test_postgresql_listener_policy_requires_ipv4_loopback_and_rejects_public_bi
 
 def test_environment_policy_emits_exact_external_database_contract():
     password = "a" * 64
-    result = run_policy(f"@(New-SmartCrmEnvironmentLines -Password '{password}') | ConvertTo-Json -Compress")
+    control_password = "b" * 64
+    result = run_policy(
+        f"@(New-SmartCrmEnvironmentLines -Password '{password}' "
+        f"-ControlPassword '{control_password}') | ConvertTo-Json -Compress"
+    )
     values = dict(line.split("=", 1) for line in json.loads(result.stdout))
     install = (PROJECT_ROOT / "deploy/manual-windows-pg11/install-offline.ps1").read_text(encoding="utf-8")
 
@@ -180,9 +184,25 @@ def test_environment_policy_emits_exact_external_database_contract():
         "SMART_CRM_DB_PORT": "5432",
         "SMART_CRM_BIND_IP": "127.0.0.1",
         "SMART_CRM_PORT": "8080",
+        "SMART_CRM_CONTROL_DATABASE_URL": (
+            "postgresql+psycopg://smartcrm_control:"
+            f"{control_password}@127.0.0.1:5432/smartcrm_control?connect_timeout=5"
+        ),
+        "SMART_CRM_TENANT_SECRET_STORE": r"C:\ProgramData\SmartCRM\tenant-secrets",
+        "SMART_CRM_EXPECTED_ORIGIN": "https://sc2030.brbots.com",
+        "SMART_CRM_TENANT_MAX_CACHED_ENGINES": "16",
+        "SMART_CRM_TENANT_POOL_SIZE": "2",
+        "SMART_CRM_TENANT_MAX_OVERFLOW": "2",
+        "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS": "5",
+        "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS": "3",
+        "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK": "1",
     }
     assert '$envPath = Join-Path $programData "server.env"' in install
     assert '$programData = "C:\\ProgramData\\SmartCRM"' in install
+    assert "-ControlPassword $controlPassword" in install
+    assert "tenant-secrets" in install
+    assert "SmartCRMService" in install
+    assert "serviceSid" in install
 
 
 def test_policy_emits_separate_exact_alembic_and_loopback_uvicorn_commands():

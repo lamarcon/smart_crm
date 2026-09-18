@@ -32,6 +32,7 @@ def test_multitenant_environment_declares_required_runtime_inputs() -> None:
         "SMART_CRM_TENANT_MAX_OVERFLOW",
         "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS",
         "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
+        "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK",
     } <= values.keys()
 
 
@@ -71,6 +72,7 @@ def test_runtime_remains_bound_to_loopback() -> None:
 
     assert values["SMART_CRM_BIND_IP"] == "127.0.0.1"
     assert values["SMART_CRM_PORT"] == "8080"
+    assert values["SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK"] == "1"
 
 
 def test_versioned_environment_contains_no_tenant_dsn_password_or_token() -> None:
@@ -105,6 +107,7 @@ def test_environment_key_allowlist_rejects_unreviewed_inputs() -> None:
         "SMART_CRM_TENANT_MAX_OVERFLOW",
         "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS",
         "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
+        "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK",
     }
 
     assert set(values) == expected
