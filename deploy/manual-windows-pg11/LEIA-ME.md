@@ -77,8 +77,12 @@ Remove-Variable settings -ErrorAction SilentlyContinue
 
 ```powershell
 Set-Location C:\brbots\apps\smart-crm
-& .\deploy\manual-windows-pg11\initialize-and-test.ps1
+$serviceCredential = Get-Credential -UserName "$env:COMPUTERNAME\SmartCRMService" -Message "Credencial da conta dedicada do Smart CRM"
+& .\deploy\manual-windows-pg11\initialize-and-test.ps1 -ServiceCredential $serviceCredential
+Remove-Variable serviceCredential -ErrorAction SilentlyContinue
 ```
+
+A tarefa agendada roda exclusivamente nessa conta dedicada, nunca como `SYSTEM`. O cadastro dos segredos de tenant protegidos por DPAPI também deve ser executado pela mesma identidade `SmartCRMService`; outra conta Windows não conseguirá descriptografá-los. A senha é solicitada interativamente, usada apenas em memória para registrar a tarefa e não deve ser escrita em comando, arquivo ou log.
 
 O resultado obrigatório no final é:
 

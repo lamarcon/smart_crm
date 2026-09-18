@@ -969,11 +969,10 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 ### T41: Bind the scheduled task and DPAPI to a dedicated account
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Require an explicit non-SYSTEM service credential when installing the task and document that administrative provisioning must run as the same identity.
-**Where:** deploy/manual-windows-pg11/install-scheduled-task.ps1, tests/backend/test_manual_windows_pg11_outcomes.py
-**Integration touchpoints:** deploy/manual-windows-pg11/LEIA-ME.md
+**Where:** deploy/manual-windows-pg11/install-scheduled-task.ps1, deploy/manual-windows-pg11/initialize-and-test.ps1, deploy/manual-windows-pg11/LEIA-ME.md, tests/backend/test_manual_windows_pg11_outcomes.py
 **Depends on:** T40
 **Reuses:** Windows Task Scheduler and current user-bound DPAPI provider.
 **Requirement:** MT-05, MT-06
@@ -981,9 +980,9 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 **Done when:**
 
-- [ ] Installation has no SYSTEM default and requires an explicit `SmartCRMService` credential.
-- [ ] Task registration uses the supplied identity and never prints or persists the password in application files.
-- [ ] Tests prove the SYSTEM regression and missing-credential path fail before registration.
+- [x] Installation has no SYSTEM default and requires an explicit `SmartCRMService` credential.
+- [x] Task registration uses the supplied identity and never prints or persists the password in application files.
+- [x] Contract coverage at tests/backend/test_manual_windows_pg11_outcomes.py:252 proves the SYSTEM regression and mandatory-credential boundary; the full gate passes with PowerShell parsing, 577 backend tests, 93 browser scenarios, 27 Python 3.11 checks, 41 Windows runbook checks and 32 Apache checks.
 
 **Tests:** contract + outcome
 **Gate:** Build

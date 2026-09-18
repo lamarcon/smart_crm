@@ -1,11 +1,24 @@
 [CmdletBinding()]
 param(
     [string]$AppRoot = "C:\brbots\apps\smart-crm",
-    [string]$TaskName = "SmartCRM"
+    [string]$TaskName = "SmartCRM",
+    [Parameter(Mandatory = $true)]
+    [PSCredential]$ServiceCredential
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$requiredServiceAccount = "SmartCRMService"
+$serviceUser = $ServiceCredential.UserName.Trim()
+$accountParts = @($serviceUser -split "\\")
+if ($accountParts.Count -ne 2 -or $accountParts[-1] -ne $requiredServiceAccount) {
+    throw "Informe a conta dedicada SmartCRMService com nome qualificado."
+}
+$servicePassword = $ServiceCredential.GetNetworkCredential().Password
+if (-not $servicePassword) {
+    throw "A credencial da conta dedicada nao pode ter senha vazia."
+}
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal -ArgumentList $identity
@@ -21,9 +34,13 @@ foreach ($requiredFile in @($startScript, (Join-Path $AppRoot ".venv\Scripts\pyt
 $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -AppRoot "{1}"' -f $startScript, $AppRoot
 $action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument $arguments -WorkingDirectory $AppRoot
 $trigger = New-ScheduledTaskTrigger -AtStartup
-$taskPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 10 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
 
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $taskPrincipal -Settings $taskSettings -Description "Smart CRM Uvicorn loopback runtime" -Force | Out-Null
+try {
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $taskSettings -User $serviceUser -Password $servicePassword -RunLevel Highest -Description "Smart CRM Uvicorn loopback runtime" -Force | Out-Null
+}
+finally {
+    $servicePassword = $null
+}
 Start-ScheduledTask -TaskName $TaskName
 Write-Output "scheduled task registered: $TaskName"

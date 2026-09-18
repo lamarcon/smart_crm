@@ -2,7 +2,9 @@
 param(
     [string]$AppRoot = "C:\brbots\apps\smart-crm",
     [string]$EnvFile = "C:\ProgramData\SmartCRM\server.env",
-    [string]$PsqlPath = "C:\Program Files\PostgreSQL\11\bin\psql.exe"
+    [string]$PsqlPath = "C:\Program Files\PostgreSQL\11\bin\psql.exe",
+    [Parameter(Mandatory = $true)]
+    [PSCredential]$ServiceCredential
 )
 
 Set-StrictMode -Version Latest
@@ -28,7 +30,7 @@ try {
     }
     finally { Pop-Location }
 
-    & (Join-Path $PSScriptRoot "install-scheduled-task.ps1") -AppRoot $AppRoot
+    & (Join-Path $PSScriptRoot "install-scheduled-task.ps1") -AppRoot $AppRoot -ServiceCredential $ServiceCredential
     Start-Sleep -Seconds 5
     $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/health"
     if (-not (Test-SmartCrmHealth -Health $health)) {

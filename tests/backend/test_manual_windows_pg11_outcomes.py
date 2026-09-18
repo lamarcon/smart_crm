@@ -248,6 +248,28 @@ def test_migration_failure_throws_before_publication_and_apache_is_absent():
     assert "httpd.exe" not in initialize
     assert "Restart-Service" not in initialize
 
+
+def test_scheduled_task_requires_dedicated_service_credential_and_dpapi_identity():
+    deployment = PROJECT_ROOT / "deploy/manual-windows-pg11"
+    install_task = (deployment / "install-scheduled-task.ps1").read_text(
+        encoding="utf-8"
+    )
+    initialize = (deployment / "initialize-and-test.ps1").read_text(encoding="utf-8")
+    readme = (deployment / "LEIA-ME.md").read_text(encoding="utf-8")
+
+    assert "[PSCredential]$ServiceCredential" in install_task
+    assert "[Parameter(Mandatory = $true)]" in install_task
+    assert '"SmartCRMService"' in install_task
+    assert '"SYSTEM"' not in install_task
+    assert "-User $serviceUser" in install_task
+    assert "-Password $servicePassword" in install_task
+    assert "[PSCredential]$ServiceCredential" in initialize
+    assert "[Parameter(Mandatory = $true)]" in initialize
+    assert "-ServiceCredential $ServiceCredential" in initialize
+    assert "mesma identidade" in readme
+    assert "DPAPI" in readme
+    assert "Set-Content" not in install_task
+
 def test_server_app_root_defaults_match_the_existing_brbots_directory():
     expected = '[string]$AppRoot = "C:\\brbots\\apps\\smart-crm"'
     deployment = PROJECT_ROOT / "deploy/manual-windows-pg11"
