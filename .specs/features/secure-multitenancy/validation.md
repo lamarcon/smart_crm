@@ -3,9 +3,9 @@
 ## Validation: Multiempresa Seguro - PASS ✅
 
 **Verdict:** PASS ✅
-**Date:** 2026-09-17 (independent revalidation T37)
+**Date:** 2026-09-18 (independent post-PASS extension verification T38)
 **Spec:** `.specs/features/secure-multitenancy/spec.md`
-**Diff range:** `b8d677d..b493f22` (correction T37); implementation lineage remains `6962ca5..b493f22`
+**Diff range:** `1b2f0f3..22956ab` (extension T38); implementation lineage remains `6962ca5..22956ab`
 **Verifier:** independent sub-agent (author ≠ verifier)
 
 ---
@@ -18,6 +18,7 @@
 | T27 | ✅ Done | Documentação, full gate, Fresh Verifier e validate_state concluídos. |
 | T28-T35 | ✅ Done | Correções de revogação, TLS, auditoria, cookies, no-store, tenant shell e opt-in local estrito verificadas. |
 | T36-T37 | ✅ Done | Factory e teste persistido de lifecycle verificados; o mutante de shutdown/dispose foi morto. |
+| T38 | ✅ Done | Runtime local HTTPS, material efêmero, origem exata e validação OpenSSL real verificados; sensor 6/6 morto. |
 
 ## Spec-Anchored Acceptance Criteria
 
@@ -114,12 +115,12 @@ As mutações foram aplicadas somente no worktree temporário `D:\Develop_CRM_Pr
 ## Gate Check
 
 - **Build:** `python -m compileall -q app migrations migrations_control`; compatibility; Compose; backend; browser; runbook; Apache.
-- **Gate totals:** 556 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 contract 27/27; runbook 41/41; Apache 32/32; Compose válido.
+- **Gate totals:** 566 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 contract 27/27; runbook 41/41; Apache 32/32; Compose válido.
 - **Warnings:** 2 (Starlette deprecation e Pydantic alias), sem falha.
 - **Before feature:** 97 backend e 69 browser.
-- **After corrections/extensions:** 556 backend e 93 browser.
-- **Delta from baseline:** +459 backend, +24 browser.
-- **Structural validators after T37 closure:** `validate_spec` 0/0; `validate_tasks --strict` 0/0; `validate_state` 0/0.
+- **After corrections/extensions:** 566 backend e 93 browser.
+- **Delta from baseline:** +469 backend, +24 browser.
+- **Structural validators after T38 closure:** `validate_spec` 0/0; `validate_tasks --strict` 0/0; `validate_state` 0/0.
 
 ## Code Quality
 
@@ -193,26 +194,56 @@ As mutações foram aplicadas somente no worktree temporário `D:\Develop_CRM_Pr
 
 T37 fechou o único gap do relatório `b8d677d`: o teste persistido usa o alvo extraído do README, o importador real do Uvicorn, a factory pública e o lifespan do TestClient. Router e control são verificados separadamente antes e depois do shutdown.
 
-## Requirement Traceability Update
+## Post-PASS Extension Verification — T38
 
-| Requirement | Previous status | T37 verification result |
-| ----------- | --------------- | ----------------------- |
+| T38 criterion | Independent evidence | Result |
+| ------------- | -------------------- | ------ |
+| Origem documentada é HTTPS e coincide exatamente com host/porta do Uvicorn | `README.md:113-114`; `tests/backend/test_readme_multidatabase.py:76-92`; `tests/backend/test_auth.py:25-28` | ✅ PASS |
+| OpenSSL é autodetectado no PATH ou Git for Windows e gera certificado efêmero com SAN IP | `README.md:94-110`; `tests/backend/test_readme_multidatabase.py:111-158`; execução independente com fallback `C:\Program Files\Git\usr\bin\openssl.exe` confirmou `IP Address:127.0.0.1` | ✅ PASS |
+| Material fica sob `.local/dev-tls`, ignorado e sem PEM/key/cert rastreado | `.gitignore:6`; `README.md:101-104`; `tests/backend/test_readme_multidatabase.py:96-108`; `git ls-files` não encontrou material TLS | ✅ PASS |
+| Uvicorn recebe `--ssl-keyfile` e `--ssl-certfile`; README alerta confiança local e limpa ambiente/material | `README.md:114,117,119-124`; `tests/backend/test_readme_multidatabase.py:89-108` | ✅ PASS |
+| AuthSettings aceita HTTPS com porta válida e rejeita HTTP, path, credentials, porta zero e fora da faixa | `app/auth.py:63-79`; `tests/backend/test_auth.py:25-43` | ✅ PASS |
+| Default de produção permanece `https://sc2030.brbots.com` | `app/server.py:122-126`; `tests/backend/test_server.py:193-205` | ✅ PASS |
+
+A sonda operacional executou a receita real em scratch: o OpenSSL do PATH estava ausente, o fallback do Git foi localizado, chave/certificado foram criados somente em `.local/dev-tls`, o certificado apresentou SAN `IP Address:127.0.0.1`, ambos foram reconhecidos pelo ignore e o diretório foi removido ao final. O focal T38 passou 10/10.
+
+### T38 Discrimination Sensor — PASS
+
+As mutações foram aplicadas somente no worktree scratch `D:\Develop_CRM_Project_verifier_sensor_t38`, restauradas individualmente e o scratch foi removido. O porcelain do principal permaneceu igual ao baseline.
+
+| # | Mutation | Assertion that killed it | Result |
+| - | -------- | ------------------------ | ------ |
+| M1 | Origem documentada `https://` → `http://` | `test_documented_local_runtime_origin_matches_tls_uvicorn_command` | ✅ Killed |
+| M2 | Remove flags SSL do comando Uvicorn | Contratos de origem/material TLS do README | ✅ Killed |
+| M3 | Troca SAN IP por SAN DNS | Contrato README + inspeção OpenSSL real | ✅ Killed |
+| M4 | Relaxa rejeição de porta zero em AuthSettings | Matriz `test_expected_origin_with_port_still_rejects_insecure_or_non_origin_values` | ✅ Killed |
+| M5 | Remove `.local/` do `.gitignore` | `test_documented_local_tls_material_is_temporary_ignored_and_cleaned` | ✅ Killed |
+| M6 | Cleanup remove apenas o certificado e deixa o diretório/chave | `test_documented_local_tls_material_is_temporary_ignored_and_cleaned` | ✅ Killed |
+
+**Sensor verdict:** 6/6 killed, 0 survived. PASS ✅
+
+A primeira repetição backend foi bloqueada por `psycopg.errors.ConnectionTimeout` porque o Docker Desktop local estava parado. Nenhum teste foi alterado. Após mover IPCs obsoletos para backups recuperáveis nomeados, o daemon e o PostgreSQL ficaram saudáveis e a mesma suíte integral passou 566/566. Nenhum deploy, push, acesso remoto ou alteração de produção foi executado.
+
+## Requirement Traceability Update — T38
+
+| Requirement | Pre-T38 status | T38 verification result |
+| ----------- | -------------- | ----------------------- |
 | MT-01 | Verified | ✅ Retained |
-| MT-02 | Verified | ✅ Retained |
+| MT-02 | Implementing | ✅ Verified |
 | MT-03 | Verified | ✅ Retained |
 | MT-04 | Verified | ✅ Retained |
 | MT-05 | Implementing | ✅ Verified |
 | MT-06 | Implementing | ✅ Verified |
 | MT-07 | Verified | ✅ Retained |
 
-`spec.md` volta a marcar MT-05 e MT-06 como Verified; `tasks.md` fecha após a revalidação matar o antigo M6.
+`spec.md` volta a marcar MT-02, MT-05 e MT-06 como Verified; `tasks.md` fecha após o Fresh Verifier T38 confirmar runtime HTTPS e matar 6/6 mutações.
 
 ## Summary
 
 **Overall:** ✅ Ready
 
 **Spec-anchored check:** 50/50 listed ACs and every listed edge matched.
-**Sensor:** T37 matou 5/5; o antigo M6 agora é discriminado.
-**Gate:** 556 backend + 93 browser passed; compatibility 27/27, runbook 41/41 and Apache 32/32.
+**Sensor:** T38 matou 6/6 mutações focadas no runtime HTTPS local; T37 5/5 permanece retido.
+**Gate:** 566 backend + 93 browser passed; compatibility 27/27, runbook 41/41 and Apache 32/32.
 
-O factory resolve pelo importador real, é zero-arg, delega ao bootstrap e falha fechado. T37 protege o lifecycle de shutdown com asserções independentes para router e control; o mutante antes sobrevivente agora morre. Nenhum gap permanece nesta revalidação.
+O factory e seu lifecycle permanecem protegidos. T38 confirma que a receita local inicia a mesma factory em HTTPS, com origem exata, certificado efêmero com SAN IP, material ignorado/limpo e defaults de produção intactos. Nenhum gap permanece nesta extensão.

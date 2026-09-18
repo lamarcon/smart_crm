@@ -213,11 +213,11 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
 | MT-01 | Localizar e autenticar no banco correto | Execute | Verified |
-| MT-02 | Sessão opaca central | Execute | Implementing |
+| MT-02 | Sessão opaca central | Execute | Verified |
 | MT-03 | Roteamento e isolamento de banco | Execute | Verified |
 | MT-04 | Autorização por perfil | Execute | Verified |
-| MT-05 | Migração e provisionamento distribuído | Execute | Implementing |
-| MT-06 | Operação segura da frota | Execute | Implementing |
+| MT-05 | Migração e provisionamento distribuído | Execute | Verified |
+| MT-06 | Operação segura da frota | Execute | Verified |
 | MT-07 | Edge cases e concorrência | Execute | Verified |
 
 **Coverage:** 7 requirement groups, 7 mapped to design/tasks, 0 unmapped.

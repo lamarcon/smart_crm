@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** In Progress
+**Status:** Complete
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -912,6 +912,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35 -> T36 -> T37 -> T38
 - [x] The documented expected origin is HTTPS, exactly matches the Uvicorn host and port, and is accepted by AuthSettings while HTTP remains rejected.
 - [x] The documented Uvicorn factory command supplies ssl-keyfile and ssl-certfile generated only under ignored .local with an IP SAN for 127.0.0.1; no certificate or private-key material is committed.
 - [x] The local-only trust warning and cleanup remove certificate files and temporary environment settings; production origin/defaults remain unchanged and targeted/full build gates pass.
+- [x] Fresh Verifier confirms the real OpenSSL recipe, 6/6 discrimination mutations and the full 566-backend/93-browser/27-41-32 contract gates.
 
 **Tests:** unit + documentation/startup contract
 **Gate:** build

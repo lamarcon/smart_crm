@@ -45,10 +45,10 @@
 ## Handoff
 
 - **Feature**: Multiempresa Seguro / `.specs/features/secure-multitenancy`
-- **Phase / Task**: Execute concluído; T1-T37 e Fresh Verifier completos
-- **Completed**: validação independente PASS incluindo T37, 556 backend, 93 browser, contratos 27/41/32 e sensor T37 5/5; nenhum deploy executado
+- **Phase / Task**: Execute concluído; T1-T38 e Fresh Verifier completos
+- **Completed**: validação independente PASS incluindo T38, 566 backend, 93 browser, contratos 27/41/32 e sensor T38 6/6; OpenSSL real/SAN e runtime HTTPS local confirmados; nenhum deploy executado
 - **In-progress** (file:line): none
 - **Next step**: planejar UAT humano e cutover de produção conforme o runbook somente após autorização explícita separada
 - **Blockers**: nenhum de implementação; produção ainda depende de backup, CA/TLS, segredos DPAPI, seleção explícita dos bancos e autorização operacional
-- **Uncommitted files**: `.local/`, `.pytest-tmp/`, `.specs/features/crm-mvp/tasks.md`, `.venv/`, `smart_crm_demo.egg-info/` (untracked preexistentes, preservados)
+- **Uncommitted files**: `.pytest-tmp/`, `.specs/features/crm-mvp/tasks.md`, `.venv/`, `smart_crm_demo.egg-info/` (untracked preexistentes, preservados)
 - **Branch**: main
