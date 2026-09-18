@@ -172,6 +172,11 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 5. WHILE um tenant estiver inativo, provisioning ou com schema incompatível THEN the system SHALL negar novos logins e sessões existentes sem apagar dados.
 6. WHEN o operador executar o preflight de frota THEN the system SHALL listar por tenant conectividade, identidade, versão Alembic e prontidão sem revelar credenciais.
 7. WHEN uma migração de frota for solicitada THEN the system SHALL exigir seleção explícita de tenants, confirmação operacional e resultado individual, sem alterar bancos não selecionados.
+8. WHEN o runtime Windows central iniciar THEN the system SHALL exigir a URL externa do banco de controle, o diretório DPAPI, a origem HTTPS e limites positivos de pool, e SHALL executar `app.server:create_central_app` somente em `127.0.0.1:8080` sem construir um DSN tenant de fallback.
+9. IF o arquivo de ambiente Windows omitir uma configuração central obrigatória, mantiver placeholder ou fornecer limite inválido THEN the system SHALL falhar antes de iniciar o Uvicorn sem imprimir segredo.
+10. WHEN o pacote offline preparar um corte multiempresa THEN the system SHALL migrar e confirmar separadamente a linhagem control e cada tenant explicitamente selecionado, e SHALL jamais executar migração no startup web.
+11. WHEN a tarefa Windows for instalada THEN the system SHALL exigir uma conta de serviço dedicada informada pelo operador, e o provisionamento DPAPI SHALL ser executado sob a mesma identidade sem usar `SYSTEM` como default.
+12. WHEN uma atualização for preparada para o servidor existente THEN the system SHALL usar diretório versionado lado a lado, preservar a versão ativa anterior e proibir sobrescrita do caminho ativo ou `git pull` em produção.
 
 **Independent Test**: Exercitar eventos, falhas de um banco e preflight com tenants em versões diferentes, confirmando isolamento, logs sem segredo e ausência de fallback.
 

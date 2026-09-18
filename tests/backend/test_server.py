@@ -190,6 +190,80 @@ def test_runtime_uses_strict_local_loopback_environment_setting(
     assert runtime.tenant_router._settings.allow_insecure_loopback is expected
 
 
+def test_runtime_uses_documented_bounded_tenant_pool_environment(monkeypatch) -> None:
+    values = {
+        "SMART_CRM_TENANT_MAX_CACHED_ENGINES": "7",
+        "SMART_CRM_TENANT_POOL_SIZE": "3",
+        "SMART_CRM_TENANT_MAX_OVERFLOW": "4",
+        "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS": "2.5",
+        "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS": "6",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+
+    runtime = bootstrap_runtime(
+        control_database=FakeControlDatabase(),
+        secret_provider=InMemorySecretProvider(),
+    )
+    settings = runtime.tenant_router._settings
+
+    assert settings.max_cached_engines == 7
+    assert settings.pool_size == 3
+    assert settings.max_overflow == 4
+    assert settings.pool_timeout == 2.5
+    assert settings.connect_timeout == 6
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("SMART_CRM_TENANT_MAX_CACHED_ENGINES", "0"),
+        ("SMART_CRM_TENANT_POOL_SIZE", "not-a-number"),
+        ("SMART_CRM_TENANT_MAX_OVERFLOW", "-1"),
+        ("SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS", "0"),
+        ("SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS", "-3"),
+    ],
+)
+def test_invalid_tenant_pool_environment_blocks_bootstrap_without_detail(
+    monkeypatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(RuntimeBootstrapError) as captured:
+        bootstrap_runtime(
+            control_database=FakeControlDatabase(),
+            secret_provider=InMemorySecretProvider(),
+        )
+
+    assert str(captured.value) == "central runtime unavailable"
+    assert name not in repr(captured.value)
+    assert value not in repr(captured.value)
+
+
+def test_absent_tenant_pool_environment_retains_bounded_defaults(monkeypatch) -> None:
+    names = (
+        "SMART_CRM_TENANT_MAX_CACHED_ENGINES",
+        "SMART_CRM_TENANT_POOL_SIZE",
+        "SMART_CRM_TENANT_MAX_OVERFLOW",
+        "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS",
+        "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
+    )
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+
+    runtime = bootstrap_runtime(
+        control_database=FakeControlDatabase(),
+        secret_provider=InMemorySecretProvider(),
+    )
+    settings = runtime.tenant_router._settings
+
+    assert settings.max_cached_engines == 16
+    assert settings.pool_size == 2
+    assert settings.max_overflow == 2
+    assert settings.pool_timeout == 5.0
+    assert settings.connect_timeout == 3
+
+
 def test_runtime_default_expected_origin_remains_production(monkeypatch) -> None:
     captured: dict = {}
 

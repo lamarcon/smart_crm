@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** Complete
+**Status:** In Progress
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -67,6 +67,12 @@ T22 → T23 → T24 → T25 → T26 → T27
 
 ```
 T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35 -> T36 -> T37 -> T38
+```
+
+### Phase 6: Production package corrections
+
+```
+T38 -> T39 -> T40 -> T41 -> T42 -> T43
 ```
 
 ## Task Breakdown
@@ -918,6 +924,114 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35 -> T36 -> T37 -> T38
 **Gate:** build
 **Commit:** fix(auth): secure documented local runtime origin
 
+### T39: Wire bounded runtime settings from the environment
+
+**Status:** Complete
+
+**What:** Parse the documented tenant cache, pool and timeout values into the central router and fail closed on non-numeric or non-positive production configuration.
+**Where:** app/server.py, tests/backend/test_server.py
+**Integration touchpoints:** deploy/manual-windows-pg11/server.env.example
+**Depends on:** T38
+**Reuses:** TenantDatabaseRouterSettings validation and redacted RuntimeBootstrapError.
+**Requirement:** MT-03, MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [x] Every documented pool/cache/timeout value reaches TenantDatabaseRouterSettings exactly.
+- [x] Invalid values block bootstrap with only `central runtime unavailable`; absent variables retain the bounded application defaults.
+- [x] Focused runtime coverage passes at tests/backend/test_server.py:193, :227 and :243; the full gate passes with 573 backend tests, 93 browser scenarios, 27 Python 3.11 checks, 41 Windows runbook checks and 32 Apache checks.
+
+**Tests:** unit
+**Gate:** Build
+**Commit:** fix(runtime): honor bounded tenant pool settings
+
+### T40: Start the central runtime from the Windows wrapper
+
+**Status:** Pending
+
+**What:** Replace the legacy single-database startup contract with the complete central environment allowlist and `app.server:create_central_app` factory without synthesizing a tenant fallback DSN.
+**Where:** deploy/manual-windows-pg11/start-smart-crm.ps1, deploy/manual-windows-pg11/deployment-policy.ps1, tests/backend/test_manual_windows_pg11_outcomes.py, tests/backend/test_windows_multitenant_env.py
+**Depends on:** T39
+**Reuses:** server.env.example and existing loopback/proxy settings.
+**Requirement:** MT-02, MT-03, MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] The wrapper requires every central variable, rejects placeholders/invalid bounds and exports them without logging values.
+- [ ] Uvicorn targets `app.server:create_central_app` on 127.0.0.1:8080 and no runtime path constructs SMART_CRM_DATABASE_URL.
+- [ ] Contract/outcome tests and the build gate pass.
+
+**Tests:** contract + outcome
+**Gate:** Build
+**Commit:** fix(windows): launch central multitenant runtime
+
+### T41: Bind the scheduled task and DPAPI to a dedicated account
+
+**Status:** Pending
+
+**What:** Require an explicit non-SYSTEM service credential when installing the task and document that administrative provisioning must run as the same identity.
+**Where:** deploy/manual-windows-pg11/install-scheduled-task.ps1, tests/backend/test_manual_windows_pg11_outcomes.py
+**Integration touchpoints:** deploy/manual-windows-pg11/LEIA-ME.md
+**Depends on:** T40
+**Reuses:** Windows Task Scheduler and current user-bound DPAPI provider.
+**Requirement:** MT-05, MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] Installation has no SYSTEM default and requires an explicit `SmartCRMService` credential.
+- [ ] Task registration uses the supplied identity and never prints or persists the password in application files.
+- [ ] Tests prove the SYSTEM regression and missing-credential path fail before registration.
+
+**Tests:** contract + outcome
+**Gate:** Build
+**Commit:** fix(windows): bind runtime secrets to service account
+
+### T42: Separate control and tenant migration gates
+
+**Status:** Pending
+
+**What:** Replace the one-line legacy initializer with explicit control and selected-tenant migration/revision gates that run before task publication and never from web startup.
+**Where:** deploy/manual-windows-pg11/initialize-and-test.ps1, deploy/manual-windows-pg11/deployment-policy.ps1, scripts/verify_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_outcomes.py
+**Depends on:** T41
+**Reuses:** Both Alembic configurations, exact revisions and migration failure gate.
+**Requirement:** MT-05, MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] Control migration uses alembic-control.ini and confirms c01a5d8e4f20 before any tenant step.
+- [ ] Tenant migration uses alembic.ini only for an explicit selected database and confirms a4c9d2e7f1b6 before task installation.
+- [ ] Any migration/revision failure blocks publication; no web startup contains Alembic.
+
+**Tests:** contract + outcome
+**Gate:** Build
+**Commit:** fix(windows): gate control and tenant migrations
+
+### T43: Document side-by-side BRBots cutover and onboarding
+
+**Status:** Pending
+
+**What:** Align the offline guide and package verifier with a versioned release, preserved existing tenant database, separate control database and the approved BRBots administrative commands.
+**Where:** deploy/manual-windows-pg11/LEIA-ME.md, scripts/verify_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_deployment.py, .specs/STATE.md
+**Depends on:** T42
+**Reuses:** Fleet cutover gates in RUNBOOK_DEPLOY_WINDOWS_SERVER_2016.md.
+**Requirement:** MT-05, MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [ ] The guide uses `smart-crm-<SHA>`, preserves the active release and forbids overwrite/git pull.
+- [ ] `smartcrm` remains the BRBots tenant, `smartcrm_control` contains only control data, and no commercial copy is instructed.
+- [ ] The guide names `brbots`, `Luiz Felipe` and `lfmarcon@brbots.com`, keeps all passwords interactive, and requires a separate production authorization.
+- [ ] Package verifier, build gate, independent Verifier and structural validators pass.
+
+**Tests:** documentation contract + build
+**Gate:** Build
+**Commit:** docs(windows): define brbots multitenant cutover
+
 ## Phase Execution Map
 
 ```
@@ -926,6 +1040,7 @@ Phase 2: T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17
 Phase 3: T17 → T18 → T19 → T20 → T21 → T22
 Phase 4: T22 → T23 → T24 → T25 → T26 → T27
 Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → T38
+Phase 6: T38 → T39 → T40 → T41 → T42 → T43
 ```
 
 Execution is sequential and phase boundaries are batch boundaries. Plan approval permits local implementation/commits only, never push, deploy, remote connection, production migration or server change.
@@ -940,6 +1055,7 @@ Execution is sequential and phase boundaries are batch boundaries. Plan approval
 | T18-T22 | One admin/fleet/UI/runtime boundary each | OK |
 | T23-T27 | One config/package/proxy/runbook/doc boundary each | OK |
 | T28-T38 | One revocation/TLS/audit/cookie/coverage/evidence/config/runtime/test/docs boundary each | OK |
+| T39-T43 | One runtime config/startup/service identity/migration/cutover boundary each | OK |
 
 Every source task co-locates required tests; there is no deferred test task.
 
@@ -985,6 +1101,11 @@ Every source task co-locates required tests; there is no deferred test task.
 | T36 | T35 | T35 → T36 | OK |
 | T37 | T36 | T36 → T37 | OK |
 | T38 | T37 | T37 → T38 | OK |
+| T39 | T38 | T38 → T39 | OK |
+| T40 | T39 | T39 → T40 | OK |
+| T41 | T40 | T40 → T41 | OK |
+| T42 | T41 | T41 → T42 | OK |
+| T43 | T42 | T42 → T43 | OK |
 
 ## Test Co-location Validation
 
@@ -1010,6 +1131,11 @@ Every source task co-locates required tests; there is no deferred test task.
 | T36 | Central runtime/docs | Runtime integration + documentation contract | Runtime integration/documentation contract/build | OK |
 | T37 | Central runtime lifecycle | Runtime lifecycle integration | Runtime lifecycle integration/build | OK |
 | T38 | Local HTTPS runtime/docs | Unit + documentation/startup contract | Unit/documentation contract/build | OK |
+| T39 | Router environment | Unit | Unit/build | OK |
+| T40 | Windows central startup | Contract + outcome | Contract/outcome/build | OK |
+| T41 | Windows service identity | Contract + outcome | Contract/outcome/build | OK |
+| T42 | Two migration lineages | Contract + outcome | Contract/outcome/build | OK |
+| T43 | Cutover/onboarding docs | Documentation contract | Documentation contract/build | OK |
 
 ## Requirement Coverage
 
@@ -1019,11 +1145,11 @@ Every source task co-locates required tests; there is no deferred test task.
 | MT-02 Central session | T3,T6,T10-T15,T18,T20-T23,T28,T31,T33-T34,T38 | Cookie, digest, TTL, revocation, exact HTTPS origin and no-token |
 | MT-03 Database isolation | T5,T7-T9,T13-T17,T20-T26,T29-T30,T33,T35 | Two DBs, forged routing, verified TLS, explicit local opt-in and RLS |
 | MT-04 Authorization | T12,T14-T17,T21,T28,T30 | Role/action/record matrix and denial audit |
-| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33,T35-T38 | Default preservation, checkpoints, local provisioning, fleet and executable central HTTPS startup lifecycle |
-| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T38 | Redaction, audit, TLS, explicit local config, cache, health, executable HTTPS startup/shutdown, package and runbook |
+| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33,T35-T43 | Default preservation, checkpoints, local provisioning, fleet, service identity and separate migration gates |
+| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T43 | Redaction, audit, TLS, explicit local config, cache, health, executable startup/shutdown, package and side-by-side runbook |
 | MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26,T29,T31,T33-T35 | Locks, strict opt-in, invalid-cookie cleanup, outage, mismatch, retry and rollback |
 
-**Coverage:** 7 requirement groups, 38 mapped tasks, 0 unmapped.
+**Coverage:** 7 requirement groups, 43 mapped tasks, 0 unmapped.
 
 ## Approval Gate Before Execute
 

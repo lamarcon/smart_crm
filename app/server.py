@@ -63,6 +63,35 @@ def _default_secret_provider() -> SecretProvider:
     return DpapiFileSecretProvider(Path(root))
 
 
+def _tenant_router_settings() -> TenantDatabaseRouterSettings:
+    defaults = TenantDatabaseRouterSettings()
+
+    def integer(name: str, default: int) -> int:
+        raw = os.getenv(name)
+        return default if raw is None else int(raw)
+
+    def number(name: str, default: float) -> float:
+        raw = os.getenv(name)
+        return default if raw is None else float(raw)
+
+    return TenantDatabaseRouterSettings(
+        max_cached_engines=integer(
+            "SMART_CRM_TENANT_MAX_CACHED_ENGINES", defaults.max_cached_engines
+        ),
+        pool_size=integer("SMART_CRM_TENANT_POOL_SIZE", defaults.pool_size),
+        max_overflow=integer(
+            "SMART_CRM_TENANT_MAX_OVERFLOW", defaults.max_overflow
+        ),
+        pool_timeout=number(
+            "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS", defaults.pool_timeout
+        ),
+        connect_timeout=integer(
+            "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS", defaults.connect_timeout
+        ),
+        allow_insecure_loopback=insecure_tenant_loopback_enabled(),
+    )
+
+
 def bootstrap_runtime(
     *,
     control_database: ControlDatabase | None = None,
@@ -82,9 +111,7 @@ def bootstrap_runtime(
             ControlTenantProfileLoader(active_control),
             provider,
             security_event_recorder=security_audit.record,
-            settings=TenantDatabaseRouterSettings(
-                allow_insecure_loopback=insecure_tenant_loopback_enabled(),
-            ),
+            settings=_tenant_router_settings(),
         )
         return CentralRuntime(
             control_database=active_control,

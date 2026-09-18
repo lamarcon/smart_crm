@@ -218,6 +218,15 @@ Save:
 - **Rule:** No public HTTP equivalent; secrets use hidden input; migration needs explicit tenant selection and operator confirmation.
 - **Idempotency:** Each step records state/checkpoint; rerun does not duplicate tenant identity or first admin.
 
+### Windows deployment adapter
+
+- **Purpose:** Start the central factory with an exact external environment contract, keep control and tenant migrations separate, and preserve a side-by-side rollback path.
+- **Location:** deploy/manual-windows-pg11/*.ps1, deploy/manual-windows-pg11/LEIA-ME.md
+- **Runtime contract:** `app.server:create_central_app` receives only the control DSN, DPAPI directory, HTTPS origin and bounded pool settings; the tenant DSN is resolved from `secret_ref` after authentication.
+- **Migration contract:** the web startup never upgrades schemas. An approved operator applies `alembic-control.ini` to `smartcrm_control`, then applies `alembic.ini` only to the explicitly selected existing tenant database and verifies both exact revisions.
+- **Identity contract:** the scheduled task requires the dedicated `SmartCRMService` identity, and tenant secrets are provisioned by the same identity because DPAPI is user-bound.
+- **Release contract:** each bundle is extracted to `C:\brbots\apps\smart-crm-<SHA>`; the previous immutable directory remains available until UAT and rollback retention end.
+
 ### Tenant-aware frontend shell
 
 - **Purpose:** Provide locator/login/logout, immutable identity and tenant/user-namespaced UI preferences.
@@ -327,7 +336,7 @@ There is no claim of atomicity across databases. Safety comes from state gating 
 1. Create or reuse a control row in provisioning.
 2. Store/resolve the secret through SecretProvider.
 3. Connect with TLS and verify or initialize tenant_identity.
-4. Apply the tenant migration only through the administrative command.
+4. Apply the tenant migration only through the separately authorized migration step; the administrative command verifies the exact revision and never upgrades it.
 5. Bind/create the first administrator and hash the hidden password in the tenant transaction.
 6. Re-read identity, revision and administrator.
 7. Mark active in a short control transaction.

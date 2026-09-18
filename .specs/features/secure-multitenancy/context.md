@@ -69,6 +69,10 @@ Esta feature mantém uma aplicação central em sc2030.brbots.com, identifica em
 - Usuários existentes não receberão senha inventada e ficam sem login até provisionamento explícito.
 - Não haverá endpoint público para criar tenant ou primeiro administrador.
 - Apache Basic Auth poderá permanecer em homologação e será removido somente em corte autorizado após UAT.
+- O primeiro tenant de produção usará slug `brbots`, nome exibido `brbots`, administrador `Luiz Felipe` e e-mail `lfmarcon@brbots.com`; nenhuma senha foi registrada na especificação.
+- O banco atual do aplicativo permanecerá como banco de negócio do tenant `brbots`; um database separado `smartcrm_control` será criado na mesma instância PostgreSQL 11 para o plano de controle.
+- A tarefa Windows usará uma conta dedicada `SmartCRMService`. O CLI administrativo e o runtime deverão operar sob essa mesma identidade para que o DPAPI permaneça vinculado à conta do serviço.
+- Releases serão instaladas lado a lado em diretórios versionados. A versão ativa e o Apache somente mudarão dentro de uma janela de corte autorizada separadamente.
 
 ### Agent's Discretion
 
@@ -79,7 +83,7 @@ Esta feature mantém uma aplicação central em sc2030.brbots.com, identifica em
 
 ### Declined / Undiscussed Gray Areas → Assumptions
 
-- Ainda precisam de confirmação na aprovação: conteúdo e local inicial do plano de controle, DPAPI, requisitos TLS/rede, matriz de perfis, TTLs, limites de login, remoção do cache comercial, fluxo de provisionamento, estratégia de migração da frota, RLS, retirada do Apache Basic Auth e slug/nome do primeiro tenant.
+- A senha inicial do administrador, a senha da conta `SmartCRMService`, as credenciais dos bancos, a janela de mudança e a autorização de acesso ao servidor serão fornecidas somente no ambiente operacional e permanecem fora desta implementação local.
 - O onboarding por convite ou e-mail permanece fora de escopo; credenciais adicionais poderão ser atribuídas localmente até uma feature própria.
 
 ---
