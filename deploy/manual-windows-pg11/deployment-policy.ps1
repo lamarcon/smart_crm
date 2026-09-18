@@ -46,7 +46,7 @@ function Get-SmartCrmAlembicUpgradeArguments {
 
 function Get-SmartCrmUvicornArguments {
     return @(
-        "-m", "uvicorn", "app.main:create_app", "--factory",
+        "-m", "uvicorn", "app.server:create_central_app", "--factory",
         "--host", "127.0.0.1", "--port", "8080",
         "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"
     )

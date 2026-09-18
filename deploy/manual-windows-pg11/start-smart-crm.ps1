@@ -12,7 +12,18 @@ $ErrorActionPreference = "Stop"
 
 $allowedKeys = @(
     "SMART_CRM_DB_NAME", "SMART_CRM_DB_USER", "SMART_CRM_DB_PASSWORD",
-    "SMART_CRM_DB_HOST", "SMART_CRM_DB_PORT", "SMART_CRM_BIND_IP", "SMART_CRM_PORT"
+    "SMART_CRM_DB_HOST", "SMART_CRM_DB_PORT", "SMART_CRM_BIND_IP", "SMART_CRM_PORT",
+    "SMART_CRM_CONTROL_DATABASE_URL", "SMART_CRM_TENANT_SECRET_STORE",
+    "SMART_CRM_EXPECTED_ORIGIN", "SMART_CRM_TENANT_MAX_CACHED_ENGINES",
+    "SMART_CRM_TENANT_POOL_SIZE", "SMART_CRM_TENANT_MAX_OVERFLOW",
+    "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS", "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS"
+)
+
+$runtimeKeys = @(
+    "SMART_CRM_CONTROL_DATABASE_URL", "SMART_CRM_TENANT_SECRET_STORE",
+    "SMART_CRM_EXPECTED_ORIGIN", "SMART_CRM_TENANT_MAX_CACHED_ENGINES",
+    "SMART_CRM_TENANT_POOL_SIZE", "SMART_CRM_TENANT_MAX_OVERFLOW",
+    "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS", "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS"
 )
 
 function Read-SmartCrmEnvironment {
@@ -49,6 +60,40 @@ if ($settings.SMART_CRM_DB_HOST -ne "127.0.0.1") { throw "Banco deve usar 127.0.
 if ($settings.SMART_CRM_DB_PORT -ne "5432") { throw "Banco deve usar a porta 5432." }
 if ($settings.SMART_CRM_BIND_IP -ne "127.0.0.1") { throw "Uvicorn deve usar 127.0.0.1." }
 if ($settings.SMART_CRM_PORT -ne "8080") { throw "Uvicorn deve usar a porta 8080." }
+if ($settings.SMART_CRM_CONTROL_DATABASE_URL -eq "REPLACE_WITH_CONTROL_DATABASE_URL" -or
+    $settings.SMART_CRM_CONTROL_DATABASE_URL -notmatch "^postgresql\+psycopg://[^\s]+$") {
+    throw "SMART_CRM_CONTROL_DATABASE_URL invalida."
+}
+if ($settings.SMART_CRM_TENANT_SECRET_STORE -ne "C:\ProgramData\SmartCRM\tenant-secrets") {
+    throw "SMART_CRM_TENANT_SECRET_STORE deve ficar em C:\ProgramData\SmartCRM\tenant-secrets."
+}
+if ($settings.SMART_CRM_EXPECTED_ORIGIN -ne "https://sc2030.brbots.com") {
+    throw "SMART_CRM_EXPECTED_ORIGIN deve usar a origem HTTPS de producao."
+}
+
+foreach ($key in @(
+    "SMART_CRM_TENANT_MAX_CACHED_ENGINES", "SMART_CRM_TENANT_POOL_SIZE",
+    "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS"
+)) {
+    $parsed = 0
+    if (-not [int]::TryParse($settings[$key], [ref]$parsed) -or $parsed -le 0) {
+        throw "$key deve ser um inteiro positivo."
+    }
+}
+$maxOverflow = 0
+if (-not [int]::TryParse($settings.SMART_CRM_TENANT_MAX_OVERFLOW, [ref]$maxOverflow) -or
+    $maxOverflow -lt 0) {
+    throw "SMART_CRM_TENANT_MAX_OVERFLOW deve ser um inteiro nao negativo."
+}
+$poolTimeout = 0.0
+if (-not [double]::TryParse(
+    $settings.SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS,
+    [Globalization.NumberStyles]::Float,
+    [Globalization.CultureInfo]::InvariantCulture,
+    [ref]$poolTimeout
+) -or $poolTimeout -le 0) {
+    throw "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS deve ser positivo."
+}
 
 $python = Join-Path $AppRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Virtualenv ausente: $python" }
@@ -57,8 +102,9 @@ if ($ValidateOnly) {
     exit 0
 }
 
-$env:SMART_CRM_DATABASE_URL = "postgresql+psycopg://$($settings.SMART_CRM_DB_USER):$($settings.SMART_CRM_DB_PASSWORD)@127.0.0.1:5432/smartcrm?connect_timeout=5"
-$env:SMART_CRM_TEST_MODE = "0"
+foreach ($key in $runtimeKeys) {
+    [Environment]::SetEnvironmentVariable($key, $settings[$key], "Process")
+}
 New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
 $logPath = Join-Path $LogDirectory "smart-crm.log"
 
@@ -69,7 +115,8 @@ try {
     exit $LASTEXITCODE
 }
 finally {
-    Remove-Item Env:SMART_CRM_DATABASE_URL -ErrorAction SilentlyContinue
-    Remove-Item Env:SMART_CRM_TEST_MODE -ErrorAction SilentlyContinue
+    foreach ($key in $runtimeKeys) {
+        [Environment]::SetEnvironmentVariable($key, $null, "Process")
+    }
     Pop-Location
 }

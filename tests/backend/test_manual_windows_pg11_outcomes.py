@@ -12,6 +12,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 POWERSHELL = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
 POLICY = PROJECT_ROOT / "deploy/manual-windows-pg11/deployment-policy.ps1"
+START = PROJECT_ROOT / "deploy/manual-windows-pg11/start-smart-crm.ps1"
+ENV_EXAMPLE = PROJECT_ROOT / "deploy/manual-windows-pg11/server.env.example"
 
 
 def load_builder():
@@ -30,6 +32,54 @@ def run_policy(expression: str) -> subprocess.CompletedProcess[str]:
     command = f". '{POLICY}'; {expression}"
     return subprocess.run(
         [str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def valid_server_environment() -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw_line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            values[key] = value
+    values["SMART_CRM_DB_PASSWORD"] = "a" * 64
+    values["SMART_CRM_CONTROL_DATABASE_URL"] = (
+        "postgresql+psycopg://smartcrm_control:"
+        + "b" * 64
+        + "@127.0.0.1:5432/smartcrm_control?connect_timeout=5"
+    )
+    return values
+
+
+def run_start_validation(
+    tmp_path: Path, values: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    app_root = tmp_path / "app"
+    python = app_root / ".venv/Scripts/python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"")
+    env_file = tmp_path / "server.env"
+    env_file.write_text(
+        "\n".join(f"{key}={value}" for key, value in values.items()) + "\n",
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        [
+            str(POWERSHELL),
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(START),
+            "-AppRoot",
+            str(app_root),
+            "-EnvFile",
+            str(env_file),
+            "-ValidateOnly",
+        ],
         text=True,
         capture_output=True,
         check=False,
@@ -140,7 +190,41 @@ def test_policy_emits_exact_alembic_and_loopback_uvicorn_commands():
     uvicorn = run_policy("@(Get-SmartCrmUvicornArguments) | ConvertTo-Json -Compress")
 
     assert json.loads(alembic.stdout) == ["-m", "alembic", "upgrade", "head"]
-    assert json.loads(uvicorn.stdout) == ["-m", "uvicorn", "app.main:create_app", "--factory", "--host", "127.0.0.1", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
+    assert json.loads(uvicorn.stdout) == ["-m", "uvicorn", "app.server:create_central_app", "--factory", "--host", "127.0.0.1", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
+
+
+def test_windows_startup_accepts_complete_central_runtime_environment(tmp_path: Path):
+    result = run_start_validation(tmp_path, valid_server_environment())
+    start = START.read_text(encoding="utf-8")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "smart crm environment: VALID" in result.stdout
+    assert "SMART_CRM_DATABASE_URL" not in start
+    assert "SMART_CRM_TEST_MODE" not in start
+
+
+def test_windows_startup_rejects_control_placeholder_without_disclosing_values(
+    tmp_path: Path,
+):
+    values = valid_server_environment()
+    values["SMART_CRM_CONTROL_DATABASE_URL"] = "REPLACE_WITH_CONTROL_DATABASE_URL"
+
+    result = run_start_validation(tmp_path, values)
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert values["SMART_CRM_CONTROL_DATABASE_URL"] not in output
+    assert values["SMART_CRM_DB_PASSWORD"] not in output
+
+
+def test_windows_startup_rejects_invalid_bounded_pool_before_uvicorn(tmp_path: Path):
+    values = valid_server_environment()
+    values["SMART_CRM_TENANT_POOL_SIZE"] = "0"
+
+    result = run_start_validation(tmp_path, values)
+
+    assert result.returncode != 0
+    assert "SMART_CRM_TENANT_POOL_SIZE" in (result.stdout + result.stderr)
 
 
 def test_health_policy_rejects_each_partial_failure():

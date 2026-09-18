@@ -948,7 +948,7 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 ### T40: Start the central runtime from the Windows wrapper
 
-**Status:** Pending
+**Status:** Complete
 
 **What:** Replace the legacy single-database startup contract with the complete central environment allowlist and `app.server:create_central_app` factory without synthesizing a tenant fallback DSN.
 **Where:** deploy/manual-windows-pg11/start-smart-crm.ps1, deploy/manual-windows-pg11/deployment-policy.ps1, tests/backend/test_manual_windows_pg11_outcomes.py, tests/backend/test_windows_multitenant_env.py
@@ -959,9 +959,9 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 **Done when:**
 
-- [ ] The wrapper requires every central variable, rejects placeholders/invalid bounds and exports them without logging values.
-- [ ] Uvicorn targets `app.server:create_central_app` on 127.0.0.1:8080 and no runtime path constructs SMART_CRM_DATABASE_URL.
-- [ ] Contract/outcome tests and the build gate pass.
+- [x] The wrapper requires every central variable, rejects placeholders/invalid bounds and exports them without logging values.
+- [x] Uvicorn targets `app.server:create_central_app` on 127.0.0.1:8080 and no runtime path constructs SMART_CRM_DATABASE_URL.
+- [x] Outcome coverage passes at tests/backend/test_manual_windows_pg11_outcomes.py:188, :196, :206 and :220; the full gate passes with 576 backend tests, 93 browser scenarios, 27 Python 3.11 checks, 41 Windows runbook checks and 32 Apache checks.
 
 **Tests:** contract + outcome
 **Gate:** Build
