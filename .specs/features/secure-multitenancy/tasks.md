@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** In Progress (implementation complete; independent re-verification pending)
+**Status:** Complete
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -72,7 +72,7 @@ T27 -> T28 -> T29 -> T30 -> T31 -> T32 -> T33 -> T34 -> T35 -> T36 -> T37 -> T38
 ### Phase 6: Production package corrections
 
 ```
-T38 -> T39 -> T40 -> T41 -> T42 -> T43
+T38 -> T39 -> T40 -> T41 -> T42 -> T43 -> T44
 ```
 
 ## Task Breakdown
@@ -1011,7 +1011,7 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 ### T43: Document side-by-side BRBots cutover and onboarding
 
-**Status:** In Progress (implementation complete; independent verification pending)
+**Status:** Complete
 
 **What:** Align the offline guide and package verifier with a versioned release, preserved existing tenant database, separate control database and the approved BRBots administrative commands.
 **Where:** deploy/manual-windows-pg11/LEIA-ME.md, deploy/manual-windows-pg11/deployment-policy.ps1, deploy/manual-windows-pg11/install-offline.ps1, deploy/manual-windows-pg11/server.env.example, deploy/manual-windows-pg11/start-smart-crm.ps1, scripts/verify_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_outcomes.py, tests/backend/test_windows_multitenant_env.py, .specs/STATE.md
@@ -1025,7 +1025,7 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 - [x] The guide uses `smart-crm-<SHA>`, preserves the active release and forbids overwrite/git pull.
 - [x] `smartcrm` remains the BRBots tenant, `smartcrm_control` contains only control data, and no commercial copy is instructed.
 - [x] The guide names `brbots`, `Luiz Felipe` and `lfmarcon@brbots.com`, keeps all passwords interactive, and requires a separate production authorization.
-- [ ] Package verifier, build gate, independent Verifier and structural validators pass.
+- [x] Package verifier, build gate, independent Verifier and structural validators pass: 583 backend, 93 browser, 27 compatibility, package 18/18, runbook 41/41, Apache 32/32, sensor 3/3 and 55/55 spec-anchored criteria.
 
 **Tests:** documentation contract + build
 **Gate:** Build
@@ -1033,7 +1033,7 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 
 ### T44: Close independent verifier runtime configuration gaps
 
-**Status:** In Progress
+**Status:** Complete
 
 **What:** Align the positive pool boundary with the approved spec and persist the missing-central-variable negative outcome required by evidence-or-zero.
 **Where:** app/tenant_database.py, deploy/manual-windows-pg11/start-smart-crm.ps1, tests/backend/test_server.py, tests/backend/test_manual_windows_pg11_outcomes.py
@@ -1047,7 +1047,7 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 - [x] `max_overflow=0` fails closed in backend bootstrap and Windows validation.
 - [x] Omitting SMART_CRM_CONTROL_DATABASE_URL fails before Uvicorn without disclosing either database password.
 - [x] Focused and full author gates pass: 583 backend, 93 browser, 27 compatibility, package 18/18, runbook 41 and Apache 32.
-- [ ] A fresh independent Verifier closes both reported gaps.
+- [x] A fresh independent Verifier closes both reported gaps: PASS, 7/7 focused checks and 3/3 corrective mutations killed.
 
 **Tests:** unit + Windows outcome contract
 **Gate:** Build

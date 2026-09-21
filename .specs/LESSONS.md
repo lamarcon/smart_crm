@@ -140,6 +140,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: .specs/features/secure-multitenancy/validation.md:T36-M6 (runtime)
 - last seen: 2026-09-17T21:10:02Z
 
+### L-022 - Rejeite e teste cada valor de fronteira exatamente como a especificação define, inclusive zero em limites positivos.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `windows-runtime` · harmful: 0
+- features: secure-multitenancy
+- evidence: .specs/features/secure-multitenancy/validation.md:15 (windows-runtime)
+- last seen: 2026-09-18T19:56:12Z
+
+### L-023 - Cubra cada ramo de critérios operacionais compostos com um teste de outcome independente.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `windows-runtime` · harmful: 0
+- features: secure-multitenancy
+- evidence: .specs/features/secure-multitenancy/validation.md:16 (windows-runtime)
+- last seen: 2026-09-18T19:56:17Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

@@ -42,13 +42,21 @@
 - **Date**: 2026-09-14
 - **Status**: active
 
+### AD-006
+- **Decision**: O primeiro corte multiempresa no Windows Server usará uma release versionada lado a lado, manterá o database existente `smartcrm` como banco de negócio do tenant `brbots`, criará `smartcrm_control` somente para o plano de controle e executará o serviço e a proteção DPAPI sob a conta dedicada `SmartCRMService`.
+- **Reason**: Preservar os dados atuais sem cópia comercial, permitir rollback para a release anterior e vincular os segredos à mesma identidade que executa a aplicação.
+- **Trade-off**: O corte exige backup verificado, credenciais inseridas interativamente, duas cadeias Alembic confirmadas e uma janela operacional; a release não pode ser sobrescrita nem atualizada por `git pull`.
+- **Scope**: Pacote offline, startup central, migrações control/tenant, onboarding inicial da BRBots, rollback e operação do serviço Windows.
+- **Date**: 2026-09-21
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: Multiempresa Seguro / `.specs/features/secure-multitenancy`
-- **Phase / Task**: Execute concluído; T1-T38 e Fresh Verifier completos
-- **Completed**: validação independente PASS incluindo T38, 566 backend, 93 browser, contratos 27/41/32 e sensor T38 6/6; OpenSSL real/SAN e runtime HTTPS local confirmados; nenhum deploy executado
+- **Phase / Task**: Execute concluído; T1-T44 e Fresh Verifier completos
+- **Completed**: validação independente PASS; 55/55 critérios, 583 backend, 93 browser, compatibilidade 27/27, pacote 18/18, runbook 41/41, Apache 32/32 e sensor corretivo 3/3; pacote lado a lado e onboarding BRBots verificados; nenhum deploy, push ou acesso de produção executado
 - **In-progress** (file:line): none
-- **Next step**: planejar UAT humano e cutover de produção conforme o runbook somente após autorização explícita separada
-- **Blockers**: nenhum de implementação; produção ainda depende de backup, CA/TLS, segredos DPAPI, seleção explícita dos bancos e autorização operacional
+- **Next step**: preparar e executar o UAT/cutover de produção conforme o runbook somente após autorização explícita separada
+- **Blockers**: nenhum de implementação; produção ainda depende de backup verificado, janela de mudança, certificado/CA, credenciais inseridas interativamente, seleção explícita dos bancos e autorização operacional
 - **Uncommitted files**: `.pytest-tmp/`, `.specs/features/crm-mvp/tasks.md`, `.venv/`, `smart_crm_demo.egg-info/` (untracked preexistentes, preservados)
 - **Branch**: main

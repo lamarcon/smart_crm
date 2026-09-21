@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 22,
+  "next_id": 24,
   "lessons": [
     {
       "id": "L-001",
@@ -385,6 +385,42 @@
       ],
       "created": "2026-09-17T21:10:02Z",
       "last_seen": "2026-09-17T21:10:02Z"
+    },
+    {
+      "id": "L-022",
+      "key": "ac_gap::rejeite e teste cada valor de fronteira exatamente como a especificacao define inclusive zero em limites positivos",
+      "text": "Rejeite e teste cada valor de fronteira exatamente como a especificação define, inclusive zero em limites positivos.",
+      "signal": "ac_gap",
+      "scope": "windows-runtime",
+      "status": "candidate",
+      "features": [
+        "secure-multitenancy"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/secure-multitenancy/validation.md:15 (windows-runtime)"
+      ],
+      "created": "2026-09-18T19:56:12Z",
+      "last_seen": "2026-09-18T19:56:12Z"
+    },
+    {
+      "id": "L-023",
+      "key": "ac_gap::cubra cada ramo de criterios operacionais compostos com um teste de outcome independente",
+      "text": "Cubra cada ramo de critérios operacionais compostos com um teste de outcome independente.",
+      "signal": "ac_gap",
+      "scope": "windows-runtime",
+      "status": "candidate",
+      "features": [
+        "secure-multitenancy"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/secure-multitenancy/validation.md:16 (windows-runtime)"
+      ],
+      "created": "2026-09-18T19:56:17Z",
+      "last_seen": "2026-09-18T19:56:17Z"
     }
   ]
 }
