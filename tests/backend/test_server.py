@@ -219,7 +219,7 @@ def test_runtime_uses_documented_bounded_tenant_pool_environment(monkeypatch) ->
     [
         ("SMART_CRM_TENANT_MAX_CACHED_ENGINES", "0"),
         ("SMART_CRM_TENANT_POOL_SIZE", "not-a-number"),
-        ("SMART_CRM_TENANT_MAX_OVERFLOW", "-1"),
+        ("SMART_CRM_TENANT_MAX_OVERFLOW", "0"),
         ("SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS", "0"),
         ("SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS", "-3"),
     ],

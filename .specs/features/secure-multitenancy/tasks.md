@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** In Progress
+**Status:** In Progress (implementation complete; independent re-verification pending)
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -1031,6 +1031,28 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43
 **Gate:** Build
 **Commit:** docs(windows): define brbots multitenant cutover
 
+### T44: Close independent verifier runtime configuration gaps
+
+**Status:** In Progress
+
+**What:** Align the positive pool boundary with the approved spec and persist the missing-central-variable negative outcome required by evidence-or-zero.
+**Where:** app/tenant_database.py, deploy/manual-windows-pg11/start-smart-crm.ps1, tests/backend/test_server.py, tests/backend/test_manual_windows_pg11_outcomes.py
+**Depends on:** T43 implementation and the first independent Verifier report.
+**Reuses:** TenantDatabaseRouterSettings validation, Windows required-key loop and redacted startup failures.
+**Requirement:** MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [x] `max_overflow=0` fails closed in backend bootstrap and Windows validation.
+- [x] Omitting SMART_CRM_CONTROL_DATABASE_URL fails before Uvicorn without disclosing either database password.
+- [x] Focused and full author gates pass: 583 backend, 93 browser, 27 compatibility, package 18/18, runbook 41 and Apache 32.
+- [ ] A fresh independent Verifier closes both reported gaps.
+
+**Tests:** unit + Windows outcome contract
+**Gate:** Build
+**Commit:** fix(runtime): close central config boundary gaps
+
 ## Phase Execution Map
 
 ```
@@ -1039,7 +1061,7 @@ Phase 2: T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17
 Phase 3: T17 → T18 → T19 → T20 → T21 → T22
 Phase 4: T22 → T23 → T24 → T25 → T26 → T27
 Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → T38
-Phase 6: T38 → T39 → T40 → T41 → T42 → T43
+Phase 6: T38 → T39 → T40 → T41 → T42 → T43 → T44
 ```
 
 Execution is sequential and phase boundaries are batch boundaries. Plan approval permits local implementation/commits only, never push, deploy, remote connection, production migration or server change.
@@ -1054,7 +1076,7 @@ Execution is sequential and phase boundaries are batch boundaries. Plan approval
 | T18-T22 | One admin/fleet/UI/runtime boundary each | OK |
 | T23-T27 | One config/package/proxy/runbook/doc boundary each | OK |
 | T28-T38 | One revocation/TLS/audit/cookie/coverage/evidence/config/runtime/test/docs boundary each | OK |
-| T39-T43 | One runtime config/startup/service identity/migration/cutover boundary each | OK |
+| T39-T44 | One runtime config/startup/service identity/migration/cutover/verifier-fix boundary each | OK |
 
 Every source task co-locates required tests; there is no deferred test task.
 
@@ -1105,6 +1127,7 @@ Every source task co-locates required tests; there is no deferred test task.
 | T41 | T40 | T40 → T41 | OK |
 | T42 | T41 | T41 → T42 | OK |
 | T43 | T42 | T42 → T43 | OK |
+| T44 | T43 implementation + Verifier report | T43 → T44 | OK |
 
 ## Test Co-location Validation
 
@@ -1135,6 +1158,7 @@ Every source task co-locates required tests; there is no deferred test task.
 | T41 | Windows service identity | Contract + outcome | Contract/outcome/build | OK |
 | T42 | Two migration lineages | Contract + outcome | Contract/outcome/build | OK |
 | T43 | Cutover/onboarding docs | Documentation contract | Documentation contract/build | OK |
+| T44 | Runtime configuration boundaries | Unit + Windows outcome contract | Unit/contract/build | OK |
 
 ## Requirement Coverage
 
@@ -1145,10 +1169,10 @@ Every source task co-locates required tests; there is no deferred test task.
 | MT-03 Database isolation | T5,T7-T9,T13-T17,T20-T26,T29-T30,T33,T35 | Two DBs, forged routing, verified TLS, explicit local opt-in and RLS |
 | MT-04 Authorization | T12,T14-T17,T21,T28,T30 | Role/action/record matrix and denial audit |
 | MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33,T35-T43 | Default preservation, checkpoints, local provisioning, fleet, service identity and separate migration gates |
-| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T43 | Redaction, audit, TLS, explicit local config, cache, health, executable startup/shutdown, package and side-by-side runbook |
+| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T44 | Redaction, audit, TLS, exact positive bounds, explicit local config, cache, health, executable startup/shutdown, package and side-by-side runbook |
 | MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26,T29,T31,T33-T35 | Locks, strict opt-in, invalid-cookie cleanup, outage, mismatch, retry and rollback |
 
-**Coverage:** 7 requirement groups, 43 mapped tasks, 0 unmapped.
+**Coverage:** 7 requirement groups, 44 mapped tasks, 0 unmapped.
 
 ## Approval Gate Before Execute
 

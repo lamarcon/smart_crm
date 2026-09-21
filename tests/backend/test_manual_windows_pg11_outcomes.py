@@ -302,6 +302,20 @@ def test_windows_startup_rejects_control_placeholder_without_disclosing_values(
     assert values["SMART_CRM_DB_PASSWORD"] not in output
 
 
+def test_windows_startup_rejects_missing_control_url_without_disclosing_values(
+    tmp_path: Path,
+):
+    values = valid_server_environment()
+    values.pop("SMART_CRM_CONTROL_DATABASE_URL")
+
+    result = run_start_validation(tmp_path, values)
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "SMART_CRM_CONTROL_DATABASE_URL" in output
+    assert values["SMART_CRM_DB_PASSWORD"] not in output
+
+
 def test_windows_startup_rejects_invalid_bounded_pool_before_uvicorn(tmp_path: Path):
     values = valid_server_environment()
     values["SMART_CRM_TENANT_POOL_SIZE"] = "0"
@@ -310,6 +324,16 @@ def test_windows_startup_rejects_invalid_bounded_pool_before_uvicorn(tmp_path: P
 
     assert result.returncode != 0
     assert "SMART_CRM_TENANT_POOL_SIZE" in (result.stdout + result.stderr)
+
+
+def test_windows_startup_rejects_zero_max_overflow_before_uvicorn(tmp_path: Path):
+    values = valid_server_environment()
+    values["SMART_CRM_TENANT_MAX_OVERFLOW"] = "0"
+
+    result = run_start_validation(tmp_path, values)
+
+    assert result.returncode != 0
+    assert "SMART_CRM_TENANT_MAX_OVERFLOW" in (result.stdout + result.stderr)
 
 
 def test_health_policy_rejects_each_partial_failure():

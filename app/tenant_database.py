@@ -76,8 +76,8 @@ class TenantDatabaseRouterSettings:
             raise ValueError("max_cached_engines must be positive")
         if self.pool_size < 1:
             raise ValueError("pool_size must be positive")
-        if self.max_overflow < 0:
-            raise ValueError("max_overflow cannot be negative")
+        if self.max_overflow < 1:
+            raise ValueError("max_overflow must be positive")
         if self.pool_timeout <= 0:
             raise ValueError("pool_timeout must be positive")
         if self.connect_timeout < 1:

@@ -87,8 +87,8 @@ foreach ($key in @(
 }
 $maxOverflow = 0
 if (-not [int]::TryParse($settings.SMART_CRM_TENANT_MAX_OVERFLOW, [ref]$maxOverflow) -or
-    $maxOverflow -lt 0) {
-    throw "SMART_CRM_TENANT_MAX_OVERFLOW deve ser um inteiro nao negativo."
+    $maxOverflow -le 0) {
+    throw "SMART_CRM_TENANT_MAX_OVERFLOW deve ser um inteiro positivo."
 }
 $poolTimeout = 0.0
 if (-not [double]::TryParse(
