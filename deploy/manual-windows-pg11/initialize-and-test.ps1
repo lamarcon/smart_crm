@@ -3,6 +3,8 @@ param(
     [string]$AppRoot = "C:\brbots\apps\smart-crm",
     [string]$EnvFile = "C:\ProgramData\SmartCRM\server.env",
     [string]$PsqlPath = "C:\Program Files\PostgreSQL\11\bin\psql.exe",
+    [switch]$SharedPostgres,
+    [string]$PgHbaPath,
     [Parameter(Mandatory = $true)]
     [PSCredential]$ServiceCredential
 )
@@ -10,6 +12,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "deployment-policy.ps1")
+
+$listeners = @(Get-NetTCPConnection -State Listen -LocalPort 5432 -ErrorAction SilentlyContinue)
+$pgHbaText = ""
+if ($SharedPostgres) {
+    if ([string]::IsNullOrWhiteSpace($PgHbaPath) -or -not (Test-Path -LiteralPath $PgHbaPath -PathType Leaf)) {
+        throw "Modo PostgreSQL compartilhado exige -PgHbaPath valido."
+    }
+    $pgHbaText = [IO.File]::ReadAllText($PgHbaPath)
+}
+Assert-SmartCrmPostgresListeners -Listeners $listeners -SharedPostgres:$SharedPostgres -PgHbaText $pgHbaText
 
 & (Join-Path $PSScriptRoot "start-smart-crm.ps1") -AppRoot $AppRoot -EnvFile $EnvFile -ValidateOnly
 $settings = Get-Content -LiteralPath $EnvFile | Where-Object { $_ -and -not $_.StartsWith("#") } | Out-String | ConvertFrom-StringData

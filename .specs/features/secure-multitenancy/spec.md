@@ -37,6 +37,7 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 | Topologia multiempresa | Aplicação central, plano de controle central e um PostgreSQL de negócio exclusivo por empresa | Escolha explícita do usuário para isolamento físico e escalabilidade futura | y |
 | Conteúdo do plano de controle | Diretório de tenants, referências de segredo, sessões, throttling e auditoria de segurança; nenhum usuário, hash de senha ou dado comercial | Permite roteamento e sessões centralizadas sem transformar o banco central em repositório dos clientes | y |
 | Local inicial do plano de controle | Database separado smartcrm_control no PostgreSQL 11 junto da aplicação; pode ser movido depois | Evita nova infraestrutura no primeiro corte e mantém separação lógica do banco de negócio | y |
+| PostgreSQL 11 compartilhado no primeiro corte | A instância também hospeda `DW_CMS` e `DW_PRODUTOS`, que mantêm acesso remoto; regras `pg_hba.conf` anteriores às regras amplas restringem somente `smartcrm` e `smartcrm_control` ao loopback | Preserva sistemas existentes sem expor os bancos do Smart CRM nem reconfigurar globalmente o listener | y |
 | Credenciais dos bancos | Referências no plano de controle e segredos cifrados com DPAPI para a conta do serviço; variáveis de ambiente apenas em desenvolvimento/testes | Evita DSN e senha em texto claro no banco central e é compatível com Windows Server offline | y |
 | Rede com bancos remotos | TLS com validação de certificado e allowlist do IP da aplicação; falha fechada quando indisponível | Bancos de clientes não devem aceitar conexão pública irrestrita nem fallback para outro tenant | y |
 | Contrato de persistência do frontend | Preservar o snapshot versionado, com projeção e merge autorizados no servidor | Evita reescrita total do monólito e fecha o bypass atual do PUT integral | y |
@@ -177,6 +178,7 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 10. WHEN o pacote offline preparar um corte multiempresa THEN the system SHALL migrar e confirmar separadamente a linhagem control e cada tenant explicitamente selecionado, e SHALL jamais executar migração no startup web.
 11. WHEN a tarefa Windows for instalada THEN the system SHALL exigir uma conta de serviço dedicada informada pelo operador, e o provisionamento DPAPI SHALL ser executado sob a mesma identidade sem usar `SYSTEM` como default.
 12. WHEN uma atualização for preparada para o servidor existente THEN the system SHALL usar diretório versionado lado a lado, preservar a versão ativa anterior e proibir sobrescrita do caminho ativo ou `git pull` em produção.
+13. WHEN o PostgreSQL 11 de produção também hospedar `DW_CMS` e `DW_PRODUTOS` para clientes remotos THEN the system SHALL preservar o listener e as regras desses bancos, exigir regras `pg_hba.conf` ordenadas que permitam `smartcrm` e `smartcrm_control` somente por loopback e bloquear migração enquanto essa proteção não for comprovada.
 
 **Independent Test**: Exercitar eventos, falhas de um banco e preflight com tenants em versões diferentes, confirmando isolamento, logs sem segredo e ausência de fallback.
 
@@ -221,8 +223,8 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 | MT-02 | Sessão opaca central | Execute | Verified |
 | MT-03 | Roteamento e isolamento de banco | Execute | Verified |
 | MT-04 | Autorização por perfil | Execute | Verified |
-| MT-05 | Migração e provisionamento distribuído | Execute | Verified |
-| MT-06 | Operação segura da frota | Execute | Verified |
+| MT-05 | Migração e provisionamento distribuído | Execute | Implementing |
+| MT-06 | Operação segura da frota | Execute | Implementing |
 | MT-07 | Edge cases e concorrência | Execute | Verified |
 
 **Coverage:** 7 requirement groups, 7 mapped to design/tasks, 0 unmapped.
@@ -238,3 +240,4 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 - [x] O plano de controle não contém hash de senha, dados comerciais, DSN nem segredo de conexão em texto puro.
 - [x] O pacote offline valida wheels e execução no contrato CPython 3.11 x64/PostgreSQL 11.
 - [x] Todos os gates backend, UI, migração, frota, implantação e validadores do skill passam antes de qualquer deploy.
+- [ ] O pacote compartilhado preserva `DW_CMS` e `DW_PRODUTOS` e prova a proteção local de `smartcrm` e `smartcrm_control` antes da migração.

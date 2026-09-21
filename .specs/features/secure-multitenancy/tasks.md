@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** Complete
+**Status:** In Progress (T45 implementation complete; independent verification pending)
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -1053,6 +1053,29 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43 -> T44
 **Gate:** Build
 **Commit:** fix(runtime): close central config boundary gaps
 
+### T45: Protect Smart CRM databases on the shared PostgreSQL cluster
+
+**Status:** In Progress (implementation complete; independent verification pending)
+
+**What:** Preserve remote access for the out-of-scope `DW_CMS` and `DW_PRODUTOS` databases while gating Smart CRM installation and migration on ordered `pg_hba.conf` rules that keep only `smartcrm` and `smartcrm_control` loopback-accessible.
+**Where:** deploy/manual-windows-pg11/deployment-policy.ps1, deploy/manual-windows-pg11/install-offline.ps1, deploy/manual-windows-pg11/initialize-and-test.ps1, deploy/manual-windows-pg11/LEIA-ME.md, scripts/verify_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_outcomes.py, .specs/STATE.md
+**Depends on:** T44 and the production discovery that PostgreSQL 11 also serves remote `DW_CMS`/`DW_PRODUTOS` clients.
+**Reuses:** PostgreSQL listener gate, package verifier and explicit migration publication gate.
+**Requirement:** MT-05, MT-06
+**Tools:** MCP NONE; Skill tlc-spec-driven.
+
+**Done when:**
+
+- [x] Dedicated loopback-only PostgreSQL still passes without an exception.
+- [x] A shared wildcard listener passes only with explicit shared-cluster mode and the exact leading loopback-allow/remote-reject rules for `smartcrm` and `smartcrm_control`.
+- [x] Missing, reordered or weakened Smart CRM HBA rules fail before virtualenv creation and before either Alembic lineage.
+- [x] Documentation preserves `DW_CMS` and `DW_PRODUTOS`, backs up/reloads HBA without restarting PostgreSQL and includes pre/post remote-client UAT.
+- [ ] Focused/full gates, package verifier, structural validators and a fresh independent Verifier pass.
+
+**Tests:** Windows policy outcome + deployment contract + package build
+**Gate:** Build
+**Commit:** fix(windows): support protected shared postgres cluster
+
 ## Phase Execution Map
 
 ```
@@ -1061,7 +1084,7 @@ Phase 2: T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17
 Phase 3: T17 → T18 → T19 → T20 → T21 → T22
 Phase 4: T22 → T23 → T24 → T25 → T26 → T27
 Phase 5: T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → T38
-Phase 6: T38 → T39 → T40 → T41 → T42 → T43 → T44
+Phase 6: T38 → T39 → T40 → T41 → T42 → T43 → T44 → T45
 ```
 
 Execution is sequential and phase boundaries are batch boundaries. Plan approval permits local implementation/commits only, never push, deploy, remote connection, production migration or server change.
@@ -1076,7 +1099,7 @@ Execution is sequential and phase boundaries are batch boundaries. Plan approval
 | T18-T22 | One admin/fleet/UI/runtime boundary each | OK |
 | T23-T27 | One config/package/proxy/runbook/doc boundary each | OK |
 | T28-T38 | One revocation/TLS/audit/cookie/coverage/evidence/config/runtime/test/docs boundary each | OK |
-| T39-T44 | One runtime config/startup/service identity/migration/cutover/verifier-fix boundary each | OK |
+| T39-T45 | One runtime config/startup/service identity/migration/cutover/verifier-fix/shared-cluster boundary each | OK |
 
 Every source task co-locates required tests; there is no deferred test task.
 
@@ -1128,6 +1151,7 @@ Every source task co-locates required tests; there is no deferred test task.
 | T42 | T41 | T41 → T42 | OK |
 | T43 | T42 | T42 → T43 | OK |
 | T44 | T43 implementation + Verifier report | T43 → T44 | OK |
+| T45 | T44 + shared-cluster production discovery | T44 → T45 | OK |
 
 ## Test Co-location Validation
 
@@ -1159,6 +1183,7 @@ Every source task co-locates required tests; there is no deferred test task.
 | T42 | Two migration lineages | Contract + outcome | Contract/outcome/build | OK |
 | T43 | Cutover/onboarding docs | Documentation contract | Documentation contract/build | OK |
 | T44 | Runtime configuration boundaries | Unit + Windows outcome contract | Unit/contract/build | OK |
+| T45 | Shared PostgreSQL HBA boundary | Windows outcome + deployment contract | Contract/outcome/build | OK |
 
 ## Requirement Coverage
 
@@ -1168,11 +1193,11 @@ Every source task co-locates required tests; there is no deferred test task.
 | MT-02 Central session | T3,T6,T10-T15,T18,T20-T23,T28,T31,T33-T34,T38 | Cookie, digest, TTL, revocation, exact HTTPS origin and no-token |
 | MT-03 Database isolation | T5,T7-T9,T13-T17,T20-T26,T29-T30,T33,T35 | Two DBs, forged routing, verified TLS, explicit local opt-in and RLS |
 | MT-04 Authorization | T12,T14-T17,T21,T28,T30 | Role/action/record matrix and denial audit |
-| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33,T35-T43 | Default preservation, checkpoints, local provisioning, fleet, service identity and separate migration gates |
-| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T44 | Redaction, audit, TLS, exact positive bounds, explicit local config, cache, health, executable startup/shutdown, package and side-by-side runbook |
+| MT-05 Migration/provisioning | T1-T8,T18-T19,T22-T24,T26-T27,T29,T33,T35-T43,T45 | Default preservation, checkpoints, local provisioning, fleet, service identity, separate migration gates and untouched out-of-scope databases |
+| MT-06 Operation | T3-T6,T9,T13-T15,T19,T22-T45 | Redaction, audit, TLS, exact positive bounds, explicit local config, cache, health, executable startup/shutdown, package, side-by-side runbook and shared-cluster HBA gate |
 | MT-07 Edge/concurrency | T5-T10,T13-T19,T22,T26,T29,T31,T33-T35 | Locks, strict opt-in, invalid-cookie cleanup, outage, mismatch, retry and rollback |
 
-**Coverage:** 7 requirement groups, 44 mapped tasks, 0 unmapped.
+**Coverage:** 7 requirement groups, 45 mapped tasks, 0 unmapped.
 
 ## Approval Gate Before Execute
 

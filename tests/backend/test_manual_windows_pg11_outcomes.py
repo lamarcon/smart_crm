@@ -15,6 +15,14 @@ POLICY = PROJECT_ROOT / "deploy/manual-windows-pg11/deployment-policy.ps1"
 START = PROJECT_ROOT / "deploy/manual-windows-pg11/start-smart-crm.ps1"
 ENV_EXAMPLE = PROJECT_ROOT / "deploy/manual-windows-pg11/server.env.example"
 
+SHARED_POSTGRES_HBA = """\
+host smartcrm,smartcrm_control all 127.0.0.1/32 md5
+host smartcrm,smartcrm_control all ::1/128 md5
+host smartcrm,smartcrm_control all 0.0.0.0/0 reject
+host smartcrm,smartcrm_control all ::/0 reject
+host all all 0.0.0.0/0 md5
+"""
+
 
 def load_builder():
     path = PROJECT_ROOT / "scripts/build_manual_windows_pg11_bundle.py"
@@ -36,6 +44,10 @@ def run_policy(expression: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
     )
+
+
+def powershell_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 def valid_server_environment() -> dict[str, str]:
@@ -163,6 +175,52 @@ def test_postgresql_listener_policy_requires_ipv4_loopback_and_rejects_public_bi
     assert none.returncode != 0
     assert ipv6_only.returncode != 0
     assert public.returncode != 0
+
+
+def test_shared_postgresql_listener_requires_exact_leading_smartcrm_hba_rules():
+    listeners = "@([pscustomobject]@{LocalAddress='0.0.0.0'},[pscustomobject]@{LocalAddress='::'})"
+    valid = run_policy(
+        f"$x={listeners}; Assert-SmartCrmPostgresListeners -Listeners $x "
+        f"-SharedPostgres -PgHbaText {powershell_literal(SHARED_POSTGRES_HBA)}"
+    )
+    missing = run_policy(
+        f"$x={listeners}; Assert-SmartCrmPostgresListeners -Listeners $x -SharedPostgres"
+    )
+    reordered_hba = SHARED_POSTGRES_HBA.replace(
+        "host smartcrm,smartcrm_control all 127.0.0.1/32 md5\n"
+        "host smartcrm,smartcrm_control all ::1/128 md5",
+        "host smartcrm,smartcrm_control all ::1/128 md5\n"
+        "host smartcrm,smartcrm_control all 127.0.0.1/32 md5",
+    )
+    reordered = run_policy(
+        f"$x={listeners}; Assert-SmartCrmPostgresListeners -Listeners $x "
+        f"-SharedPostgres -PgHbaText {powershell_literal(reordered_hba)}"
+    )
+    weakened = run_policy(
+        f"$x={listeners}; Assert-SmartCrmPostgresListeners -Listeners $x "
+        "-SharedPostgres -PgHbaText "
+        + powershell_literal(SHARED_POSTGRES_HBA.replace("0.0.0.0/0 reject", "0.0.0.0/0 md5"))
+    )
+
+    assert valid.returncode == 0, valid.stdout + valid.stderr
+    assert missing.returncode != 0
+    assert reordered.returncode != 0
+    assert weakened.returncode != 0
+
+
+def test_shared_postgresql_hba_gate_precedes_install_and_both_migrations():
+    deploy = PROJECT_ROOT / "deploy/manual-windows-pg11"
+    install = (deploy / "install-offline.ps1").read_text(encoding="utf-8")
+    initialize = (deploy / "initialize-and-test.ps1").read_text(encoding="utf-8")
+
+    assert "-SharedPostgres" in install
+    assert "-PgHbaPath" in install
+    assert install.index("Assert-SmartCrmPostgresListeners") < install.index("-m venv")
+    assert "-SharedPostgres" in initialize
+    assert "-PgHbaPath" in initialize
+    assert initialize.index("Assert-SmartCrmPostgresListeners") < initialize.index(
+        "Get-SmartCrmControlAlembicUpgradeArguments"
+    )
 
 
 def test_environment_policy_emits_exact_external_database_contract():

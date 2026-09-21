@@ -413,6 +413,7 @@ Protected errors use stable envelopes: 401 unauthenticated, 403 forbidden, 404 r
 | Single global SQLAlchemy engine | app/database.py | Cannot isolate databases and may fallback accidentally | Split control engine from no-default tenant router |
 | Database count grows with customers | architecture | File descriptors, pools and memory can grow unbounded | Lazy bounded LRU engines and per-tenant limits |
 | Remote PostgreSQL 11 | deployment constraint | Unsupported version and network/TLS exposure | Minimum-compatible SQL, TLS verify, allowlist and upgrade roadmap |
+| Shared PostgreSQL 11 cluster | discovered production constraint | A global loopback bind would interrupt `DW_CMS`/`DW_PRODUTOS`; a broad listener could expose Smart CRM databases | Preserve the listener, require first-match `pg_hba.conf` loopback allow + remote reject rules only for `smartcrm`/`smartcrm_control`, and gate migration on deterministic validation |
 | Multi-database provisioning is non-atomic | architecture | Partial onboarding state | Non-active state machine, checkpoints and idempotent retry |
 | Fleet schema drift | operations | Some tenants may run incompatible code | Version gate, preflight and explicit per-tenant outcomes |
 | Central control DB is shared dependency | architecture | Its outage blocks all sessions | Minimal schema, health/backup, fail closed; HA deferred |

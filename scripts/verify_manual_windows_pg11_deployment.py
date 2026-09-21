@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = {
     "MPG-01", "MPG-02", "MPG-03", "MPG-04", "MPG-05", "MPG-06", "MPG-07",
     "MPG-08", "MPG-09", "MPG-10", "MPG-11", "MPG-12", "MPG-13", "MPG-14",
-    "MPG-15", "MPG-16", "MPG-17", "MPG-18",
+    "MPG-15", "MPG-16", "MPG-17", "MPG-18", "MPG-19",
 }
 
 
@@ -91,6 +91,30 @@ def verify_source(root: Path) -> set[str]:
         "tenant-secrets",
         "SmartCRMService",
     )), "MPG-18", "complete central environment or SmartCRMService ACL contract missing", passed)
+    _require(all(token in policy for token in (
+        "Get-SmartCrmSharedPostgresHbaRules",
+        "Assert-SmartCrmSharedPostgresHba",
+        "host smartcrm,smartcrm_control all 127.0.0.1/32 md5",
+        "host smartcrm,smartcrm_control all 0.0.0.0/0 reject",
+    )) and all(token in install for token in (
+        "-SharedPostgres:$SharedPostgres",
+        "-PgHbaPath",
+        "Assert-SmartCrmPostgresListeners",
+    )) and install.index("Assert-SmartCrmPostgresListeners") < install.index("-m venv")
+       and all(token in initialize for token in (
+        "-SharedPostgres:$SharedPostgres",
+        "-PgHbaPath",
+        "Assert-SmartCrmPostgresListeners",
+    )) and initialize.index("Assert-SmartCrmPostgresListeners") < initialize.index("Get-SmartCrmControlAlembicUpgradeArguments")
+       and all(token in readme for token in (
+        "`DW_CMS`",
+        "`DW_PRODUTOS`",
+        "nao recebem migracao",
+        "pg_reload_conf",
+        "-SharedPostgres",
+        "-PgHbaPath",
+    )) and all(database not in (policy + install + initialize) for database in ("DW_CMS", "DW_PRODUTOS")),
+        "MPG-19", "shared PostgreSQL HBA boundary or out-of-scope database preservation missing", passed)
     _require(all("==" in line for line in requirements.splitlines() if line.strip()), "MPG-02", "runtime dependency is not pinned", passed)
     return passed
 
@@ -129,7 +153,7 @@ def main() -> int:
     missing = REQUIREMENTS - passed
     if missing:
         raise AssertionError(f"requirements without evidence: {sorted(missing)}")
-    print("manual Windows PostgreSQL 11 deployment: PASS (18/18 requirements)")
+    print("manual Windows PostgreSQL 11 deployment: PASS (19/19 requirements)")
     return 0
 
 

@@ -50,13 +50,21 @@
 - **Date**: 2026-09-21
 - **Status**: active
 
+### AD-007
+- **Decision**: O PostgreSQL 11 do primeiro corte é compartilhado com `DW_CMS` e `DW_PRODUTOS`, que mantêm acesso remoto. O listener global não será restringido; regras `pg_hba.conf` anteriores às regras amplas permitirão `smartcrm` e `smartcrm_control` somente por loopback e rejeitarão acesso remoto a esses dois databases.
+- **Reason**: Restringir globalmente o serviço a `127.0.0.1` interromperia sistemas existentes, enquanto regras por database preservam a operação externa e mantêm os bancos do Smart CRM locais.
+- **Trade-off**: A instância continua compartilhada e exige ordem de regras HBA, backup, reload e UAT remoto verificáveis; isolamento por instância fica adiado.
+- **Scope**: Instalador Windows, preflight de migração, `pg_hba.conf`, runbook e UAT do primeiro corte; nenhum schema ou dado de `DW_CMS`/`DW_PRODUTOS` entra no escopo.
+- **Date**: 2026-09-21
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: Multiempresa Seguro / `.specs/features/secure-multitenancy`
-- **Phase / Task**: Execute concluído; T1-T44 e Fresh Verifier completos
-- **Completed**: validação independente PASS; 55/55 critérios, 583 backend, 93 browser, compatibilidade 27/27, pacote 18/18, runbook 41/41, Apache 32/32 e sensor corretivo 3/3; pacote lado a lado e onboarding BRBots verificados; nenhum deploy, push ou acesso de produção executado
-- **In-progress** (file:line): none
-- **Next step**: preparar e executar o UAT/cutover de produção conforme o runbook somente após autorização explícita separada
-- **Blockers**: nenhum de implementação; produção ainda depende de backup verificado, janela de mudança, certificado/CA, credenciais inseridas interativamente, seleção explícita dos bancos e autorização operacional
+- **Phase / Task**: Execute retomado; T45 em andamento após descoberta do PostgreSQL compartilhado
+- **Completed**: T1-T44 e Fresh Verifier PASS; implementação T45 passa 586 backend, 93 browser, compatibilidade 27/27, pacote 19/19, runbook 41/41 e Apache 32/32; no servidor, release 18f5a7d1 copiada/validada/extraída lado a lado, conta `SmartCRMService` criada com batch logon e backups de `server.env`/tarefa salvos; aplicação atual permanece ativa
+- **In-progress** (file:line): T45 em `.specs/features/secure-multitenancy/tasks.md`; implementação concluída, independent Verifier pendente
+- **Next step**: verificar T45 independentemente, gerar novo ZIP e só então retomar o servidor com backup/HBA/preflight
+- **Blockers**: pacote 18f5a7d1 não deve continuar porque rejeita corretamente o listener compartilhado; nenhum banco foi migrado e nenhuma tarefa foi trocada
 - **Uncommitted files**: `.pytest-tmp/`, `.specs/features/crm-mvp/tasks.md`, `.venv/`, `smart_crm_demo.egg-info/` (untracked preexistentes, preservados)
 - **Branch**: main

@@ -1,6 +1,6 @@
 # Cutover multiempresa manual - BRBots
 
-Este pacote prepara o Smart CRM no Windows Server 2016 com Python 3.11 x64, PostgreSQL 11 em `127.0.0.1:5432`, Apache como proxy reverso e aplicacao interna em `127.0.0.1:8080`.
+Este pacote prepara o Smart CRM no Windows Server 2016 com Python 3.11 x64, PostgreSQL 11 compartilhado na porta `5432`, conexoes do Smart CRM em `127.0.0.1`, Apache como proxy reverso e aplicacao interna em `127.0.0.1:8080`.
 
 Este documento nao autoriza uma mudanca no servidor. A execucao exige autorizacao de producao separada, janela de manutencao, backup verificado e responsavel pelo rollback. Nao faca deploy, migracao, parada de tarefa ou alteracao do Apache apenas porque o pacote foi gerado.
 
@@ -12,6 +12,7 @@ Este documento nao autoriza uma mudanca no servidor. A execucao exige autorizaca
 - Conta Windows dedicada: `NOME-DO-SERVIDOR\SmartCRMService`.
 - O database `smartcrm` permanece no lugar e passa a ser o tenant da BRBots. Ele nao e recriado, movido ou clonado.
 - O novo database `smartcrm_control` contem somente diretorio de tenants, sessoes, bloqueios de login e auditoria; nao copie dados comerciais para ele.
+- Os databases preexistentes `DW_CMS` e `DW_PRODUTOS` continuam atendendo seus clientes remotos, nao recebem migracao do Smart CRM e nao podem ter listener, role, schema, regra HBA ou dado alterado por este corte.
 - Nao existe cadastro publico de empresa ou primeiro administrador.
 
 ## 1. Autorizar e registrar a mudanca
@@ -55,6 +56,68 @@ Os hashes devem ser identicos. Crie uma pasta nova e extraia nela. Nao sobrescre
 
 A pasta nova deve conter `app`, `migrations`, `migrations_control`, `wheelhouse`, `alembic.ini`, `alembic-control.ini`, `requirements-runtime.txt`, `MANIFEST.sha256` e `deploy`.
 
+## 3.1. Proteger somente os databases do Smart CRM no PostgreSQL compartilhado
+
+O listener global da instancia permanece como esta porque `DW_CMS` e `DW_PRODUTOS` dependem de acesso remoto. Nao altere `listen_addresses`, nao reinicie o servico PostgreSQL e nao mude as regras existentes desses databases.
+
+Descubra o arquivo ativo sem imprimir senha:
+
+```powershell
+$settings = Get-Content C:\ProgramData\SmartCRM\server.env |
+    Where-Object { $_ -and -not $_.StartsWith('#') } |
+    Out-String | ConvertFrom-StringData
+$env:PGPASSWORD = $settings.SMART_CRM_DB_PASSWORD
+try {
+    $pgHbaPath = (& "C:\Program Files\PostgreSQL\11\bin\psql.exe" `
+        -h 127.0.0.1 -p 5432 -U smartcrm -d smartcrm -At `
+        -c "SHOW hba_file;").Trim()
+}
+finally {
+    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    Remove-Variable settings -ErrorAction SilentlyContinue
+}
+if (-not (Test-Path -LiteralPath $pgHbaPath -PathType Leaf)) {
+    throw "pg_hba.conf ativo nao foi localizado."
+}
+Copy-Item -LiteralPath $pgHbaPath -Destination "$pgHbaPath.pre-smartcrm-multitenant"
+```
+
+Crie uma proposta, sem sobrescrever o arquivo ativo:
+
+```powershell
+$hbaBlock = @'
+# BEGIN SMARTCRM LOCAL ONLY
+host smartcrm,smartcrm_control all 127.0.0.1/32 md5
+host smartcrm,smartcrm_control all ::1/128 md5
+host smartcrm,smartcrm_control all 0.0.0.0/0 reject
+host smartcrm,smartcrm_control all ::/0 reject
+# END SMARTCRM LOCAL ONLY
+'@
+$pgHbaNext = "$pgHbaPath.smartcrm.next"
+$currentHba = [IO.File]::ReadAllText($pgHbaPath)
+if ($currentHba -match "BEGIN SMARTCRM LOCAL ONLY") {
+    throw "O bloco Smart CRM ja existe; valide-o em vez de duplicar."
+}
+[IO.File]::WriteAllText(
+    $pgHbaNext,
+    $hbaBlock + [Environment]::NewLine + $currentHba,
+    (New-Object Text.UTF8Encoding($false))
+)
+. "$releaseRoot\deploy\manual-windows-pg11\deployment-policy.ps1"
+Assert-SmartCrmSharedPostgresHba -PgHbaText ([IO.File]::ReadAllText($pgHbaNext))
+```
+
+Revise a proposta e confirme que somente as quatro regras mostradas foram adicionadas antes das regras `host` atuais. Dentro da janela autorizada, substitua o arquivo e recarregue a configuracao sem reiniciar o PostgreSQL:
+
+```powershell
+Copy-Item -LiteralPath $pgHbaNext -Destination $pgHbaPath -Force
+& "C:\Program Files\PostgreSQL\11\bin\psql.exe" `
+    -h 127.0.0.1 -p 5432 -U postgres -d postgres -W `
+    -v ON_ERROR_STOP=1 -c "SELECT pg_reload_conf();"
+```
+
+`pg_reload_conf()` apenas recarrega a configuracao; ele nao reinicia o PostgreSQL. Se retornar falso ou erro, restaure o backup do HBA e pare. Antes e depois da recarga, valide pelo sistema cliente que `DW_CMS` e `DW_PRODUTOS` continuam acessiveis. De uma maquina remota, tentativas a `smartcrm` e `smartcrm_control` devem ser rejeitadas.
+
 ## 4. Instalar a release sem publica-la
 
 Abra PowerShell como Administrador:
@@ -63,11 +126,15 @@ Abra PowerShell como Administrador:
 Set-Location $releaseRoot
 Set-ExecutionPolicy -Scope Process Bypass
 & .\deploy\manual-windows-pg11\test-package-integrity.ps1 -AppRoot $releaseRoot
-& .\deploy\manual-windows-pg11\install-offline.ps1 -AppRoot $releaseRoot -ServiceAccount $serviceAccount
+& .\deploy\manual-windows-pg11\install-offline.ps1 `
+    -AppRoot $releaseRoot `
+    -ServiceAccount $serviceAccount `
+    -SharedPostgres `
+    -PgHbaPath $pgHbaPath
 icacls $releaseRoot /grant:r "$($serviceAccount):(OI)(CI)RX"
 ```
 
-O instalador valida CPython 3.11 x64, PostgreSQL 11 em loopback, wheelhouse e dependencias fixadas. Ele nao para nem reconfigura o PostgreSQL e nao altera o Apache.
+O instalador valida CPython 3.11 x64, o listener compartilhado, as quatro primeiras regras `host` do HBA, wheelhouse e dependencias fixadas. Ele nao para nem reconfigura o PostgreSQL e nao altera o Apache.
 
 Em instalacao nova, ele cria `C:\ProgramData\SmartCRM\server.env` com duas senhas aleatorias diferentes: uma para `smartcrm` e outra para `smartcrm_control`. Nunca copie esse arquivo para a pasta da aplicacao.
 
@@ -176,6 +243,8 @@ Stop-ScheduledTask -TaskName SmartCRM -ErrorAction SilentlyContinue
 & "$releaseRoot\deploy\manual-windows-pg11\initialize-and-test.ps1" `
     -AppRoot $releaseRoot `
     -EnvFile C:\ProgramData\SmartCRM\server.env `
+    -SharedPostgres `
+    -PgHbaPath $pgHbaPath `
     -ServiceCredential $serviceCredential
 ```
 

@@ -142,6 +142,20 @@ def test_brbots_cutover_is_versioned_preserves_data_and_keeps_secrets_interactiv
     assert "autorizacao de producao separada" in text
 
 
+def test_shared_postgres_runbook_preserves_remote_databases_and_gates_smartcrm_hba():
+    text = MANUAL_README.read_text(encoding="utf-8")
+
+    assert "`DW_CMS`" in text
+    assert "`DW_PRODUTOS`" in text
+    assert "nao recebem migracao" in text
+    assert "host smartcrm,smartcrm_control all 127.0.0.1/32 md5" in text
+    assert "host smartcrm,smartcrm_control all 0.0.0.0/0 reject" in text
+    assert "pg_reload_conf" in text
+    assert "nao reinicia o PostgreSQL" in text
+    assert "-SharedPostgres" in text
+    assert "-PgHbaPath" in text
+
+
 def test_runtime_dependencies_match_project_dependencies():
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project_dependencies = set(project["project"]["dependencies"])

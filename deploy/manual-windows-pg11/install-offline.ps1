@@ -2,7 +2,9 @@
 param(
     [string]$AppRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")),
     [string]$PythonPath = "C:\brbots\python\python.exe",
-    [string]$ServiceAccount = "$env:COMPUTERNAME\SmartCRMService"
+    [string]$ServiceAccount = "$env:COMPUTERNAME\SmartCRMService",
+    [switch]$SharedPostgres,
+    [string]$PgHbaPath
 )
 
 Set-StrictMode -Version Latest
@@ -42,7 +44,14 @@ if ($null -eq $postgresService -or $postgresService.Status -ne "Running") {
 }
 
 $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 5432 -ErrorAction SilentlyContinue)
-Assert-SmartCrmPostgresListeners -Listeners $listeners
+$pgHbaText = ""
+if ($SharedPostgres) {
+    if ([string]::IsNullOrWhiteSpace($PgHbaPath) -or -not (Test-Path -LiteralPath $PgHbaPath -PathType Leaf)) {
+        throw "Modo PostgreSQL compartilhado exige -PgHbaPath valido."
+    }
+    $pgHbaText = [IO.File]::ReadAllText($PgHbaPath)
+}
+Assert-SmartCrmPostgresListeners -Listeners $listeners -SharedPostgres:$SharedPostgres -PgHbaText $pgHbaText
 
 $psql = "C:\Program Files\PostgreSQL\11\bin\psql.exe"
 if (-not (Test-Path -LiteralPath $psql -PathType Leaf)) {

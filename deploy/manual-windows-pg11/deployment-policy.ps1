@@ -12,9 +12,54 @@ function Assert-SmartCrmRuntimeFacts {
     }
 }
 
+function Get-SmartCrmSharedPostgresHbaRules {
+    return @(
+        "host smartcrm,smartcrm_control all 127.0.0.1/32 md5",
+        "host smartcrm,smartcrm_control all ::1/128 md5",
+        "host smartcrm,smartcrm_control all 0.0.0.0/0 reject",
+        "host smartcrm,smartcrm_control all ::/0 reject"
+    )
+}
+
+function Assert-SmartCrmSharedPostgresHba {
+    param([string]$PgHbaText)
+    if ([string]::IsNullOrWhiteSpace($PgHbaText)) {
+        throw "Modo PostgreSQL compartilhado exige o conteudo de pg_hba.conf."
+    }
+
+    $hostRules = @()
+    foreach ($rawLine in ($PgHbaText -split "`r?`n")) {
+        $line = (($rawLine -replace "#.*$", "").Trim() -split "\s+") -join " "
+        if ($line -match "^host(?:ssl|nossl)?\s") {
+            $hostRules += $line.ToLowerInvariant()
+        }
+    }
+    $requiredRules = @(Get-SmartCrmSharedPostgresHbaRules)
+    if ($hostRules.Count -lt $requiredRules.Count) {
+        throw "pg_hba.conf nao contem a fronteira local obrigatoria do Smart CRM."
+    }
+    for ($index = 0; $index -lt $requiredRules.Count; $index += 1) {
+        if ($hostRules[$index] -ne $requiredRules[$index].ToLowerInvariant()) {
+            throw "As primeiras regras host de pg_hba.conf devem proteger somente os databases do Smart CRM."
+        }
+    }
+}
+
 function Assert-SmartCrmPostgresListeners {
-    param([object[]]$Listeners)
+    param(
+        [object[]]$Listeners,
+        [switch]$SharedPostgres,
+        [string]$PgHbaText
+    )
     $ipv4Loopback = @($Listeners | Where-Object { $_.LocalAddress -eq "127.0.0.1" })
+    $ipv4Wildcard = @($Listeners | Where-Object { $_.LocalAddress -eq "0.0.0.0" })
+    if ($SharedPostgres) {
+        if ($ipv4Loopback.Count -eq 0 -and $ipv4Wildcard.Count -eq 0) {
+            throw "PostgreSQL 11 nao aceita conexao IPv4 local na porta 5432."
+        }
+        Assert-SmartCrmSharedPostgresHba -PgHbaText $PgHbaText
+        return
+    }
     if ($ipv4Loopback.Count -eq 0) {
         throw "PostgreSQL 11 nao esta ouvindo em 127.0.0.1:5432. Pare antes da migracao."
     }

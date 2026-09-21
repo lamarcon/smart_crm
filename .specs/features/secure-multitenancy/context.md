@@ -71,6 +71,7 @@ Esta feature mantém uma aplicação central em sc2030.brbots.com, identifica em
 - Apache Basic Auth poderá permanecer em homologação e será removido somente em corte autorizado após UAT.
 - O primeiro tenant de produção usará slug `brbots`, nome exibido `brbots`, administrador `Luiz Felipe` e e-mail `lfmarcon@brbots.com`; nenhuma senha foi registrada na especificação.
 - O banco atual do aplicativo permanecerá como banco de negócio do tenant `brbots`; um database separado `smartcrm_control` será criado na mesma instância PostgreSQL 11 para o plano de controle.
+- A instância PostgreSQL 11 também hospeda `DW_CMS` e `DW_PRODUTOS`, usados remotamente por outro cliente. Esses bancos, seus listeners e suas regras permanecem fora do escopo; `pg_hba.conf` deve restringir somente `smartcrm` e `smartcrm_control` ao loopback antes de qualquer migração.
 - A tarefa Windows usará uma conta dedicada `SmartCRMService`. O CLI administrativo e o runtime deverão operar sob essa mesma identidade para que o DPAPI permaneça vinculado à conta do serviço.
 - Releases serão instaladas lado a lado em diretórios versionados. A versão ativa e o Apache somente mudarão dentro de uma janela de corte autorizada separadamente.
 
