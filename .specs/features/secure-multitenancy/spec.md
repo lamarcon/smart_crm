@@ -223,8 +223,8 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 | MT-02 | Sessão opaca central | Execute | Verified |
 | MT-03 | Roteamento e isolamento de banco | Execute | Verified |
 | MT-04 | Autorização por perfil | Execute | Verified |
-| MT-05 | Migração e provisionamento distribuído | Execute | Implementing |
-| MT-06 | Operação segura da frota | Execute | Implementing |
+| MT-05 | Migração e provisionamento distribuído | Execute | Verified |
+| MT-06 | Operação segura da frota | Execute | Verified |
 | MT-07 | Edge cases e concorrência | Execute | Verified |
 
 **Coverage:** 7 requirement groups, 7 mapped to design/tasks, 0 unmapped.
@@ -240,4 +240,4 @@ Cada decisão abaixo tem um default proposto. A aprovação deste plano confirma
 - [x] O plano de controle não contém hash de senha, dados comerciais, DSN nem segredo de conexão em texto puro.
 - [x] O pacote offline valida wheels e execução no contrato CPython 3.11 x64/PostgreSQL 11.
 - [x] Todos os gates backend, UI, migração, frota, implantação e validadores do skill passam antes de qualquer deploy.
-- [ ] O pacote compartilhado preserva `DW_CMS` e `DW_PRODUTOS` e prova a proteção local de `smartcrm` e `smartcrm_control` antes da migração.
+- [x] O pacote compartilhado preserva `DW_CMS` e `DW_PRODUTOS` e prova a proteção local de `smartcrm` e `smartcrm_control` antes da migração.

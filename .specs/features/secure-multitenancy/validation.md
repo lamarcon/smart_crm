@@ -5,15 +5,16 @@
 **Verdict:** PASS ✅
 **Date:** 2026-09-21
 **Spec:** `.specs/features/secure-multitenancy/spec.md`
-**Diff range:** `e35e0c9..425bd7f`
+**Diff range:** `18f5a7d1..a3342fc`
 **Verifier:** independent sub-agent (author ≠ verifier)
 
 ---
 
-## Resolved Gaps
+## Fresh Verification Scope
 
-1. **F1 / P2 AC8:** `app/tenant_database.py:79-80` e `deploy/manual-windows-pg11/start-smart-crm.ps1:88-91` agora rejeitam `max_overflow=0`; `tests/backend/test_server.py:217-240` e `tests/backend/test_manual_windows_pg11_outcomes.py:329-336` afirmam os outcomes exatos.
-2. **F2 / P2 AC9:** `tests/backend/test_manual_windows_pg11_outcomes.py:305-316` remove `SMART_CRM_CONTROL_DATABASE_URL`, exige exit não zero, identifica a chave ausente e prova que a senha tenant não aparece. A checagem ocorre em `start-smart-crm.ps1:51-56`, antes do retorno ValidateOnly e da chamada ao Uvicorn.
+1. **P2 AC13 / T45:** o PostgreSQL 11 compartilhado preserva listener e bancos fora do escopo, mas `smartcrm`/`smartcrm_control` só passam com as quatro primeiras regras `host` exatas — allow IPv4/IPv6 loopback e reject IPv4/IPv6 remoto (`deployment-policy.ps1:15-45`).
+2. **Fail-fast operacional:** o mesmo gate ocorre antes de criar a venv (`install-offline.ps1:46-54,70-72`) e antes das duas linhagens Alembic (`initialize-and-test.ps1:16-24,38-48`).
+3. **Modo dedicado retido:** sem `-SharedPostgres`, exige IPv4 loopback e rejeita qualquer listener fora de `127.0.0.1`/`::1` (`deployment-policy.ps1:63-68`).
 
 ---
 
@@ -21,13 +22,14 @@
 
 | Task | Status | Notes |
 | --- | --- | --- |
-| T1-T38 | ✅ Retained | Build completo sem regressão: 583 backend e 93 browser. |
+| T1-T38 | ✅ Retained | Build completo sem regressão: 586 backend e 93 browser. |
 | T39 | ✅ Verified | Todos os limites documentados, inclusive `max_overflow=0`, falham fechado com mensagem genérica no bootstrap. |
 | T40 | ✅ Verified | Factory central, loopback, ausência de fallback, placeholder, omissão e limites inválidos cobertos sem vazamento. |
 | T41 | ✅ Verified | Credencial `SmartCRMService` obrigatória, sem default `SYSTEM`; mesma identidade DPAPI documentada. |
 | T42 | ✅ Verified | Linhagens/revisões control e tenant separadas e confirmadas antes da publicação; startup web sem Alembic. |
 | T43 | ✅ Verified | Contrato lado a lado, preservação e onboarding BRBots passam. |
 | T44 | ✅ Verified | F1/F2 fechados; focais, gate e sensor independente passam. |
+| T45 | ✅ Verified | Cluster compartilhado preservado; HBA Smart CRM fechado, ordenado e comprovado antes de instalação/migrações. |
 
 ---
 
@@ -117,8 +119,9 @@
 | 10 | `tests/backend/test_manual_windows_pg11_outcomes.py:223-259,276-278` — comandos/revisões exatos, ordem e `"alembic" not in start.lower()` | ✅ |
 | 11 | `tests/backend/test_manual_windows_pg11_outcomes.py:345-356` — credencial obrigatória, SmartCRMService, sem SYSTEM, mesma identidade DPAPI | ✅ |
 | 12 | `tests/backend/test_manual_windows_pg11_deployment.py:130-142` — diretório versionado, não sobrescrever, git pull proibido, dados BRBots e onboarding interativo | ✅ |
+| 13 | `tests/backend/test_manual_windows_pg11_outcomes.py:168-177` mantém o modo dedicado estrito; `:180-208` exige HBA compartilhado exato e rejeita ausência/reordenação/enfraquecimento; `:211-223` exige o gate antes da venv e Alembic; `test_manual_windows_pg11_deployment.py:145-156` preserva `DW_CMS`/`DW_PRODUTOS`, reload sem restart e parâmetros compartilhados. | ✅ |
 
-**Status:** ✅ 55/55 ACs passaram com outcome spec-anchored e evidência `file:line`.
+**Status:** ✅ 56/56 ACs passaram com outcome spec-anchored e evidência `file:line`.
 
 ---
 
@@ -126,29 +129,26 @@
 
 Os dez edge cases anteriores permanecem cobertos. Evidências principais: slug `test_schemas.py:256-257`; cookie `test_auth_api.py:181-211`; throttle `test_control_repository.py:216-218`; conflito `test_workspace_service.py`; referência/rollback `test_schemas.py:103-105`; RLS `test_tenant_migration_security.py:214,245-247`; identidade/pool `test_tenant_router.py:248-307,393-396`; wheel `test_windows_multitenant_bundle.py:55-74`; ativação `test_admin.py:211-293`.
 
-Nenhum teste foi removido ou enfraquecido no diff. A contagem cresceu de 566 backend antes da extensão operacional para 583; o baseline original da feature era 97 backend e 69 browser.
+Nenhum teste foi removido ou enfraquecido no diff. A contagem cresceu de 566 backend antes da extensão operacional para 586; o baseline original da feature era 97 backend e 69 browser.
 
 ---
 
 ## Discrimination Sensor
 
-Worktree isolado round 2: `D:\Develop_CRM_Project\.verifier-worktrees\secure-multitenancy-ops-r2-425bd7f` (removido). Nenhuma mutação ocorreu no worktree real.
+Worktree isolado T45: `D:\Develop_CRM_Project\.verifier-worktrees\secure-multitenancy-t45-a3342fc` (removido). Nenhuma mutação ocorreu no worktree real.
 
 | # | Mutação comportamental | Assert que matou | Resultado |
 | --- | --- | --- | --- |
-| R2-M1 | Backend volta a aceitar `max_overflow=0` (`< 1` → `< 0`) | `tests/backend/test_server.py:217-240`: `pytest.raises(RuntimeBootstrapError)` falhou somente no caso zero | ✅ Killed |
-| R2-M2 | Wrapper volta a aceitar `max_overflow=0` (`-le 0` → `-lt 0`) | `tests/backend/test_manual_windows_pg11_outcomes.py:335`: `assert result.returncode != 0` | ✅ Killed |
-| R2-M3 | Wrapper deixa a URL de controle ausente passar pelo required-key e pela validação de DSN | `tests/backend/test_manual_windows_pg11_outcomes.py:314`: `assert result.returncode != 0` | ✅ Killed |
+| T45-M1 | Remove o reject remoto IPv4 da factory HBA | `tests/backend/test_manual_windows_pg11_outcomes.py:205`: `assert valid.returncode == 0` falhou porque a factory deixou de corresponder ao bloco seguro | ✅ Killed |
+| T45-M2 | Inverte as duas regras loopback iniciais na factory HBA | `tests/backend/test_manual_windows_pg11_outcomes.py:205`: o HBA canônico deixou de ser aceito | ✅ Killed |
+| T45-M3 | Remove o gate HBA de `initialize-and-test.ps1`, permitindo alcançar Alembic sem a prova | `tests/backend/test_manual_windows_pg11_outcomes.py:219`: `assert "-SharedPostgres" in initialize` falhou | ✅ Killed |
 
-**Sensor depth:** revalidação focal dos dois gaps, 3 mutações comportamentais.
+**Sensor depth:** AC13/T45, 3 mutações comportamentais independentes no scratch.
 **Sensor verdict:** 3/3 killed, 0 survived. PASS ✅
 
-Após restauração, os sete casos focais passaram. O scratch e seu diretório pai foram removidos. O porcelain real final é idêntico ao baseline:
+Após restauração, os quatro casos focais passaram. O scratch e seu diretório pai foram removidos. Antes da edição autorizada deste relatório, o porcelain real voltou exatamente ao baseline:
 
 ```text
- M .specs/LESSONS.md
- M .specs/features/secure-multitenancy/validation.md
- M .specs/lessons.json
 ?? .pytest-tmp/
 ?? .specs/features/crm-mvp/tasks.md
 ?? .venv/
@@ -160,11 +160,11 @@ Após restauração, os sete casos focais passaram. O scratch e seu diretório p
 ## Gate Check
 
 - **Build:** `.venv\Scripts\python.exe -m compileall -q app migrations migrations_control`; compatibilidade; Compose; backend; browser; runbook; Apache.
-- **Result:** 583 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 27/27; Windows runbook 41/41; Apache 32/32; Compose válido; compileall limpo.
+- **Result:** 586 backend passed, 0 failed, 0 skipped; 93 browser passed, 0 failed; Python 3.11 27/27; Windows runbook 41/41; Apache 32/32; Compose válido; compileall limpo.
 - **Warnings:** 2 dependências (Starlette/Pydantic), sem falha.
-- **Package verifier:** `scripts/verify_manual_windows_pg11_deployment.py` — 18/18.
+- **Package verifier:** `scripts/verify_manual_windows_pg11_deployment.py` — 19/19.
 - **PowerShell parser:** PASS em todos os `deploy/manual-windows-pg11/*.ps1`.
-- **Structural:** `validate_spec` 0 erros/0 warnings; `validate_tasks` 0 erros/6 warnings de granularidade em T39-T44.
+- **Structural:** `validate_spec` 0 erros/0 warnings; `validate_tasks` 0 erros/7 warnings de granularidade em T39-T45.
 
 ---
 
@@ -179,22 +179,24 @@ Após restauração, os sete casos focais passaram. O scratch e seu diretório p
 | Release versionada e onboarding BRBots | ✅ |
 | Limites iguais à spec | ✅ `max_overflow=0` rejeitado no backend e wrapper |
 | Per-layer coverage / todos os ramos do AC9 | ✅ omissão, placeholder e limites inválidos |
+| PostgreSQL compartilhado sem regressão dos bancos legados | ✅ listener/DW preservados; HBA Smart CRM fail-closed |
 | Guidelines | ✅ `coding-principles.md`, `tasks.md`, `pyproject.toml` |
 
 ---
 
-## Corrective Revalidation
+## T45 Revalidation
 
-- **F1 resolved:** fronteira positiva aplicada nas duas camadas; mutações independentes de backend e wrapper foram mortas.
-- **F2 resolved:** omissão da URL de controle tem outcome persistido, redigido e discriminante; a mutação que remove as proteções foi morta.
+- **Shared mode:** wildcard só passa com `-SharedPostgres` e as quatro primeiras regras host exatas; HBA ausente, reordenado ou enfraquecido falha.
+- **Dedicated mode:** mantém exigência de IPv4 loopback e rejeição de binding público.
+- **Ordering:** o gate antecede criação da venv, migração control e migração tenant.
+- **Preservation:** o runbook não altera listener/regras dos bancos legados, usa backup + `pg_reload_conf()` sem restart e exige UAT remoto antes/depois.
 - **New gaps:** nenhum.
 
 ---
 
 ## Lessons Distilled
 
-- `L-022` (candidate): testar fronteiras exatamente como a spec, inclusive zero em limites positivos.
-- `L-023` (candidate): cobrir cada ramo de critérios operacionais compostos com um outcome independente.
+Nenhuma lição nova: a verificação T45 passou limpa e não revelou falha real. As lições anteriores permanecem preservadas sem duplicação.
 
 ---
 
@@ -202,8 +204,8 @@ Após restauração, os sete casos focais passaram. O scratch e seu diretório p
 
 **Overall:** ✅ Ready
 
-**Spec-anchored check:** 55/55 ACs; 0 gaps.
-**Sensor:** round 2 matou 3/3 mutações corretivas.
-**Gate:** 583 backend + 93 browser + compatibilidade 27/27 + pacote 18/18 + runbook 41/41 + Apache 32/32.
+**Spec-anchored check:** 56/56 ACs; 0 gaps.
+**Sensor:** T45 matou 3/3 mutações comportamentais.
+**Gate:** 586 backend + 93 browser + compatibilidade 27/27 + pacote 19/19 + runbook 41/41 + Apache 32/32.
 
-F1/F2 estão fechados. A extensão operacional está pronta para o fechamento documental de T43/T44; nenhum deploy, push ou acesso de produção foi executado.
+P2 AC13/T45 está verificado sem regressão. A extensão operacional está pronta para fechamento documental; nenhum deploy, push ou acesso de produção foi executado.

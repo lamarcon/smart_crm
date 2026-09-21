@@ -61,10 +61,10 @@
 ## Handoff
 
 - **Feature**: Multiempresa Seguro / `.specs/features/secure-multitenancy`
-- **Phase / Task**: Execute retomado; T45 em andamento após descoberta do PostgreSQL compartilhado
-- **Completed**: T1-T44 e Fresh Verifier PASS; implementação T45 passa 586 backend, 93 browser, compatibilidade 27/27, pacote 19/19, runbook 41/41 e Apache 32/32; no servidor, release 18f5a7d1 copiada/validada/extraída lado a lado, conta `SmartCRMService` criada com batch logon e backups de `server.env`/tarefa salvos; aplicação atual permanece ativa
-- **In-progress** (file:line): T45 em `.specs/features/secure-multitenancy/tasks.md`; implementação concluída, independent Verifier pendente
-- **Next step**: verificar T45 independentemente, gerar novo ZIP e só então retomar o servidor com backup/HBA/preflight
+- **Phase / Task**: Execute concluído; T1-T45 e Fresh Verifier completos
+- **Completed**: validação independente T45 PASS com 56/56 critérios, 586 backend, 93 browser, compatibilidade 27/27, pacote 19/19, runbook 41/41, Apache 32/32 e sensor 3/3; no servidor, release 18f5a7d1 copiada/validada/extraída lado a lado, conta `SmartCRMService` criada com batch logon e backups de `server.env`/tarefa salvos; aplicação atual permanece ativa
+- **In-progress** (file:line): none
+- **Next step**: gerar novo ZIP do commit verificado e retomar o servidor com backup/HBA/preflight, sem tocar em `DW_CMS`/`DW_PRODUTOS`
 - **Blockers**: pacote 18f5a7d1 não deve continuar porque rejeita corretamente o listener compartilhado; nenhum banco foi migrado e nenhuma tarefa foi trocada
 - **Uncommitted files**: `.pytest-tmp/`, `.specs/features/crm-mvp/tasks.md`, `.venv/`, `smart_crm_demo.egg-info/` (untracked preexistentes, preservados)
 - **Branch**: main

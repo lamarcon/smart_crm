@@ -5,7 +5,7 @@
 Implement these tasks with the tlc-spec-driven skill and follow its Execute flow and Critical Rules. The skill governs per-task gates, atomic Conventional Commits, the sub-agent offer, independent Verifier and discrimination sensor. If the skill cannot be activated, STOP.
 
 **Design:** .specs/features/secure-multitenancy/design.md
-**Status:** In Progress (T45 implementation complete; independent verification pending)
+**Status:** Complete
 
 **Baseline evidence:** 97 backend tests passed and all 20 browser groups covering 69 scenarios passed before T1. Pytest gates use --basetemp .pytest-tmp because the global Windows Temp pytest directory has a broken ACL.
 
@@ -1055,7 +1055,7 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43 -> T44
 
 ### T45: Protect Smart CRM databases on the shared PostgreSQL cluster
 
-**Status:** In Progress (implementation complete; independent verification pending)
+**Status:** Complete
 
 **What:** Preserve remote access for the out-of-scope `DW_CMS` and `DW_PRODUTOS` databases while gating Smart CRM installation and migration on ordered `pg_hba.conf` rules that keep only `smartcrm` and `smartcrm_control` loopback-accessible.
 **Where:** deploy/manual-windows-pg11/deployment-policy.ps1, deploy/manual-windows-pg11/install-offline.ps1, deploy/manual-windows-pg11/initialize-and-test.ps1, deploy/manual-windows-pg11/LEIA-ME.md, scripts/verify_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_deployment.py, tests/backend/test_manual_windows_pg11_outcomes.py, .specs/STATE.md
@@ -1070,7 +1070,7 @@ T38 -> T39 -> T40 -> T41 -> T42 -> T43 -> T44
 - [x] A shared wildcard listener passes only with explicit shared-cluster mode and the exact leading loopback-allow/remote-reject rules for `smartcrm` and `smartcrm_control`.
 - [x] Missing, reordered or weakened Smart CRM HBA rules fail before virtualenv creation and before either Alembic lineage.
 - [x] Documentation preserves `DW_CMS` and `DW_PRODUTOS`, backs up/reloads HBA without restarting PostgreSQL and includes pre/post remote-client UAT.
-- [ ] Focused/full gates, package verifier, structural validators and a fresh independent Verifier pass.
+- [x] Focused/full gates, package verifier, structural validators and a fresh independent Verifier pass: 586 backend, 93 browser, compatibility 27/27, package 19/19, runbook 41/41, Apache 32/32 and sensor 3/3.
 
 **Tests:** Windows policy outcome + deployment contract + package build
 **Gate:** Build
