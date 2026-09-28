@@ -13,6 +13,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     MetaData,
@@ -21,6 +22,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgreSQLUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -61,6 +63,114 @@ class Workspace(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     initialized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DealPipeline(Base, TimestampMixin):
+    __tablename__ = "deal_pipelines"
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="version_positive"),
+        UniqueConstraint("workspace_id", "id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "default_stage_id"],
+            ["deal_pipeline_stages.workspace_id", "deal_pipeline_stages.id"],
+            name="fk_deal_pipelines_default_stage",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        Index(
+            "uq_deal_pipelines_workspace_default",
+            "workspace_id",
+            unique=True,
+            postgresql_where=text("is_default"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    default_stage_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+
+
+class DealPipelineStage(Base, TimestampMixin):
+    __tablename__ = "deal_pipeline_stages"
+    __table_args__ = (
+        CheckConstraint("semantic_type IN ('open', 'won', 'lost')", name="valid_semantic_type"),
+        CheckConstraint("color ~ '^#[0-9A-Fa-f]{6}$'", name="valid_color"),
+        CheckConstraint("position >= 0", name="position_nonnegative"),
+        UniqueConstraint("workspace_id", "id"),
+        UniqueConstraint("workspace_id", "pipeline_id", "id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_id"],
+            ["deal_pipelines.workspace_id", "deal_pipelines.id"],
+            ondelete="RESTRICT",
+        ),
+        Index(
+            "uq_deal_pipeline_stages_active_name",
+            "workspace_id",
+            "pipeline_id",
+            func.lower(text("name")),
+            unique=True,
+            postgresql_where=text("archived_at IS NULL"),
+        ),
+        Index(
+            "uq_deal_pipeline_stages_active_position",
+            "workspace_id",
+            "pipeline_id",
+            "position",
+            unique=True,
+            postgresql_where=text("archived_at IS NULL"),
+        ),
+        Index(
+            "uq_deal_pipeline_stages_system_key",
+            "workspace_id",
+            "system_key",
+            unique=True,
+            postgresql_where=text("system_key IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    pipeline_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    semantic_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    color: Mapped[str] = mapped_column(String(7), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    system_key: Mapped[str | None] = mapped_column(String(32))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DealPipelineAuditEvent(Base):
+    __tablename__ = "deal_pipeline_audit_events"
+    __table_args__ = (
+        CheckConstraint("pipeline_version >= 1", name="pipeline_version_positive"),
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_id"],
+            ["deal_pipelines.workspace_id", "deal_pipelines.id"],
+            ondelete="RESTRICT",
+        ),
+        Index("ix_deal_pipeline_audit_workspace_cursor", "workspace_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    pipeline_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(
+        ForeignKey("crm_users.id", ondelete="RESTRICT"), nullable=False
+    )
+    pipeline_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    actions: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    before_state: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    after_state: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    transfer_summary: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class TenantIdentity(Base):
@@ -190,6 +300,15 @@ class Contact(Base, TimestampMixin, SoftDeleteMixin):
 class Deal(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "deals"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_id", "stage_id"],
+            [
+                "deal_pipeline_stages.workspace_id",
+                "deal_pipeline_stages.pipeline_id",
+                "deal_pipeline_stages.id",
+            ],
+            ondelete="RESTRICT",
+        ),
         Index("ix_deals_workspace_active", "workspace_id", "deleted_at"),
         Index("ix_deals_workspace_stage", "workspace_id", "stage"),
         Index("ix_deals_workspace_responsible", "workspace_id", "responsible_id"),
@@ -208,6 +327,8 @@ class Deal(Base, TimestampMixin, SoftDeleteMixin):
     contact_text: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, default=0)
     stage: Mapped[str] = mapped_column(String(128), nullable=False)
+    pipeline_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
+    stage_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
     stage_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     stage_changed_by_id: Mapped[str | None] = mapped_column(ForeignKey("crm_users.id", ondelete="RESTRICT"))
     won_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -239,7 +360,19 @@ class DealAssistant(Base):
 
 class DealStageHistory(Base):
     __tablename__ = "deal_stage_history"
-    __table_args__ = (UniqueConstraint("deal_id", "position"),)
+    __table_args__ = (
+        UniqueConstraint("deal_id", "position"),
+        ForeignKeyConstraint(
+            ["workspace_id", "to_stage_id"],
+            ["deal_pipeline_stages.workspace_id", "deal_pipeline_stages.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "from_stage_id"],
+            ["deal_pipeline_stages.workspace_id", "deal_pipeline_stages.id"],
+            ondelete="RESTRICT",
+        ),
+    )
     workspace_id: Mapped[str] = mapped_column(
         ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
     )
@@ -248,6 +381,8 @@ class DealStageHistory(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     from_stage: Mapped[str | None] = mapped_column(String(128))
     to_stage: Mapped[str] = mapped_column(String(128), nullable=False)
+    from_stage_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+    to_stage_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     changed_by_id: Mapped[str | None] = mapped_column(ForeignKey("crm_users.id", ondelete="RESTRICT"))
 

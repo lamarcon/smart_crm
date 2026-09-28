@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 MODULES = ("leads", "contacts", "companies", "deals")
@@ -105,6 +106,96 @@ class AuthErrorResponse(AuthContractModel):
 
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
+class PipelineContractModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class DealStageReference(PipelineContractModel):
+    pipeline_id: UUID = Field(alias="pipelineId")
+    stage_id: UUID = Field(alias="stageId")
+    stage: str = Field(min_length=1, max_length=80)
+
+
+class DealPipelineStageUpdate(PipelineContractModel):
+    id: UUID | None = None
+    name: str = Field(min_length=1, max_length=80)
+    semantic_type: Literal["open", "won", "lost"] = Field(alias="semanticType")
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    position: int = Field(ge=0)
+    archived: bool = False
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("color")
+    @classmethod
+    def normalize_color(cls, value: str) -> str:
+        return value.upper()
+
+
+class DealPipelineUpdateRequest(PipelineContractModel):
+    pipeline_version: int = Field(alias="pipelineVersion", ge=1)
+    workspace_version: int = Field(alias="workspaceVersion", ge=0)
+    default_stage_id: UUID = Field(alias="defaultStageId")
+    stages: list[DealPipelineStageUpdate] = Field(min_length=1)
+    transfers: dict[UUID, UUID] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_transfers(self) -> "DealPipelineUpdateRequest":
+        if sum(not stage.archived for stage in self.stages) > 50:
+            raise ValueError("pipeline cannot have more than 50 active stages")
+        if any(source == target for source, target in self.transfers.items()):
+            raise ValueError("archive transfer target must differ from source")
+        return self
+
+
+class DealPipelineStageResponse(PipelineContractModel):
+    id: UUID
+    name: str
+    semantic_type: Literal["open", "won", "lost"] = Field(alias="semanticType")
+    color: str
+    position: int
+    system_key: str | None = Field(default=None, alias="systemKey")
+    active: bool
+    initial: bool
+    archived_at: datetime | None = Field(default=None, alias="archivedAt")
+
+
+class DealPipelineResponse(PipelineContractModel):
+    id: UUID
+    name: str
+    pipeline_version: int = Field(alias="pipelineVersion", ge=1)
+    workspace_version: int = Field(alias="workspaceVersion", ge=0)
+    default_stage_id: UUID = Field(alias="defaultStageId")
+    stages: list[DealPipelineStageResponse]
+    transfer_counts: dict[UUID, int] = Field(default_factory=dict, alias="transferCounts")
+
+
+class DealPipelineAuditEventResponse(PipelineContractModel):
+    id: int = Field(ge=1)
+    pipeline_id: UUID = Field(alias="pipelineId")
+    actor_user_id: str = Field(alias="actorUserId", min_length=1, max_length=128)
+    pipeline_version: int = Field(alias="pipelineVersion", ge=1)
+    action: str = Field(min_length=1, max_length=64)
+    actions: list[dict[str, Any]]
+    before_state: dict[str, Any] = Field(alias="beforeState")
+    after_state: dict[str, Any] = Field(alias="afterState")
+    transfer_summary: list[dict[str, Any]] = Field(alias="transferSummary")
+    created_at: datetime = Field(alias="createdAt")
+
+
+class DealPipelineAuditPage(PipelineContractModel):
+    items: list[DealPipelineAuditEventResponse] = Field(max_length=50)
+    next_before: int | None = Field(default=None, alias="nextBefore", ge=1)
+
+
+class DealPipelineHistoryQuery(PipelineContractModel):
+    before: int | None = Field(default=None, ge=1)
+    limit: int = Field(default=50, ge=1, le=50)
 
 
 class WorkspaceState(ContractModel):

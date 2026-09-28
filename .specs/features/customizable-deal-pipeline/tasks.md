@@ -74,6 +74,8 @@ T10 → T11 → T12
 
 ### T1: Define pipeline domain models and contracts
 
+**Status**: ✅ Complete
+
 **What**: Add SQLAlchemy entities and strict request/response schemas for pipelines, stages, audit events and stable stage references.  
 **Where**: `app/models.py`  
 **Depends on**: None  
@@ -87,10 +89,10 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Models express workspace/pipeline/stage relationships, semantic checks and immutable identity fields from design.
-- [ ] Schemas enforce name, color, semantic, position, transfer and pagination bounds.
-- [ ] Unit tests map to every validation boundary and stable camelCase contract.
-- [ ] Quick gate passes with at least 12 new assertions and no prior test removed/skipped.
+- [x] Models express workspace/pipeline/stage relationships, semantic checks and immutable identity fields from design.
+- [x] Schemas enforce name, color, semantic, position, transfer and pagination bounds.
+- [x] Unit tests map to every validation boundary and stable camelCase contract.
+- [x] Quick gate passes with at least 12 new assertions and no prior test removed/skipped.
 
 **Tests**: unit  
 **Gate**: quick  

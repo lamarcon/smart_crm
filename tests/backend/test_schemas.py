@@ -9,6 +9,10 @@ from pydantic import ValidationError
 from app.schemas import (
     LOGIN_FAILURE_MESSAGE,
     AuthErrorResponse,
+    DealPipelineAuditPage,
+    DealPipelineHistoryQuery,
+    DealPipelineStageResponse,
+    DealPipelineUpdateRequest,
     LocateTenantRequest,
     LoginRequest,
     SessionResponse,
@@ -335,3 +339,142 @@ def test_auth_failure_contract_uses_only_the_generic_public_message() -> None:
         "message": LOGIN_FAILURE_MESSAGE,
     }
     assert failure.message == "Não foi possível entrar com os dados informados."
+
+
+def valid_pipeline_update() -> dict:
+    stage_id = uuid4()
+    return {
+        "pipelineVersion": 3,
+        "workspaceVersion": 14,
+        "defaultStageId": stage_id,
+        "stages": [
+            {
+                "id": stage_id,
+                "name": "  Em análise  ",
+                "semanticType": "open",
+                "color": "#4f46e5",
+                "position": 0,
+                "archived": False,
+            }
+        ],
+        "transfers": {},
+    }
+
+
+def test_pipeline_update_round_trips_strict_camel_case_contract() -> None:
+    parsed = DealPipelineUpdateRequest.model_validate(valid_pipeline_update())
+    dumped = parsed.model_dump(by_alias=True)
+
+    assert dumped["pipelineVersion"] == 3
+    assert dumped["workspaceVersion"] == 14
+    assert dumped["defaultStageId"] == dumped["stages"][0]["id"]
+    assert dumped["stages"][0]["name"] == "Em análise"
+    assert dumped["stages"][0]["semanticType"] == "open"
+    assert dumped["stages"][0]["color"] == "#4F46E5"
+    assert dumped["stages"][0]["position"] == 0
+    assert dumped["transfers"] == {}
+
+
+@pytest.mark.parametrize("name", ["", "   ", "x" * 81])
+def test_pipeline_stage_rejects_empty_or_overlong_trimmed_names(name: str) -> None:
+    payload = valid_pipeline_update()
+    payload["stages"][0]["name"] = name
+
+    with pytest.raises(ValidationError):
+        DealPipelineUpdateRequest.model_validate(payload)
+
+
+@pytest.mark.parametrize("color", ["4F46E5", "#FFFF", "#GGGGGG", "#1234567"])
+def test_pipeline_stage_rejects_non_hex_colors(color: str) -> None:
+    payload = valid_pipeline_update()
+    payload["stages"][0]["color"] = color
+
+    with pytest.raises(ValidationError):
+        DealPipelineUpdateRequest.model_validate(payload)
+
+
+@pytest.mark.parametrize("semantic_type", ["", "closed", "OPEN"])
+def test_pipeline_stage_rejects_unknown_semantic_types(semantic_type: str) -> None:
+    payload = valid_pipeline_update()
+    payload["stages"][0]["semanticType"] = semantic_type
+
+    with pytest.raises(ValidationError):
+        DealPipelineUpdateRequest.model_validate(payload)
+
+
+def test_pipeline_update_rejects_negative_position_and_versions() -> None:
+    for path, value in (
+        (("pipelineVersion",), 0),
+        (("workspaceVersion",), -1),
+        (("stages", 0, "position"), -1),
+    ):
+        payload = valid_pipeline_update()
+        if len(path) == 1:
+            payload[path[0]] = value
+        else:
+            payload[path[0]][path[1]][path[2]] = value
+        with pytest.raises(ValidationError):
+            DealPipelineUpdateRequest.model_validate(payload)
+
+
+def test_pipeline_update_rejects_more_than_fifty_stages() -> None:
+    payload = valid_pipeline_update()
+    payload["stages"] = [
+        {
+            "id": uuid4(),
+            "name": f"Etapa {index}",
+            "semanticType": "open",
+            "color": "#123456",
+            "position": index,
+            "archived": False,
+        }
+        for index in range(51)
+    ]
+
+    with pytest.raises(ValidationError):
+        DealPipelineUpdateRequest.model_validate(payload)
+
+    payload["stages"][50]["archived"] = True
+    assert len(DealPipelineUpdateRequest.model_validate(payload).stages) == 51
+
+
+def test_pipeline_update_rejects_self_transfer_and_extra_authority_fields() -> None:
+    payload = valid_pipeline_update()
+    stage_id = payload["defaultStageId"]
+    payload["transfers"] = {stage_id: stage_id}
+    with pytest.raises(ValidationError):
+        DealPipelineUpdateRequest.model_validate(payload)
+
+    payload = valid_pipeline_update()
+    payload["workspaceId"] = "forged"
+    with pytest.raises(ValidationError):
+        DealPipelineUpdateRequest.model_validate(payload)
+
+
+@pytest.mark.parametrize("values", [{"before": 0}, {"limit": 0}, {"limit": 51}])
+def test_pipeline_history_query_enforces_cursor_and_page_bounds(values: dict[str, int]) -> None:
+    with pytest.raises(ValidationError):
+        DealPipelineHistoryQuery.model_validate(values)
+
+
+def test_pipeline_response_exposes_immutable_stage_metadata_with_camel_case() -> None:
+    stage_id = uuid4()
+    response = DealPipelineStageResponse(
+        id=stage_id,
+        name="Faturando",
+        semanticType="open",
+        color="#112233",
+        position=5,
+        systemKey="billing",
+        active=True,
+        initial=False,
+    )
+
+    assert response.model_dump(by_alias=True)["systemKey"] == "billing"
+    assert response.model_dump(by_alias=True)["semanticType"] == "open"
+    assert response.model_dump(by_alias=True)["archivedAt"] is None
+    assert DealPipelineHistoryQuery().limit == 50
+    assert DealPipelineAuditPage(items=[]).model_dump(by_alias=True) == {
+        "items": [],
+        "nextBefore": None,
+    }
