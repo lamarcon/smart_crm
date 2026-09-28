@@ -58,13 +58,21 @@
 - **Date**: 2026-09-21
 - **Status**: active
 
+### AD-008
+- **Decision**: Etapas configuráveis de processos comerciais usarão identificadores imutáveis separados de nomes visíveis, tipos semânticos internos e chaves de automação; renomear nunca alterará a identidade ou o significado persistido.
+- **Reason**: O funil atual usa textos visíveis como identidade, regra de relatório e gatilho de automação, tornando renomeações inseguras e impedindo personalização por empresa.
+- **Trade-off**: O schema e os contratos passam a carregar IDs e metadados adicionais e exigem migração/sincronização temporária dos campos textuais legados.
+- **Scope**: Funis, etapas, negócios, históricos, filtros, indicadores e automações atuais ou futuras que dependam de rótulos configuráveis.
+- **Date**: 2026-09-28
+- **Status**: active
+
 ## Handoff
 
-- **Feature**: Multiempresa Seguro / `.specs/features/secure-multitenancy`
-- **Phase / Task**: Execute concluído; T1-T45 e Fresh Verifier completos
-- **Completed**: validação independente T45 PASS com 56/56 critérios, 586 backend, 93 browser, compatibilidade 27/27, pacote 19/19, runbook 41/41, Apache 32/32 e sensor 3/3; no servidor, release 18f5a7d1 copiada/validada/extraída lado a lado, conta `SmartCRMService` criada com batch logon e backups de `server.env`/tarefa salvos; aplicação atual permanece ativa
-- **In-progress** (file:line): none
-- **Next step**: gerar novo ZIP do commit verificado e retomar o servidor com backup/HBA/preflight, sem tocar em `DW_CMS`/`DW_PRODUTOS`
-- **Blockers**: pacote 18f5a7d1 não deve continuar porque rejeita corretamente o listener compartilhado; nenhum banco foi migrado e nenhuma tarefa foi trocada
-- **Uncommitted files**: `.pytest-tmp/`, `.specs/features/crm-mvp/tasks.md`, `.venv/`, `smart_crm_demo.egg-info/` (untracked preexistentes, preservados)
+- **Feature**: Funil de Negócios Personalizável V1 / `.specs/features/customizable-deal-pipeline`
+- **Phase / Task**: Execute autorizado; próximo lote é T1-T7 (fases 1-2)
+- **Completed**: decisões recomendadas aprovadas; código, migrações, frontend e testes inspecionados; abordagem relacional com IDs estáveis selecionada; 7 requisitos mapeados em 12 tarefas; `validate_spec.py --strict` e `validate_tasks.py --strict` passaram sem erros ou avisos
+- **In-progress** (file:line): preparação do commit de planejamento aprovado
+- **Next step**: criar commit local do plano e despachar o batch worker sequencial de T1-T7
+- **Blockers**: none
+- **Uncommitted files**: novos documentos em `.specs/features/customizable-deal-pipeline/` e atualização de `.specs/STATE.md`; `.pytest-tmp/`, `.specs/features/crm-mvp/tasks.md`, `.venv/`, `smart_crm_demo.egg-info/` permanecem untracked preexistentes
 - **Branch**: main
