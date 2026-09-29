@@ -155,6 +155,8 @@ T10 → T11 → T12
 
 ### T4: Implement versioned pipeline configuration service
 
+**Status**: ✅ Complete
+
 **What**: Add normalized diff/validation and versioned create, rename, color, reorder and initial-stage operations.  
 **Where**: `app/services/pipeline.py`  
 **Depends on**: T3  
@@ -168,12 +170,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Service enforces all name/color/count/type/default/minimum invariants before writes.
-- [ ] Existing semantic type, UUID and system key cannot be altered.
-- [ ] Stale pipeline version returns the stable conflict and causes zero writes.
-- [ ] Successful non-transfer update increments pipeline version exactly once and appends one coherent audit event.
-- [ ] Tests cover every validation branch and concurrent/retry path with at least 18 new assertions.
-- [ ] Full gate passes with no prior test removed/skipped.
+- [x] Service enforces all name/color/count/type/default/minimum invariants before writes.
+- [x] Existing semantic type, UUID and system key cannot be altered.
+- [x] Stale pipeline version returns the stable conflict and causes zero writes.
+- [x] Successful non-transfer update increments pipeline version exactly once and appends one coherent audit event.
+- [x] Tests cover every validation branch and concurrent/retry path with at least 18 new assertions.
+- [x] Full gate passes with no prior test removed/skipped.
 
 **Tests**: unit + PostgreSQL integration  
 **Gate**: full  
