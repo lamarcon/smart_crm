@@ -16,8 +16,20 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 PORT = int(os.environ.get("SMART_CRM_PORT", "8080"))
 BASE_URL = f"http://127.0.0.1:{PORT}"
-DB_NAME = os.environ.get("SMART_CRM_DB_NAME", "smartcrm_test")
 DB_USER = os.environ.get("SMART_CRM_DB_USER", "smartcrm")
+DB_PASSWORD = os.environ.get("SMART_CRM_DB_PASSWORD", "smartcrm_local_dev")
+CONTROL_DB_NAME = os.environ.get(
+    "SMART_CRM_CONTROL_DB_NAME", "smartcrm_compose_control"
+)
+TENANT_DB_NAME = os.environ.get(
+    "SMART_CRM_TENANT_DB_NAME", "smartcrm_compose_tenant"
+)
+AUTH_ORIGIN = f"https://127.0.0.1:{PORT}"
+ADMIN_EMAIL = "verify-compose@smartcrm.local"
+ADMIN_PASSWORD = "compose-only-password"
+SESSION_COOKIE = ""
+
+
 class Checks:
     def __init__(self) -> None:
         self.passed = 0
@@ -50,7 +62,7 @@ def compose(*arguments: str, env: dict[str, str] | None = None) -> str:
     return run("docker", "compose", *arguments, env=env)
 
 
-def postgres(sql: str) -> str:
+def postgres(sql: str, *, database: str = TENANT_DB_NAME) -> str:
     return compose(
         "exec",
         "-T",
@@ -62,7 +74,7 @@ def postgres(sql: str) -> str:
         "-U",
         DB_USER,
         "-d",
-        DB_NAME,
+        database,
         "-Atqc",
         sql,
     )
@@ -74,19 +86,24 @@ def request(
     method: str = "GET",
     payload: dict[str, Any] | None = None,
     timeout: float = 6,
-) -> tuple[int, bytes]:
+    include_session: bool = True,
+) -> tuple[int, bytes, Any]:
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {"User-Agent": "smart-crm-verifier/2.0"}
     if body is not None:
         headers["Content-Type"] = "application/json"
+    if method not in {"GET", "HEAD", "OPTIONS"}:
+        headers["Origin"] = AUTH_ORIGIN
+    if include_session and SESSION_COOKIE:
+        headers["Cookie"] = SESSION_COOKIE
     api_request = urllib.request.Request(
         f"{BASE_URL}{path}", data=body, headers=headers, method=method
     )
     try:
         with urllib.request.urlopen(api_request, timeout=timeout) as response:
-            return response.status, response.read()
+            return response.status, response.read(), response.headers
     except urllib.error.HTTPError as error:
-        return error.code, error.read()
+        return error.code, error.read(), error.headers
 
 
 def request_json(
@@ -95,7 +112,7 @@ def request_json(
     method: str = "GET",
     payload: dict[str, Any] | None = None,
 ) -> tuple[int, dict[str, Any]]:
-    status, body = request(path, method=method, payload=payload)
+    status, body, _headers = request(path, method=method, payload=payload)
     return status, json.loads(body)
 
 
@@ -298,6 +315,8 @@ def marker_is_present(state: dict[str, Any], user_id: str, marker: str) -> bool:
 
 
 def main() -> int:
+    global SESSION_COOKIE
+
     checks = Checks()
     compose("config", "--quiet")
     config = json.loads(compose("config", "--format", "json"))
@@ -324,6 +343,20 @@ def main() -> int:
         "@postgres:5432/" in crm["environment"]["SMART_CRM_DATABASE_URL"],
         "CRM não usa o hostname interno do PostgreSQL",
     )
+    checks.true(
+        "@postgres:5432/" in crm["environment"]["SMART_CRM_CONTROL_DATABASE_URL"],
+        "controle não usa o hostname interno do PostgreSQL",
+    )
+    checks.true(
+        "@127.0.0.1:55432/"
+        in crm["environment"]["SMART_CRM_TENANT_SECRET_COMPOSE_TENANT"],
+        "segredo tenant local não usa o proxy de loopback",
+    )
+    checks.equal(
+        crm["environment"]["SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK"],
+        "1",
+        "opt-in de transporte local",
+    )
     checks.equal(crm["environment"]["SMART_CRM_TEST_MODE"], "0", "modo normal")
     checks.equal(
         crm["depends_on"]["postgres"]["condition"],
@@ -349,7 +382,7 @@ def main() -> int:
         "override do nome do banco",
     )
     checks.true(
-        "smartcrm_override_user:smartcrm_override_password@postgres:5432/smartcrm_override_test"
+        "smartcrm_override_user:smartcrm_override_password@postgres:5432/smartcrm_compose_tenant"
         in override["services"]["crm"]["environment"]["SMART_CRM_DATABASE_URL"],
         "overrides não chegaram à URL interna",
     )
@@ -359,7 +392,7 @@ def main() -> int:
     status, health = wait_for_health()
     checks.equal(status, 200, "health inicial")
     checks.equal(health, {"status": "ok"}, "payload de health")
-    root_status, root_body = request("/")
+    root_status, root_body, _headers = request("/")
     checks.equal(root_status, 200, "raiz")
     checks.true(
         "<title>Smart CRM</title>" in root_body.decode("utf-8"),
@@ -375,6 +408,19 @@ def main() -> int:
     image_head = image_heads[0].split()[0]
     database_head = postgres("SELECT version_num FROM alembic_version")
     checks.equal(database_head, image_head, "banco alcançou o head Alembic da imagem")
+    control_heads = compose(
+        "exec", "-T", "crm", "alembic", "-c", "alembic-control.ini", "heads"
+    ).splitlines()
+    checks.equal(len(control_heads), 1, "imagem possui um único head de controle")
+    control_head = control_heads[0].split()[0]
+    control_database_head = postgres(
+        "SELECT version_num FROM alembic_control_version", database=CONTROL_DB_NAME
+    )
+    checks.equal(
+        control_database_head,
+        control_head,
+        "banco central alcançou o head da imagem",
+    )
 
     probe_sql = """
         CREATE TABLE IF NOT EXISTS _smartcrm_test_probe (id integer PRIMARY KEY);
@@ -384,10 +430,89 @@ def main() -> int:
     probe_count = int(postgres(probe_sql).splitlines()[-1])
     checks.true(probe_count >= 1, "probe PostgreSQL não foi preservado")
 
+    locate_status, located = request_json(
+        "/api/auth/locate",
+        method="POST",
+        payload={"identifier": "COMPOSE-TENANT"},
+    )
+    checks.equal(locate_status, 200, "localização da empresa")
+    checks.equal(located["slug"], "compose-tenant", "slug canônico da empresa")
+
+    login_status, login_body, login_headers = request(
+        "/api/auth/login",
+        method="POST",
+        payload={
+            "slug": "compose-tenant",
+            "email": ADMIN_EMAIL,
+            "password": ADMIN_PASSWORD,
+        },
+        include_session=False,
+    )
+    login = json.loads(login_body)
+    checks.equal(login_status, 200, "login autenticado")
+    checks.equal(login["tenant_slug"], "compose-tenant", "tenant da sessão")
+    checks.equal(login["user_id"], "verify-user-1", "admin da sessão")
+    checks.true("token" not in login, "login expôs token no payload")
+    set_cookie = login_headers.get("Set-Cookie", "")
+    checks.true(set_cookie.startswith("__Host-smartcrm_session="), "cookie de sessão ausente")
+    checks.true(
+        all(part in set_cookie for part in ("HttpOnly", "Secure", "SameSite=strict", "Path=/")),
+        "cookie de sessão não está endurecido",
+    )
+    checks.true("Domain=" not in set_cookie, "cookie de sessão definiu Domain")
+    SESSION_COOKIE = set_cookie.split(";", 1)[0]
+
+    session_status, session = request_json("/api/auth/session")
+    checks.equal(session_status, 200, "consulta da sessão")
+    checks.equal(session["role"], "Administrador", "papel da sessão")
+
+    load_status, workspace = request_json("/api/workspace")
+    checks.equal(load_status, 200, "carga inicial do workspace")
+    if not workspace["initialized"]:
+        bootstrap_status, bootstrap = request_json(
+            "/api/workspace/bootstrap",
+            method="POST",
+            payload={"state": seed_state()},
+        )
+        checks.equal(bootstrap_status, 201, "bootstrap em banco vazio")
+        workspace = {
+            "initialized": True,
+            "version": bootstrap["version"],
+            "state": bootstrap["state"],
+        }
+    else:
+        checks.true(workspace["version"] > 0, "workspace existente sem versão")
+    checks.true(workspace["initialized"], "workspace não inicializado")
+
+    changed, marker_user, marker = mutation_marker(workspace["state"])
+    save_status, saved = request_json(
+        "/api/workspace",
+        method="PUT",
+        payload={"version": workspace["version"], "state": changed},
+    )
+    checks.equal(save_status, 200, "mutação autenticada pela API")
+    checks.equal(saved["version"], workspace["version"] + 1, "incremento de versão")
+    checks.true(
+        marker_is_present(saved["state"], marker_user, marker),
+        "mutação não voltou no estado canônico",
+    )
+    checks.equal(saved["counts"], state_counts(saved["state"]), "contagens da API")
+    checks.equal(sql_counts(), saved["counts"], "contagens SQL")
+    checks.equal(
+        int(postgres("SELECT version FROM workspaces WHERE id = 'default'")),
+        saved["version"],
+        "versão SQL",
+    )
+
     compose("up", "-d", "--force-recreate", "crm")
-    recreated_status, recreated_health = wait_for_health()
-    checks.equal(recreated_status, 200, "health após recriar CRM")
-    checks.equal(recreated_health, {"status": "ok"}, "payload após recriar CRM")
+    wait_for_health()
+    recreated_status, recreated = request_json("/api/workspace")
+    checks.equal(recreated_status, 200, "carga autenticada após recriar CRM")
+    checks.equal(recreated["version"], saved["version"], "versão após recriar CRM")
+    checks.true(
+        marker_is_present(recreated["state"], marker_user, marker),
+        "mutação não sobreviveu à recriação do CRM",
+    )
     checks.equal(
         int(postgres("SELECT count(*) FROM _smartcrm_test_probe")),
         probe_count,
@@ -401,9 +526,13 @@ def main() -> int:
         probe_count,
         "probe após restart do PostgreSQL",
     )
-    restart_status, restart_health = wait_for_health()
-    checks.equal(restart_status, 200, "health após restart do PostgreSQL")
-    checks.equal(restart_health, {"status": "ok"}, "payload após restart PostgreSQL")
+    wait_for_health()
+    restart_status, restarted = request_json("/api/workspace")
+    checks.equal(restart_status, 200, "API autenticada após restart PostgreSQL")
+    checks.equal(restarted["version"], saved["version"], "versão após restart PostgreSQL")
+    restart_session_status, restart_session = request_json("/api/auth/session")
+    checks.equal(restart_session_status, 200, "sessão após restart PostgreSQL")
+    checks.equal(restart_session["user_id"], "verify-user-1", "identidade após restart")
 
     compose("stop", "postgres")
     degraded_status, degraded = wait_for_health(503)
@@ -413,13 +542,36 @@ def main() -> int:
         {"status": "degraded"},
         "payload degradado",
     )
-    degraded_root_status, _body = request("/")
+    unavailable_status, unavailable = request_json("/api/workspace")
+    checks.equal(unavailable_status, 503, "API com banco indisponível")
+    checks.equal(
+        unavailable["error"]["code"],
+        "database_unavailable",
+        "código de indisponibilidade",
+    )
+    error_id = unavailable["error"].get("errorId", "")
+    checks.true(bool(error_id), "erro de banco sem errorId")
+    crm_logs = compose("logs", "--no-color", "crm")
+    checks.true(error_id in crm_logs, "errorId ausente do log")
+    checks.true(DB_PASSWORD not in crm_logs, "senha do banco exposta no log")
+    checks.true(ADMIN_PASSWORD not in crm_logs, "senha do admin exposta no log")
+    degraded_root_status, _body, _headers = request("/")
     checks.equal(degraded_root_status, 200, "raiz durante indisponibilidade")
 
     compose("start", "postgres")
     recovered_status, recovered = wait_for_health(200)
     checks.equal(recovered_status, 200, "health recuperado")
     checks.equal(recovered, {"status": "ok"}, "payload recuperado")
+    recovered_load_status, recovered_workspace = request_json("/api/workspace")
+    checks.equal(recovered_load_status, 200, "API autenticada recuperada")
+    checks.equal(recovered_workspace["version"], saved["version"], "versão recuperada")
+    checks.true(
+        marker_is_present(recovered_workspace["state"], marker_user, marker),
+        "mutação não sobreviveu à recuperação",
+    )
+    recovered_session_status, recovered_session = request_json("/api/auth/session")
+    checks.equal(recovered_session_status, 200, "sessão recuperada")
+    checks.equal(recovered_session["user_id"], "verify-user-1", "identidade recuperada")
     checks.equal(
         int(postgres("SELECT count(*) FROM _smartcrm_test_probe")),
         probe_count,
@@ -433,7 +585,7 @@ def main() -> int:
 
     print(
         f"compose acceptance: {checks.passed} passed, 0 failed "
-        f"({BASE_URL}; PostgreSQL {DB_NAME}; Alembic {image_head})"
+        f"({BASE_URL}; PostgreSQL {TENANT_DB_NAME}; Alembic {image_head})"
     )
     return 0
 

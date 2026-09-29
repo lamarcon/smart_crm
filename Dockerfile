@@ -13,7 +13,9 @@ RUN python -c "import pathlib,subprocess,sys,tomllib; dependencies=tomllib.loads
 COPY --chown=smartcrm:smartcrm pyproject.toml /app/pyproject.toml
 COPY --chown=smartcrm:smartcrm app/ /app/app/
 COPY --chown=smartcrm:smartcrm alembic.ini /app/alembic.ini
+COPY --chown=smartcrm:smartcrm alembic-control.ini /app/alembic-control.ini
 COPY --chown=smartcrm:smartcrm migrations/ /app/migrations/
+COPY --chown=smartcrm:smartcrm migrations_control/ /app/migrations_control/
 RUN python -m pip install --no-cache-dir --no-deps .
 
 USER smartcrm

@@ -10,10 +10,20 @@ services:
       - sh
       - -c
       - >-
-        alembic upgrade head &&
-        exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000
+        python -m compose_fixture &&
+        exec uvicorn compose_fixture:create_app --factory --host 0.0.0.0 --port 8000
     environment:
-      SMART_CRM_DATABASE_URL: "postgresql+psycopg://${SMART_CRM_DB_USER:-smartcrm}:${SMART_CRM_DB_PASSWORD:-smartcrm_local_dev}@postgres:5432/${SMART_CRM_DB_NAME:-smartcrm_test}?connect_timeout=2&tcp_user_timeout=2000"
+      SMART_CRM_COMPOSE_ADMIN_DATABASE_URL: "postgresql+psycopg://${SMART_CRM_DB_USER:-smartcrm}:${SMART_CRM_DB_PASSWORD:-smartcrm_local_dev}@postgres:5432/${SMART_CRM_DB_NAME:-smartcrm_test}?connect_timeout=2&tcp_user_timeout=2000"
+      SMART_CRM_COMPOSE_CONTROL_DB_NAME: "${SMART_CRM_CONTROL_DB_NAME:-smartcrm_compose_control}"
+      SMART_CRM_COMPOSE_TENANT_DB_NAME: "${SMART_CRM_TENANT_DB_NAME:-smartcrm_compose_tenant}"
+      SMART_CRM_CONTROL_DATABASE_URL: "postgresql+psycopg://${SMART_CRM_DB_USER:-smartcrm}:${SMART_CRM_DB_PASSWORD:-smartcrm_local_dev}@postgres:5432/${SMART_CRM_CONTROL_DB_NAME:-smartcrm_compose_control}?connect_timeout=2&tcp_user_timeout=2000"
+      SMART_CRM_DATABASE_URL: "postgresql+psycopg://${SMART_CRM_DB_USER:-smartcrm}:${SMART_CRM_DB_PASSWORD:-smartcrm_local_dev}@postgres:5432/${SMART_CRM_TENANT_DB_NAME:-smartcrm_compose_tenant}?connect_timeout=2&tcp_user_timeout=2000"
+      SMART_CRM_TENANT_SECRET_COMPOSE_TENANT: "postgresql+psycopg://${SMART_CRM_DB_USER:-smartcrm}:${SMART_CRM_DB_PASSWORD:-smartcrm_local_dev}@127.0.0.1:55432/${SMART_CRM_TENANT_DB_NAME:-smartcrm_compose_tenant}?connect_timeout=2&tcp_user_timeout=2000"
+      SMART_CRM_COMPOSE_PROXY_HOST: "postgres"
+      SMART_CRM_COMPOSE_PROXY_PORT: "5432"
+      SMART_CRM_COMPOSE_PROXY_LISTEN_PORT: "55432"
+      SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK: "1"
+      SMART_CRM_EXPECTED_ORIGIN: "https://127.0.0.1:${SMART_CRM_PORT:-8080}"
       SMART_CRM_TEST_MODE: "0"
     depends_on:
       postgres:
@@ -21,6 +31,8 @@ services:
         restart: true
     ports:
       - "${SMART_CRM_PORT:-8080}:8000"
+    volumes:
+      - ./scripts/compose_fixture.py:/app/compose_fixture.py:ro
     read_only: true
     tmpfs:
       - /tmp:size=16m
