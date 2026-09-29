@@ -128,6 +128,8 @@ T10 → T11 → T12
 
 ### T3: Implement the tenant-scoped pipeline repository
 
+**Status**: ✅ Complete
+
 **What**: Add repository operations for canonical reads, row locks, deal counts, transfers and append-only audit writes.  
 **Where**: `app/repositories/pipeline.py`  
 **Depends on**: T2  
@@ -141,11 +143,11 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Every query includes workspace scope and cannot access a foreign pipeline/stage.
-- [ ] Transfer updates relational IDs, legacy name, packed record and movement history for active and soft-deleted deals.
-- [ ] Audit writes exclude commercial payloads and no update/delete method exists.
-- [ ] Integration tests cover missing RLS context, foreign workspace IDs, rollback and canonical ordering with at least 12 new assertions.
-- [ ] Full gate passes with no prior test removed/skipped.
+- [x] Every query includes workspace scope and cannot access a foreign pipeline/stage.
+- [x] Transfer updates relational IDs, legacy name, packed record and movement history for active and soft-deleted deals.
+- [x] Audit writes exclude commercial payloads and no update/delete method exists.
+- [x] Integration tests cover missing RLS context, foreign workspace IDs, rollback and canonical ordering with at least 12 new assertions.
+- [x] Full gate passes with no prior test removed/skipped.
 
 **Tests**: PostgreSQL integration  
 **Gate**: full  
