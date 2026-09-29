@@ -100,6 +100,8 @@ T10 → T11 → T12
 
 ### T2: Add additive tenant migration and legacy backfill
 
+**Status**: ✅ Complete
+
 **What**: Create the next Alembic revision with new tables, stable legacy mapping, deal/history IDs, constraints, indexes and RLS.  
 **Where**: `migrations/versions/<new_revision>_add_customizable_deal_pipeline.py`  
 **Depends on**: T1  
@@ -113,12 +115,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Upgrade seeds the nine approved stages with preserved order/color/semantics and backfills every deal/history reference.
-- [ ] Unknown stage, missing backfill or invalid count aborts before the new head is published.
-- [ ] New tenant tables have forced RLS with both `USING` and `WITH CHECK`.
-- [ ] Additive schema keeps legacy text columns and supports isolated downgrade tests.
-- [ ] Migration/security tests include preservation fingerprints and at least 14 new assertions.
-- [ ] Build gate passes with no prior test removed/skipped.
+- [x] Upgrade seeds the nine approved stages with preserved order/color/semantics and backfills every deal/history reference.
+- [x] Unknown stage, missing backfill or invalid count aborts before the new head is published.
+- [x] New tenant tables have forced RLS with both `USING` and `WITH CHECK`.
+- [x] Additive schema keeps legacy text columns and supports isolated downgrade tests.
+- [x] Migration/security tests include preservation fingerprints and at least 14 new assertions.
+- [x] Build gate passes with no prior test removed/skipped.
 
 **Tests**: PostgreSQL integration  
 **Gate**: build  

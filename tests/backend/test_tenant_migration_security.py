@@ -18,7 +18,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 LEGACY_HEAD = "9f7a2c31d5e8"
-TENANT_HEAD = "a4c9d2e7f1b6"
+TENANT_HEAD = "c7f3a9d8e2b1"
 TENANT_TABLES = {
     "workspaces",
     "teams",
@@ -40,6 +40,9 @@ TENANT_TABLES = {
     "saved_filters",
     "user_module_preferences",
     "user_dashboard_preferences",
+    "deal_pipelines",
+    "deal_pipeline_stages",
+    "deal_pipeline_audit_events",
 }
 
 
@@ -89,7 +92,7 @@ def seed_legacy_data(connection) -> None:  # noqa: ANN001
         text(
             "INSERT INTO deals "
             "(id, workspace_id, responsible_id, title, company_text, contact_text, amount, stage, payload) "
-            "VALUES ('deal-1', 'default', 'user-1', 'Deal', '', '', 100.00, 'Prospecção', "
+            "VALUES ('deal-1', 'default', 'user-1', 'Deal', '', '', 100.00, 'Em Contato', "
             "'{\"marker\": \"deal\"}'::jsonb)"
         )
     )
@@ -99,7 +102,7 @@ def seed_legacy_data(connection) -> None:  # noqa: ANN001
         text(
             "INSERT INTO deal_stage_history "
             "(deal_id, position, from_stage, to_stage, changed_at, changed_by_id) "
-            "VALUES ('deal-1', 0, NULL, 'Prospecção', now(), 'user-1')"
+            "VALUES ('deal-1', 0, NULL, 'Em Contato', now(), 'user-1')"
         )
     )
     connection.execute(
@@ -161,6 +164,114 @@ def test_upgrade_backfills_every_child_workspace_from_parent(legacy_database) ->
     assert connection.scalar(text("SELECT workspace_id FROM deal_assistants")) == "default"
     assert connection.scalar(text("SELECT workspace_id FROM deal_stage_history")) == "default"
     assert connection.scalar(text("SELECT workspace_id FROM quotes")) == "default"
+
+
+def test_pipeline_upgrade_seeds_exact_legacy_registry_and_default(legacy_database) -> None:
+    connection, _schema, config = legacy_database
+
+    command.upgrade(config, TENANT_HEAD)
+
+    rows = connection.execute(
+        text(
+            "SELECT id, name, semantic_type, color, position, system_key "
+            "FROM deal_pipeline_stages ORDER BY position"
+        )
+    ).all()
+    pipeline = connection.execute(
+        text("SELECT version, is_default, default_stage_id FROM deal_pipelines")
+    ).one()
+
+    assert [row.name for row in rows] == [
+        "Em Contato", "Orçamento Proposta Preço", "Orçamentos enviados",
+        "Negociação Revisão", "Pedido aprovado Consultar", "Faturando",
+        "Ganho", "Orçamento Não Aprovado", "Analisar falha",
+    ]
+    assert [row.semantic_type for row in rows] == [
+        "open", "open", "open", "open", "open", "open", "won", "lost", "lost"
+    ]
+    assert [row.color for row in rows] == [
+        "#2E90FA", "#2E90FA", "#2E90FA", "#7F56D9", "#DC6803",
+        "#DC6803", "#039855", "#D92D20", "#D92D20",
+    ]
+    assert [row.position for row in rows] == list(range(9))
+    assert [row.system_key for row in rows] == ["initial", None, None, None, None, "billing", None, None, None]
+    assert pipeline.version == 1
+    assert pipeline.is_default is True
+    assert pipeline.default_stage_id == rows[0].id
+    assert connection.execute(
+        text(
+            "SELECT p.workspace_id, count(s.id) "
+            "FROM deal_pipelines p JOIN deal_pipeline_stages s ON s.pipeline_id = p.id "
+            "GROUP BY p.workspace_id"
+        )
+    ).one() == ("default", 9)
+
+
+def test_pipeline_upgrade_backfills_deal_history_and_packed_ids(legacy_database) -> None:
+    connection, _schema, config = legacy_database
+    seed_legacy_data(connection)
+
+    command.upgrade(config, TENANT_HEAD)
+
+    deal = connection.execute(
+        text("SELECT pipeline_id, stage_id, stage, payload FROM deals WHERE id = 'deal-1'")
+    ).one()
+    history = connection.execute(
+        text("SELECT from_stage_id, to_stage_id, from_stage, to_stage FROM deal_stage_history")
+    ).one()
+    assert deal.pipeline_id is not None
+    assert deal.stage_id is not None
+    assert deal.stage == "Em Contato"
+    assert deal.payload == {"marker": "deal"}
+    assert history.from_stage_id is None
+    assert history.to_stage_id == deal.stage_id
+    assert history.from_stage is None
+    assert history.to_stage == "Em Contato"
+
+
+def test_legacy_text_writes_keep_canonical_ids_synchronized(legacy_database) -> None:
+    connection, _schema, config = legacy_database
+    seed_legacy_data(connection)
+    command.upgrade(config, TENANT_HEAD)
+
+    connection.execute(text("UPDATE deals SET stage = 'Ganho' WHERE id = 'deal-1'"))
+    deal = connection.execute(
+        text(
+            "SELECT d.stage, d.stage_id, s.name, d.pipeline_id = s.pipeline_id AS same_pipeline "
+            "FROM deals d JOIN deal_pipeline_stages s ON s.id = d.stage_id WHERE d.id = 'deal-1'"
+        )
+    ).one()
+    connection.execute(
+        text(
+            "INSERT INTO deal_stage_history "
+            "(workspace_id, deal_id, position, from_stage, to_stage, changed_at) "
+            "VALUES ('default', 'deal-1', 1, 'Em Contato', 'Ganho', now())"
+        )
+    )
+    history = connection.execute(
+        text("SELECT from_stage_id, to_stage_id FROM deal_stage_history WHERE position = 1")
+    ).one()
+
+    assert deal.stage == "Ganho"
+    assert deal.name == "Ganho"
+    assert deal.same_pipeline is True
+    assert history.from_stage_id is not None
+    assert history.to_stage_id == deal.stage_id
+
+
+def test_unknown_legacy_stage_rolls_back_without_publishing_head(legacy_database) -> None:
+    connection, schema, config = legacy_database
+    seed_legacy_data(connection)
+    connection.execute(text("UPDATE deals SET stage = 'Etapa não mapeada' WHERE id = 'deal-1'"))
+    connection.commit()
+
+    with pytest.raises(DBAPIError, match="unknown legacy deal stage"):
+        command.upgrade(config, TENANT_HEAD)
+
+    connection.rollback()
+    connection.execute(text(f'SET search_path TO "{schema}"'))
+    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == LEGACY_HEAD
+    assert "deal_pipelines" not in inspect(connection).get_table_names(schema=schema)
 
 
 def test_child_workspace_columns_become_not_null(legacy_database) -> None:

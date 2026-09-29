@@ -24,7 +24,7 @@ TEST_DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
-TENANT_HEAD = "a4c9d2e7f1b6"
+TENANT_HEAD = "c7f3a9d8e2b1"
 OLD_REVISION = "9f7a2c31d5e8"
 
 
@@ -373,4 +373,3 @@ def test_web_routes_never_expose_fleet_migration(fleet_setup) -> None:  # noqa: 
     paths = {route.path for route in create_app().routes}
 
     assert not any("fleet" in path or "migrate" in path for path in paths)
-
