@@ -183,6 +183,8 @@ T10 → T11 → T12
 
 ### T5: Add atomic archive, transfer and semantic effects
 
+**Status**: ✅ Complete
+
 **What**: Extend the service with archive/transfer orchestration, semantic `wonAt` rules and atomic audit.  
 **Where**: `app/services/pipeline.py`  
 **Depends on**: T4  
@@ -196,12 +198,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Empty-stage archive works without destination; occupied stage requires valid active destination.
-- [ ] All active/deleted deals transfer or none do; workspace version increments only when deals change.
-- [ ] `wonAt`, history snapshots, IDs and billing system key follow the spec.
-- [ ] Last semantic stage, invalid target and injected database/audit failure roll back fully.
-- [ ] Integration tests prove before/after state for every branch with at least 16 new assertions.
-- [ ] Build gate passes with no prior test removed/skipped.
+- [x] Empty-stage archive works without destination; occupied stage requires valid active destination.
+- [x] All active/deleted deals transfer or none do; workspace version increments only when deals change.
+- [x] `wonAt`, history snapshots, IDs and billing system key follow the spec.
+- [x] Last semantic stage, invalid target and injected database/audit failure roll back fully.
+- [x] Integration tests prove before/after state for every branch with at least 16 new assertions.
+- [x] Build gate passes with no prior test removed/skipped.
 
 **Tests**: PostgreSQL integration  
 **Gate**: build  

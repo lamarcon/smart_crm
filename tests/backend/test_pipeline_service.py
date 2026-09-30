@@ -4,6 +4,8 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 import pytest
@@ -14,9 +16,17 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
-from app.models import DealPipeline, DealPipelineAuditEvent, DealPipelineStage
+from app.models import (
+    Deal,
+    DealPipeline,
+    DealPipelineAuditEvent,
+    DealPipelineStage,
+    DealStageHistory,
+    Workspace,
+)
 from app.policies import PrincipalScope
 from app.repositories.pipeline import DealPipelineAggregate
+from app.repositories.pipeline import DealPipelineRepository
 from app.schemas import DealPipelineStageUpdate, DealPipelineUpdateRequest
 from app.services.pipeline import (
     DealPipelineAuthorizationError,
@@ -186,14 +196,17 @@ def test_configuration_validation_covers_every_prewrite_invariant() -> None:
         _unit_request(list(_unit_request().stages[:-1])),
         "pipeline_stage_identity_changed",
     )
-    _assert_validation(
-        _unit_request(_replace_stage(0, archived=True)),
-        "pipeline_archive_not_supported",
+    archived_new = list(_unit_request().stages)
+    archived_new.append(
+        DealPipelineStageUpdate(
+            name="Archived new",
+            semanticType="open",
+            color="#123456",
+            position=3,
+            archived=True,
+        )
     )
-    _assert_validation(
-        _unit_request(transfers={UNIT_STAGES[0].id: UNIT_STAGES[1].id}),
-        "pipeline_transfer_not_supported",
-    )
+    _assert_validation(_unit_request(archived_new), "pipeline_new_stage_archived")
     _assert_validation(
         _unit_request(_replace_stage(0, name="   ")),
         "pipeline_stage_name_invalid",
@@ -301,6 +314,74 @@ def _update_request(response, *, add_stage: bool = False) -> DealPipelineUpdateR
     )
 
 
+def _archive_request(response, source_id, target_id=None):  # noqa: ANN001, ANN202
+    request = _update_request(response)
+    next_position = 0
+    for stage in request.stages:
+        if stage.id == source_id:
+            stage.archived = True
+        else:
+            stage.position = next_position
+            next_position += 1
+    request.transfers = {source_id: target_id} if target_id is not None else {}
+    return request
+
+
+def _seed_deal(
+    session: Session,
+    stage,
+    *,
+    deal_id: str = "service-deal",
+    deleted: bool = False,
+    won_at: datetime | None = None,
+    with_history: bool = False,
+) -> None:
+    record = {
+        "id": deal_id,
+        "title": deal_id,
+        "pipelineId": str(stage.pipeline_id),
+        "stageId": str(stage.id),
+        "stage": stage.name,
+        "stageHistory": [],
+    }
+    if won_at is not None:
+        record["wonAt"] = won_at.isoformat().replace("+00:00", "Z")
+    session.execute(
+        text(
+            "INSERT INTO deals "
+            "(id, workspace_id, responsible_id, title, company_text, contact_text, amount, "
+            "stage, pipeline_id, stage_id, won_at, payload, deleted_at) "
+            "VALUES (:id, 'default', :actor, :id, '', '', 10, :stage, :pipeline_id, "
+            ":stage_id, :won_at, CAST(:payload AS jsonb), :deleted_at)"
+        ),
+        {
+            "id": deal_id,
+            "actor": ACTOR_ID,
+            "stage": stage.name,
+            "pipeline_id": stage.pipeline_id,
+            "stage_id": stage.id,
+            "won_at": won_at,
+            "payload": json.dumps({"position": 0, "record": record}),
+            "deleted_at": datetime.now(timezone.utc) if deleted else None,
+        },
+    )
+    if with_history:
+        session.add(
+            DealStageHistory(
+                workspace_id=WORKSPACE_ID,
+                deal_id=deal_id,
+                position=0,
+                from_stage=None,
+                to_stage=stage.name,
+                from_stage_id=None,
+                to_stage_id=stage.id,
+                changed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                changed_by_id=ACTOR_ID,
+            )
+        )
+    session.flush()
+
+
 def test_update_creates_renames_recolors_reorders_and_audits_once(
     pipeline_database_url: str,
 ) -> None:
@@ -402,3 +483,253 @@ def test_concurrent_save_and_retry_have_one_winner_and_one_audit(
             service.update(session, PRINCIPAL, request)
         assert service.load(session, PRINCIPAL).pipeline_version == current.pipeline_version
         assert len(service.history(session, PRINCIPAL).items) == 1
+
+
+def test_empty_stage_archives_without_destination_and_preserves_system_key(
+    pipeline_database_url: str,
+) -> None:
+    changed_at = datetime(2026, 9, 29, 18, 0, tzinfo=timezone.utc)
+    service = DealPipelineService(clock=lambda: changed_at)
+    with _session(pipeline_database_url) as session:
+        before = service.load(session, PRINCIPAL)
+        source = next(stage for stage in before.stages if stage.system_key == "billing")
+        result = service.update(
+            session,
+            PRINCIPAL,
+            _archive_request(before, source.id),
+        )
+        complete = service.load(session, PRINCIPAL, include_archived=True)
+        archived = next(stage for stage in complete.stages if stage.id == source.id)
+        event = service.history(session, PRINCIPAL).items[0]
+        archive_action = next(
+            action for action in event.actions if action["type"] == "stage.archived"
+        )
+
+        assert len(result.stages) == len(before.stages) - 1
+        assert source.id not in {stage.id for stage in result.stages}
+        assert [stage.position for stage in result.stages] == list(range(8))
+        assert result.workspace_version == before.workspace_version
+        assert result.transfer_counts[source.id] == 0
+        assert archived.active is False
+        assert archived.archived_at == changed_at
+        assert archived.system_key == "billing"
+        assert archive_action["stageId"] == str(source.id)
+        assert archive_action["transferCount"] == 0
+        assert event.transfer_summary == []
+
+
+def test_occupied_stage_transfers_active_and_deleted_deals_and_increments_workspace(
+    pipeline_database_url: str,
+) -> None:
+    changed_at = datetime(2026, 9, 29, 18, 30, tzinfo=timezone.utc)
+    service = DealPipelineService(clock=lambda: changed_at)
+    with _session(pipeline_database_url) as session:
+        before = service.load(session, PRINCIPAL)
+        source = next(stage for stage in before.stages if stage.name == "Orçamentos enviados")
+        target = next(stage for stage in before.stages if stage.semantic_type == "won")
+        source_model = session.get(DealPipelineStage, source.id)
+        _seed_deal(session, source_model, deal_id="active")
+        _seed_deal(session, source_model, deal_id="deleted", deleted=True)
+
+        result = service.update(
+            session,
+            PRINCIPAL,
+            _archive_request(before, source.id, target.id),
+        )
+        deals = session.scalars(select(Deal).order_by(Deal.id)).all()
+        histories = session.scalars(select(DealStageHistory).order_by(DealStageHistory.deal_id)).all()
+        event = service.history(session, PRINCIPAL).items[0]
+
+        assert result.transfer_counts == {source.id: 2}
+        assert result.workspace_version == before.workspace_version + 1
+        assert all(deal.stage_id == target.id for deal in deals)
+        assert all(deal.stage == target.name for deal in deals)
+        assert all(deal.won_at == changed_at for deal in deals)
+        assert deals[0].deleted_at is None and deals[1].deleted_at is not None
+        assert all(deal.payload["record"]["stageId"] == str(target.id) for deal in deals)
+        assert all(deal.payload["record"]["wonAt"] == "2026-09-29T18:30:00Z" for deal in deals)
+        assert len(histories) == 2
+        assert {history.from_stage_id for history in histories} == {source.id}
+        assert {history.to_stage_id for history in histories} == {target.id}
+        assert event.transfer_summary == [
+            {
+                "sourceStageId": str(source.id),
+                "targetStageId": str(target.id),
+                "count": 2,
+            }
+        ]
+        assert "record" not in event.transfer_summary[0]
+
+
+@pytest.mark.parametrize(
+    ("target_name", "renamed_target_name"),
+    [
+        ("Em Contato", "Retomada"),
+        ("Analisar falha", "Encerrado sem ganho"),
+    ],
+)
+def test_transfer_to_non_won_clears_won_state_and_rename_syncs_only_current_display(
+    pipeline_database_url: str,
+    target_name: str,
+    renamed_target_name: str,
+) -> None:
+    changed_at = datetime(2026, 9, 29, 19, 0, tzinfo=timezone.utc)
+    service = DealPipelineService(clock=lambda: changed_at)
+    won_at = datetime(2026, 9, 20, tzinfo=timezone.utc)
+    with _session(pipeline_database_url) as session:
+        before = service.load(session, PRINCIPAL)
+        source = next(stage for stage in before.stages if stage.name == "Negociação Revisão")
+        target = next(stage for stage in before.stages if stage.name == target_name)
+        source_model = session.get(DealPipelineStage, source.id)
+        _seed_deal(session, source_model, won_at=won_at, with_history=True)
+        request = _archive_request(before, source.id, target.id)
+        target_update = next(stage for stage in request.stages if stage.id == target.id)
+        target_update.name = renamed_target_name
+
+        result = service.update(session, PRINCIPAL, request)
+        deal = session.get(Deal, "service-deal")
+        histories = session.scalars(
+            select(DealStageHistory).order_by(DealStageHistory.position)
+        ).all()
+        renamed_target = next(stage for stage in result.stages if stage.id == target.id)
+
+        assert renamed_target.name == renamed_target_name
+        assert deal.stage_id == target.id
+        assert deal.stage == renamed_target_name
+        assert deal.payload["record"]["stage"] == renamed_target_name
+        assert deal.won_at is None
+        assert "wonAt" not in deal.payload["record"]
+        assert len(histories) == 2
+        assert histories[0].to_stage == source.name
+        assert histories[1].from_stage == source.name
+        assert histories[1].to_stage == target.name
+
+
+def test_invalid_archive_targets_and_last_semantic_stage_write_nothing(
+    pipeline_database_url: str,
+) -> None:
+    service = DealPipelineService()
+    with _session(pipeline_database_url) as session:
+        before = service.load(session, PRINCIPAL)
+        source = next(stage for stage in before.stages if stage.name == "Orçamento Proposta Preço")
+        source_model = session.get(DealPipelineStage, source.id)
+        _seed_deal(session, source_model)
+
+        missing = _archive_request(before, source.id)
+        with pytest.raises(DealPipelineValidationError) as captured:
+            service.update(session, PRINCIPAL, missing)
+        assert captured.value.code == "pipeline_archive_target_required"
+
+        foreign = _archive_request(before, source.id, uuid.uuid4())
+        with pytest.raises(DealPipelineValidationError) as captured:
+            service.update(session, PRINCIPAL, foreign)
+        assert captured.value.code == "pipeline_archive_target_invalid"
+
+        unexpected_transfer = _update_request(before)
+        unexpected_transfer.transfers = {
+            source.id: next(stage.id for stage in before.stages if stage.id != source.id)
+        }
+        with pytest.raises(DealPipelineValidationError) as captured:
+            service.update(session, PRINCIPAL, unexpected_transfer)
+        assert captured.value.code == "pipeline_transfer_source_invalid"
+
+        empty_source = next(stage for stage in before.stages if stage.name == "Faturando")
+        valid_target = next(
+            stage for stage in before.stages if stage.id not in {source.id, empty_source.id}
+        )
+        unnecessary = _archive_request(before, empty_source.id, valid_target.id)
+        with pytest.raises(DealPipelineValidationError) as captured:
+            service.update(session, PRINCIPAL, unnecessary)
+        assert captured.value.code == "pipeline_archive_target_unnecessary"
+
+        modified_archive = _archive_request(before, empty_source.id)
+        next(
+            stage for stage in modified_archive.stages if stage.id == empty_source.id
+        ).name = "Changed while archiving"
+        with pytest.raises(DealPipelineValidationError) as captured:
+            service.update(session, PRINCIPAL, modified_archive)
+        assert captured.value.code == "pipeline_archived_stage_modified"
+
+        same_stage = _archive_request(before, source.id, source.id)
+        with pytest.raises(DealPipelineValidationError) as captured:
+            service.update(session, PRINCIPAL, same_stage)
+        assert captured.value.code == "pipeline_archive_target_invalid"
+
+        archived_target = _archive_request(before, source.id)
+        other_open = next(
+            stage
+            for stage in archived_target.stages
+            if stage.id != source.id
+            and stage.id != archived_target.default_stage_id
+            and stage.semantic_type == "open"
+        )
+        other_open.archived = True
+        for position, stage in enumerate(
+            item for item in archived_target.stages if not item.archived
+        ):
+            stage.position = position
+        archived_target.transfers = {source.id: other_open.id}
+        with pytest.raises(DealPipelineValidationError) as captured:
+            service.update(session, PRINCIPAL, archived_target)
+        assert captured.value.code == "pipeline_archive_target_invalid"
+
+        only_won = next(stage for stage in before.stages if stage.semantic_type == "won")
+        last_semantic = _archive_request(before, only_won.id)
+        with pytest.raises(DealPipelineValidationError) as captured:
+            service.update(session, PRINCIPAL, last_semantic)
+        assert captured.value.code == "pipeline_semantic_minimum"
+
+        pipeline = session.scalar(select(DealPipeline))
+        deal = session.get(Deal, "service-deal")
+        assert pipeline.version == before.pipeline_version
+        assert deal.stage_id == source.id
+        assert session.scalar(select(func.count()).select_from(DealStageHistory)) == 0
+        assert session.scalar(select(func.count()).select_from(DealPipelineAuditEvent)) == 0
+
+
+class _FailingAuditRepository(DealPipelineRepository):
+    def append_audit(self, **kwargs):  # noqa: ANN003, ANN201
+        raise RuntimeError("injected audit failure")
+
+
+def test_stale_workspace_and_audit_failure_roll_back_transfer_and_archive(
+    pipeline_database_url: str,
+) -> None:
+    changed_at = datetime(2026, 9, 29, 20, 0, tzinfo=timezone.utc)
+    with _session(pipeline_database_url) as session:
+        baseline = DealPipelineService().load(session, PRINCIPAL)
+        source = next(stage for stage in baseline.stages if stage.name == "Pedido aprovado Consultar")
+        target = next(stage for stage in baseline.stages if stage.semantic_type == "won")
+        _seed_deal(session, session.get(DealPipelineStage, source.id))
+
+    stale = _archive_request(baseline, source.id, target.id)
+    stale.workspace_version += 1
+    with _session(pipeline_database_url) as session:
+        with pytest.raises(DealPipelineVersionConflict) as captured:
+            DealPipelineService().update(session, PRINCIPAL, stale)
+        assert captured.value.current_workspace_version == baseline.workspace_version
+
+    request = _archive_request(baseline, source.id, target.id)
+    failing = DealPipelineService(
+        repository_factory=_FailingAuditRepository,
+        clock=lambda: changed_at,
+    )
+    with pytest.raises(RuntimeError, match="injected audit failure"):
+        with _session(pipeline_database_url) as session:
+            failing.update(session, PRINCIPAL, request)
+
+    with _session(pipeline_database_url) as session:
+        pipeline = session.scalar(select(DealPipeline))
+        source_after = session.get(DealPipelineStage, source.id)
+        deal = session.get(Deal, "service-deal")
+        workspace = session.get(Workspace, WORKSPACE_ID)
+
+        assert pipeline.version == baseline.pipeline_version
+        assert workspace.version == baseline.workspace_version
+        assert source_after.archived_at is None
+        assert deal.stage_id == source.id
+        assert deal.stage == source.name
+        assert deal.payload["record"]["stage"] == source.name
+        assert deal.payload["record"]["stageHistory"] == []
+        assert session.scalar(select(func.count()).select_from(DealStageHistory)) == 0
+        assert session.scalar(select(func.count()).select_from(DealPipelineAuditEvent)) == 0

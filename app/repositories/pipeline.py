@@ -159,6 +159,31 @@ class DealPipelineRepository:
         counts.update({stage_id: int(count) for stage_id, count in rows})
         return counts
 
+    def synchronize_stage_name(self, stage_id: UUID, name: str) -> int:
+        """Synchronize the current legacy display fields without rewriting history."""
+        stage = self.load_stage(stage_id, include_archived=False, for_update=True)
+        if stage.name != name:
+            raise ValueError("stage name must be canonical before synchronization")
+        deals = self.session.scalars(
+            select(Deal)
+            .where(
+                Deal.workspace_id == self.workspace_id,
+                Deal.pipeline_id == stage.pipeline_id,
+                Deal.stage_id == stage.id,
+            )
+            .order_by(Deal.id.asc())
+            .with_for_update()
+        ).all()
+        for deal in deals:
+            record = deepcopy((deal.payload or {}).get("record") or {})
+            record["stage"] = stage.name
+            record["stageId"] = str(stage.id)
+            record["pipelineId"] = str(stage.pipeline_id)
+            deal.stage = stage.name
+            deal.payload = {**(deal.payload or {}), "record": record}
+        self.session.flush()
+        return len(deals)
+
     def transfer_deals(
         self,
         source_id: UUID,

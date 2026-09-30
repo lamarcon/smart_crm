@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID, uuid4
 
@@ -45,9 +45,10 @@ class DealPipelineValidationError(DealPipelineServiceError):
 class DealPipelineVersionConflict(DealPipelineServiceError):
     code = "pipeline_version_conflict"
 
-    def __init__(self, current_version: int) -> None:
+    def __init__(self, current_version: int, current_workspace_version: int | None = None) -> None:
         super().__init__("Versão do funil desatualizada")
         self.current_version = current_version
+        self.current_workspace_version = current_workspace_version
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ class _ValidatedStage:
     semantic_type: str
     color: str
     position: int
+    archived: bool
 
 
 def _validation(code: str, field: str, message: str) -> DealPipelineValidationError:
@@ -104,9 +106,11 @@ class DealPipelineService:
         self,
         repository_factory: Callable[[Session, str], DealPipelineRepository] = DealPipelineRepository,
         uuid_factory: Callable[[], UUID] = uuid4,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.repository_factory = repository_factory
         self.uuid_factory = uuid_factory
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def _repository(
         self, session: Session, principal: PrincipalScope
@@ -151,6 +155,20 @@ class DealPipelineService:
 
         aggregate = repository.load_default(include_archived=True)
         validated = self._validate_configuration(aggregate, request)
+        archive_items = [item for item in validated if item.archived]
+        active_items = [item for item in validated if not item.archived]
+        transfer_plan, transfer_counts = self._validate_archive_plan(
+            repository,
+            pipeline,
+            archive_items,
+            active_items,
+            request.transfers,
+        )
+        workspace = None
+        if sum(transfer_counts.values()) > 0:
+            workspace = self._locked_workspace(session, principal)
+            if workspace.version != request.workspace_version:
+                raise DealPipelineVersionConflict(pipeline.version, workspace.version)
         before_state = _aggregate_state(aggregate)
         actions: list[dict] = []
         original_values = {
@@ -158,16 +176,57 @@ class DealPipelineService:
             for stage in aggregate.stages
         }
 
-        # Move active rows out of the partial unique indexes' final key space so
-        # swaps of names or positions remain a single atomic aggregate update.
-        active_current = [stage for stage in aggregate.stages if stage.archived_at is None]
+        changed_at = self.clock()
+        transfer_summary: list[dict] = []
+        for source, target in transfer_plan:
+            transferred = repository.transfer_deals(
+                source.id,
+                target,
+                principal.user_id,
+                changed_at,
+            )
+            transfer_counts[source.id] = transferred
+            transfer_summary.append(
+                {
+                    "sourceStageId": str(source.id),
+                    "targetStageId": str(target.id),
+                    "count": transferred,
+                }
+            )
+
+        for item in archive_items:
+            assert item.current is not None
+            item.current.archived_at = changed_at
+            actions.append(
+                {
+                    "type": "stage.archived",
+                    "stageId": str(item.current.id),
+                    "transferCount": transfer_counts[item.current.id],
+                    "targetStageId": (
+                        str(request.transfers[item.current.id])
+                        if item.current.id in request.transfers
+                        else None
+                    ),
+                }
+            )
+        if archive_items:
+            session.flush()
+
+        # Move remaining active rows out of the partial unique indexes' final
+        # key space so swaps remain a single atomic aggregate update.
+        active_current = [
+            stage
+            for stage in aggregate.stages
+            if stage.archived_at is None
+        ]
         for temporary_position, stage in enumerate(active_current, start=1000):
             stage.name = f"__pipeline_tmp_{stage.id.hex}"
             stage.position = temporary_position
         session.flush()
 
         resulting: list[DealPipelineStage] = []
-        for item in validated:
+        renamed: list[DealPipelineStage] = []
+        for item in active_items:
             stage = item.current
             if stage is None:
                 stage = DealPipelineStage(
@@ -224,6 +283,8 @@ class DealPipelineService:
                 stage.name = item.name
                 stage.color = item.color
                 stage.position = item.position
+                if original_name != item.name:
+                    renamed.append(stage)
             resulting.append(stage)
 
         if pipeline.default_stage_id != request.default_stage_id:
@@ -236,11 +297,25 @@ class DealPipelineService:
             )
         pipeline.default_stage_id = request.default_stage_id
         pipeline.version += 1
+        if workspace is not None:
+            workspace.version += 1
         session.flush()
 
-        after_aggregate = DealPipelineAggregate(
+        for stage in renamed:
+            repository.synchronize_stage_name(stage.id, stage.name)
+
+        response_aggregate = DealPipelineAggregate(
             pipeline=pipeline,
             stages=tuple(sorted(resulting, key=lambda item: (item.position, item.id))),
+        )
+        prior_archived = [
+            stage
+            for stage in aggregate.stages
+            if stage.archived_at is not None and stage not in resulting
+        ]
+        after_aggregate = DealPipelineAggregate(
+            pipeline=pipeline,
+            stages=tuple([*resulting, *prior_archived]),
         )
         after_state = _aggregate_state(after_aggregate)
         repository.append_audit(
@@ -251,9 +326,14 @@ class DealPipelineService:
             actions=actions,
             before_state=before_state,
             after_state=after_state,
-            transfer_summary=[],
+            transfer_summary=transfer_summary,
         )
-        return self._response(session, principal, after_aggregate)
+        return self._response(
+            session,
+            principal,
+            response_aggregate,
+            transfer_counts=transfer_counts,
+        )
 
     def history(
         self,
@@ -276,13 +356,6 @@ class DealPipelineService:
         aggregate: DealPipelineAggregate,
         request: DealPipelineUpdateRequest,
     ) -> list[_ValidatedStage]:
-        if request.transfers:
-            raise _validation(
-                "pipeline_transfer_not_supported",
-                "transfers",
-                "Transferências são processadas junto ao arquivamento",
-            )
-
         all_by_id = {stage.id: stage for stage in aggregate.stages}
         active_ids = {
             stage.id for stage in aggregate.stages if stage.archived_at is None
@@ -304,13 +377,7 @@ class DealPipelineService:
                 "Etapas existentes não podem ser removidas ou substituídas",
             )
 
-        if any(stage.archived for stage in request.stages):
-            raise _validation(
-                "pipeline_archive_not_supported",
-                "stages",
-                "Arquivamento requer o fluxo de transferência",
-            )
-        if len(request.stages) > 50:
+        if sum(not stage.archived for stage in request.stages) > 50:
             raise _validation(
                 "pipeline_stage_limit", "stages", "O funil aceita no máximo 50 etapas ativas"
             )
@@ -327,23 +394,25 @@ class DealPipelineService:
                 raise _validation(
                     "pipeline_stage_name_invalid", f"{field}.name", "Nome deve ter de 1 a 80 caracteres"
                 )
-            normalized_name = name.casefold()
-            if normalized_name in normalized_names:
-                raise _validation(
-                    "pipeline_stage_name_duplicate", f"{field}.name", "Nome de etapa duplicado"
-                )
-            normalized_names.add(normalized_name)
+            if not submitted.archived:
+                normalized_name = name.casefold()
+                if normalized_name in normalized_names:
+                    raise _validation(
+                        "pipeline_stage_name_duplicate", f"{field}.name", "Nome de etapa duplicado"
+                    )
+                normalized_names.add(normalized_name)
             if not _COLOR_PATTERN.fullmatch(submitted.color):
                 raise _validation(
                     "pipeline_stage_color_invalid", f"{field}.color", "Cor deve usar #RRGGBB"
                 )
-            if submitted.position in positions:
-                raise _validation(
-                    "pipeline_stage_position_duplicate",
-                    f"{field}.position",
-                    "Posição de etapa duplicada",
-                )
-            positions.add(submitted.position)
+            if not submitted.archived:
+                if submitted.position in positions:
+                    raise _validation(
+                        "pipeline_stage_position_duplicate",
+                        f"{field}.position",
+                        "Posição de etapa duplicada",
+                    )
+                positions.add(submitted.position)
             current = all_by_id.get(submitted.id) if submitted.id is not None else None
             if current is not None and current.archived_at is not None:
                 raise _validation(
@@ -355,19 +424,36 @@ class DealPipelineService:
                     f"{field}.semanticType",
                     "Tipo semântico de etapa existente é imutável",
                 )
+            if submitted.archived and current is None:
+                raise _validation(
+                    "pipeline_new_stage_archived",
+                    f"{field}.archived",
+                    "Uma nova etapa não pode nascer arquivada",
+                )
+            if submitted.archived and current is not None and (
+                name != current.name or submitted.color.upper() != current.color.upper()
+            ):
+                raise _validation(
+                    "pipeline_archived_stage_modified",
+                    field,
+                    "A etapa deve ser arquivada sem alterar nome ou cor",
+                )
             item = _ValidatedStage(
                 current=current,
                 name=name,
                 semantic_type=submitted.semantic_type,
                 color=submitted.color.upper(),
                 position=submitted.position,
+                archived=submitted.archived,
             )
             validated.append(item)
-            semantic_counts[item.semantic_type] += 1
-            if submitted.id == request.default_stage_id:
+            if not item.archived:
+                semantic_counts[item.semantic_type] += 1
+            if submitted.id == request.default_stage_id and not item.archived:
                 default_item = item
 
-        if positions != set(range(len(validated))):
+        active_count = sum(not item.archived for item in validated)
+        if positions != set(range(active_count)):
             raise _validation(
                 "pipeline_stage_positions_invalid",
                 "stages",
@@ -397,6 +483,85 @@ class DealPipelineService:
         return validated
 
     @staticmethod
+    def _validate_archive_plan(
+        repository: DealPipelineRepository,
+        pipeline: DealPipeline,
+        archive_items: list[_ValidatedStage],
+        active_items: list[_ValidatedStage],
+        transfers: dict[UUID, UUID],
+    ) -> tuple[list[tuple[DealPipelineStage, DealPipelineStage]], dict[UUID, int]]:
+        archived_by_id = {
+            item.current.id: item.current
+            for item in archive_items
+            if item.current is not None
+        }
+        active_by_id = {
+            item.current.id: item.current
+            for item in active_items
+            if item.current is not None
+        }
+        if set(transfers) - set(archived_by_id):
+            raise _validation(
+                "pipeline_transfer_source_invalid",
+                "transfers",
+                "Origem de transferência deve ser arquivada nesta gravação",
+            )
+        counts = repository.count_deals_by_stage(archived_by_id)
+        plan: list[tuple[DealPipelineStage, DealPipelineStage]] = []
+        for source_id, source in archived_by_id.items():
+            count = counts[source_id]
+            target_id = transfers.get(source_id)
+            if count > 0 and target_id is None:
+                raise _validation(
+                    "pipeline_archive_target_required",
+                    f"transfers.{source_id}",
+                    "Etapa ocupada exige destino ativo",
+                )
+            if count == 0 and target_id is None:
+                continue
+            if count == 0:
+                raise _validation(
+                    "pipeline_archive_target_unnecessary",
+                    f"transfers.{source_id}",
+                    "Etapa vazia não requer transferência",
+                )
+            target = active_by_id.get(target_id)
+            if target is None or target.id == source.id:
+                raise _validation(
+                    "pipeline_archive_target_invalid",
+                    f"transfers.{source_id}",
+                    "Destino deve ser outra etapa ativa do mesmo funil",
+                )
+            try:
+                canonical_target = repository.load_stage(
+                    target.id,
+                    pipeline_id=pipeline.id,
+                    include_archived=False,
+                    for_update=True,
+                )
+            except LookupError as error:
+                raise _validation(
+                    "pipeline_archive_target_invalid",
+                    f"transfers.{source_id}",
+                    "Destino deve ser outra etapa ativa do mesmo funil",
+                ) from error
+            plan.append((source, canonical_target))
+        return plan, counts
+
+    @staticmethod
+    def _locked_workspace(
+        session: Session, principal: PrincipalScope
+    ) -> Workspace:
+        workspace = session.scalar(
+            select(Workspace)
+            .where(Workspace.id == principal.workspace_id)
+            .with_for_update()
+        )
+        if workspace is None:
+            raise DealPipelineServiceError("workspace not found")
+        return workspace
+
+    @staticmethod
     def _workspace_version(
         session: Session, principal: PrincipalScope
     ) -> int:
@@ -413,6 +578,8 @@ class DealPipelineService:
         session: Session,
         principal: PrincipalScope,
         aggregate: DealPipelineAggregate,
+        *,
+        transfer_counts: dict[UUID, int] | None = None,
     ) -> DealPipelineResponse:
         pipeline = aggregate.pipeline
         return DealPipelineResponse(
@@ -435,7 +602,7 @@ class DealPipelineService:
                 )
                 for stage in sorted(aggregate.stages, key=lambda item: (item.position, item.id))
             ],
-            transferCounts={},
+            transferCounts=transfer_counts or {},
         )
 
     @staticmethod
