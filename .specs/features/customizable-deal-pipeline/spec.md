@@ -212,10 +212,10 @@ O Smart CRM possui nove etapas de Negócio fixadas no HTML e usa o nome visível
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| PIPE-01 | Consultar um funil canônico por empresa | Execute | In Progress — T1-T3,T6 complete |
+| PIPE-01 | Consultar um funil canônico por empresa | Execute | In Progress — T1-T3,T6,T8 complete |
 | PIPE-02 | Personalizar etapas como Administrador | Execute | In Progress — T1,T4,T6 complete |
 | PIPE-03 | Arquivar com transferência atômica | Execute | In Progress — T3,T5,T7 complete |
-| PIPE-04 | Preservar regras e relatórios após renomear | Execute | In Progress — T2,T5,T7 complete |
+| PIPE-04 | Preservar regras e relatórios após renomear | Execute | In Progress — T2,T5,T7,T8 complete |
 | PIPE-05 | Registrar histórico administrativo | Execute | In Progress — T1,T3-T6 complete |
 | PIPE-06 | Impedir sobrescrita concorrente | Execute | In Progress — T4-T7 complete |
 | PIPE-07 | Migrar e operar sem perda | Execute | In Progress — T2,T7 complete |

@@ -266,6 +266,8 @@ T10 → T11 → T12
 
 ### T8: Replace frontend stage constants with the pipeline registry
 
+**Status**: ✅ Complete
+
 **What**: Load the canonical funil and drive deal lists, forms, Kanban, filters, dashboard, progress and automations by IDs/semantics.  
 **Where**: `app/static/index.html`  
 **Depends on**: T7  
@@ -279,12 +281,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] No Negócio behavior depends on visible names; Lead stages remain unchanged.
-- [ ] New deals use configured initial ID; won/lost/open and billing use semantics/system key.
-- [ ] Renaming seeded stages preserves counts, filters, Kanban, history, undo and billing automation.
-- [ ] Missing pipeline blocks dependent actions with visible error and no fixed fallback.
-- [ ] Browser tests replace exact-nine assumptions with seeded-default and rename regressions, adding at least 12 assertions without weakening unrelated tests.
-- [ ] Build gate passes with no prior test removed/skipped.
+- [x] No Negócio behavior depends on visible names; Lead stages remain unchanged.
+- [x] New deals use configured initial ID; won/lost/open and billing use semantics/system key.
+- [x] Renaming seeded stages preserves counts, filters, Kanban, history, undo and billing automation.
+- [x] Missing pipeline blocks dependent actions with visible error and no fixed fallback.
+- [x] Browser tests replace exact-nine assumptions with seeded-default and rename regressions, adding at least 12 assertions without weakening unrelated tests.
+- [x] Build gate passes with no prior test removed/skipped.
 
 **Tests**: browser e2e  
 **Gate**: build  

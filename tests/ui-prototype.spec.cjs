@@ -16,6 +16,34 @@ const DEAL_STAGES = [
   'Negociação Revisão', 'Pedido aprovado Consultar', 'Faturando',
   'Ganho', 'Orçamento Não Aprovado', 'Analisar falha'
 ];
+const DEAL_STAGE_IDS = DEAL_STAGES.map((_, index) => `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`);
+
+function defaultDealPipeline() {
+  const semantics = ['open', 'open', 'open', 'open', 'open', 'open', 'won', 'lost', 'lost'];
+  const colors = ['#2563EB', '#0EA5E9', '#14B8A6', '#8B5CF6', '#F59E0B', '#F97316', '#16A34A', '#DC2626', '#991B1B'];
+  return {
+    id: '20000000-0000-4000-8000-000000000001', name: 'Vendas CMS',
+    pipelineVersion: 1, workspaceVersion: 1, defaultStageId: DEAL_STAGE_IDS[0], transferCounts: {},
+    stages: DEAL_STAGES.map((name, index) => ({
+      id: DEAL_STAGE_IDS[index], name, semanticType: semantics[index], color: colors[index],
+      position: index, systemKey: index === 5 ? 'billing' : null, active: true,
+      initial: index === 0, archivedAt: null
+    }))
+  };
+}
+
+function attachCanonicalDealStages(source, pipeline) {
+  if (!source) return source;
+  const byName = new Map(pipeline.stages.map(stage => [stage.name, stage]));
+  for (const deal of source.deals || []) {
+    const stage = pipeline.stages.find(candidate => candidate.id === deal.stageId) || byName.get(deal.stage);
+    if (!stage) continue;
+    deal.pipelineId = pipeline.id;
+    deal.stageId = stage.id;
+    deal.stage = stage.name;
+  }
+  return source;
+}
 
 let browser;
 let passed = 0;
@@ -78,17 +106,26 @@ async function waitForMockState(page, predicate, timeoutMs = 5000) {
 async function openFresh(options = {}) {
   const context = await browser.newContext({ viewport: options.viewport || { width: 1366, height: 768 } });
   const page = await context.newPage();
-  const initialState = options.preloadState ? durableState(options.preloadState) : null;
+  const pipeline = clone(options.pipeline || defaultDealPipeline());
+  const initialState = options.preloadState ? attachCanonicalDealStages(durableState(options.preloadState), pipeline) : null;
   const api = {
     initialized: Boolean(initialState), version: initialState ? 1 : 0, state: initialState,
     session: { ...AUTH_SESSION, ...(options.session || {}) },
     loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false,
+    pipeline, pipelineFailure: Boolean(options.pipelineFailure),
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
   await context.route('**/api/auth/session', route => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify(api.session)
+  }));
+  await context.route('**/api/deal-pipeline', route => route.fulfill({
+    status: api.pipelineFailure ? 503 : 200,
+    contentType: 'application/json',
+    body: JSON.stringify(api.pipelineFailure
+      ? { error: { code: 'database_unavailable', message: 'Funil indisponível.' } }
+      : api.pipeline)
   }));
   await context.route('**/api/workspace**', async route => {
     const request = route.request();
@@ -110,7 +147,7 @@ async function openFresh(options = {}) {
         return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'workspace_already_initialized', message: 'Workspace já inicializado.', currentVersion: api.version } }) });
       }
       const payload = request.postDataJSON();
-      api.state = durableState(payload.state);
+      api.state = attachCanonicalDealStages(durableState(payload.state), api.pipeline);
       api.initialized = true;
       api.version = 1;
       api.assertSynchronized = true;
@@ -204,12 +241,16 @@ async function assertCanonicalRehydration(page) {
       writeFailure: false,
       writeGate: null,
       assertSynchronized: true,
+      pipeline: clone(sourceApi.pipeline), pipelineFailure: false,
       deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
     };
     apiByPage.set(independent, mirrorApi);
     await context.route('**/api/auth/session', route => route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify(AUTH_SESSION)
+    }));
+    await context.route('**/api/deal-pipeline', route => route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify(mirrorApi.pipeline)
     }));
     await context.route('**/api/workspace**', async route => {
       const request = route.request();
@@ -1444,9 +1485,11 @@ async function storageEntries(page) {
     let state = await stateFrom(page);
     const changed = state.deals.find(deal => deal.id === 'N-16312');
     assert.equal(changed.stage, 'Negociação Revisão');
-    assert.deepEqual(Object.keys(changed.stageHistory.at(-1)).sort(), ['at', 'byId', 'from', 'to']);
+    assert.deepEqual(Object.keys(changed.stageHistory.at(-1)).sort(), ['at', 'byId', 'from', 'fromStageId', 'to', 'toStageId']);
     assert.equal(changed.stageHistory.at(-1).from, 'Orçamentos enviados');
     assert.equal(changed.stageHistory.at(-1).to, 'Negociação Revisão');
+    assert.equal(changed.stageHistory.at(-1).fromStageId, DEAL_STAGE_IDS[2]);
+    assert.equal(changed.stageHistory.at(-1).toStageId, DEAL_STAGE_IDS[3]);
     assert.equal(changed.stageHistory.at(-1).byId, 'u-admin');
     assert.equal(Number.isNaN(Date.parse(changed.stageHistory.at(-1).at)), false);
     await page.getByRole('button', { name: 'Desfazer' }).click();
@@ -1545,7 +1588,7 @@ async function storageEntries(page) {
     await page.getByRole('button', { name: /Filtrar painel/ }).click();
     const panel = page.locator('#filterDialog');
     await panel.locator('[data-dashboard-filter-scope="deals"]').click();
-    await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption(['Ganho']);
+    await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption({ label: 'Ganho' });
     await panel.getByRole('button', { name: 'Pesquisar' }).click();
     assert.equal(await conversion.locator('strong').innerText(), '100%');
   });
@@ -1577,7 +1620,7 @@ async function storageEntries(page) {
     const panel = page.locator('#filterDialog');
     await panel.locator('[data-dashboard-filter-scope="deals"]').click();
     await panel.locator('[data-filter-field="responsibleId"] select[name="filter-value"]').selectOption(['u-paula']);
-    await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption(['Ganho']);
+    await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption({ label: 'Ganho' });
     const date = panel.locator('[data-filter-field="createdAt"]');
     await date.locator('select[name="filter-operator"]').selectOption('between');
     await date.locator('input[name="filter-value"]').fill('2026-08-12');
@@ -1591,7 +1634,7 @@ async function storageEntries(page) {
     await page.getByRole('button', { name: /Filtrar painel/ }).click();
     assert.match(await panel.locator('[data-dashboard-filter-scope="deals"]').getAttribute('class'), /active/);
     assert.deepEqual(await panel.locator('[data-filter-field="responsibleId"] select[name="filter-value"]').evaluate(select => [...select.selectedOptions].map(option => option.value)), ['u-paula']);
-    assert.deepEqual(await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').evaluate(select => [...select.selectedOptions].map(option => option.value)), ['Ganho']);
+    assert.deepEqual(await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').evaluate(select => [...select.selectedOptions].map(option => option.value)), [DEAL_STAGE_IDS[6]]);
     assert.equal(await panel.locator('[data-filter-field="createdAt"] input[name="filter-value"]').inputValue(), '2026-08-12');
     assert.equal(await panel.locator('[data-filter-field="createdAt"] input[name="filter-value-to"]').inputValue(), '2026-08-12');
   });
@@ -2486,6 +2529,79 @@ async function storageEntries(page) {
     assert.equal(await visibleRows(page, 'Negócios'), 6);
     assert.match(await page.locator('#page-deals').innerText(), /Conferência fiscal interna/);
   });
+
+  await run('PIPE-UI-01 usa IDs e semântica após renomear o funil canônico', async page => {
+    const api = apiByPage.get(page);
+    const renamed = new Map([
+      [DEAL_STAGE_IDS[0], 'Entrada personalizada'],
+      [DEAL_STAGE_IDS[5], 'Pronto para financeiro'],
+      [DEAL_STAGE_IDS[6], 'Venda concluída'],
+      [DEAL_STAGE_IDS[7], 'Venda encerrada']
+    ]);
+    api.pipeline.stages.forEach(stage => { if (renamed.has(stage.id)) stage.name = renamed.get(stage.id); });
+    api.pipeline.pipelineVersion += 1;
+    api.state.deals.forEach(deal => {
+      const stage = api.pipeline.stages.find(candidate => candidate.id === deal.stageId);
+      deal.stage = stage.name;
+    });
+    await reloadReady(page);
+
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.pipelineReady), 'true');
+    assert.equal(await page.locator('#dealNavCount').innerText(), '5');
+    assert.equal(await page.locator('[data-pipeline-stage]').filter({ hasText: 'Venda concluída' }).count(), 1);
+    assert.equal(await page.locator('[data-pipeline-stage]').filter({ hasText: 'Ganho' }).count(), 0);
+
+    await goTo(page, 'Negócios');
+    const initialOption = page.locator('#page-deals [data-stage-segment="Entrada personalizada"]');
+    assert.ok(await initialOption.count() > 0);
+    const billingTarget = page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' }).locator('[data-stage-segment="Pronto para financeiro"]');
+    page.once('dialog', dialog => dialog.accept());
+    await billingTarget.click();
+    let deal = (await stateFrom(page)).deals.find(candidate => candidate.id === 'N-16312');
+    assert.deepEqual({ stageId: deal.stageId, stage: deal.stage, responsibleId: deal.responsibleId }, {
+      stageId: DEAL_STAGE_IDS[5], stage: 'Pronto para financeiro', responsibleId: 'u-billing'
+    });
+    assert.equal((await stateFrom(page)).notifications.some(note => /Faturamento/.test(note.text) && /N-16312/.test(note.detail)), true);
+
+    page.once('dialog', dialog => dialog.accept());
+    await page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' }).locator('[data-stage-segment="Venda concluída"]').click();
+    deal = (await stateFrom(page)).deals.find(candidate => candidate.id === 'N-16312');
+    assert.equal(deal.stageId, DEAL_STAGE_IDS[6]);
+    assert.equal(Number.isNaN(Date.parse(deal.wonAt)), false);
+
+    page.once('dialog', dialog => dialog.accept());
+    await page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' }).locator('[data-stage-segment="Venda encerrada"]').click();
+    deal = (await stateFrom(page)).deals.find(candidate => candidate.id === 'N-16312');
+    assert.equal(deal.stageId, DEAL_STAGE_IDS[7]);
+    assert.equal('wonAt' in deal, false);
+
+    await page.getByRole('button', { name: 'Novo Negócio' }).click();
+    const dialog = page.locator('#entityDialog');
+    assert.equal(await dialog.getByLabel('Etapa *').inputValue(), DEAL_STAGE_IDS[0]);
+    await dialog.getByLabel('Título do Negócio *').fill('Negócio no início configurado');
+    await dialog.getByLabel('Empresa *').fill('Empresa Pipeline');
+    await dialog.getByLabel('Valor (R$) *').fill('150');
+    await dialog.getByLabel('Responsável *').selectOption('u-paula');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    const created = (await stateFrom(page)).deals.find(candidate => candidate.title === 'Negócio no início configurado');
+    assert.deepEqual({ pipelineId: created.pipelineId, stageId: created.stageId, stage: created.stage }, {
+      pipelineId: api.pipeline.id, stageId: DEAL_STAGE_IDS[0], stage: 'Entrada personalizada'
+    });
+
+    await page.getByRole('button', { name: /Filtros/ }).click();
+    const stageFilter = page.locator('#filterDialog [data-filter-field="stage"] select[name="filter-value"]');
+    await stageFilter.selectOption({ label: 'Venda concluída' });
+    assert.deepEqual(await stageFilter.evaluate(select => [...select.selectedOptions].map(option => option.value)), [DEAL_STAGE_IDS[6]]);
+  });
+
+  await run('PIPE-UI-02 bloqueia ações de Negócio sem usar etapas fixas como fallback', async page => {
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.pipelineReady), 'false');
+    await goTo(page, 'Negócios');
+    assert.match(await page.locator('#page-deals [role="alert"]').innerText(), /Funil indisponível/);
+    assert.equal(await page.getByRole('button', { name: 'Novo Negócio' }).count(), 0);
+    assert.equal(await page.evaluate(() => openEntityDialog('deal')), false);
+    assert.match(await page.locator('#toastRegion').innerText(), /Funil indisponível/);
+  }, { pipelineFailure: true });
 
   await run('PCCP-01 a PCCP-03 removem avisos de demonstração sem ocultar alertas operacionais', async page => {
     for (const destination of ['Visão geral', 'Leads', 'Contatos', 'Empresas', 'Negócios', 'Notificações']) {

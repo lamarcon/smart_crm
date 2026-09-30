@@ -588,11 +588,39 @@
     const READ_ONLY_WARNING = 'Banco indisponível. Alterações bloqueadas.';
     const GENERIC_LOGIN_ERROR = 'Não foi possível entrar com os dados informados.';
     const leadStages = ['Em contato', 'Lead descartado', 'Lead convertido'];
-    const dealStages = [
-      'Em Contato', 'Orçamento Proposta Preço', 'Orçamentos enviados',
-      'Negociação Revisão', 'Pedido aprovado Consultar', 'Faturando',
-      'Ganho', 'Orçamento Não Aprovado', 'Analisar falha'
-    ];
+    let dealPipeline = null;
+    let dealPipelineError = '';
+
+    function activeDealStages() {
+      return (dealPipeline?.stages || []).filter(stage => stage.active).sort((left, right) => left.position - right.position);
+    }
+    function stageById(stageId) {
+      return (dealPipeline?.stages || []).find(stage => stage.id === stageId) || null;
+    }
+    function dealStage(deal) { return stageById(deal?.stageId); }
+    function initialStage() { return stageById(dealPipeline?.defaultStageId); }
+    function isWon(deal) { return dealStage(deal)?.semanticType === 'won'; }
+    function isLost(deal) { return dealStage(deal)?.semanticType === 'lost'; }
+    function isOpen(deal) { return dealStage(deal)?.semanticType === 'open'; }
+    function isBilling(deal) { return dealStage(deal)?.systemKey === 'billing'; }
+    function requireDealPipeline() {
+      if (dealPipeline && activeDealStages().length) return true;
+      showToast(dealPipelineError || 'O funil de Negócios está indisponível. Tente novamente.');
+      return false;
+    }
+    function canonicalizeDealReferences(source = state) {
+      if (!dealPipeline) return source;
+      const byName = new Map((dealPipeline.stages || []).map(stage => [stage.name, stage]));
+      (source.deals || []).forEach(deal => {
+        const canonical = stageById(deal.stageId) || byName.get(deal.stage);
+        if (!canonical) return;
+        deal.pipelineId = dealPipeline.id;
+        deal.stageId = canonical.id;
+        deal.stage = canonical.name;
+        if (canonical.semanticType === 'won') deal.wonAt = ensureIso(deal.wonAt, deal.stageChangedAt || deal.updatedAt);
+      });
+      return source;
+    }
     const customFieldTypes = [
       ['text', 'Texto curto'], ['textarea', 'Texto longo'], ['number', 'Número'],
       ['money', 'Moeda'], ['date', 'Data'], ['boolean', 'Sim/Não'],
@@ -795,7 +823,6 @@
           at: ensureIso(entry.at || entry.changedAt, deal.stageChangedAt),
           byId: entry.byId || entry.changedById || deal.stageChangedById
         }));
-        if (deal.stage === 'Ganho') deal.wonAt = ensureIso(deal.wonAt, deal.stageChangedAt);
         if (Array.isArray(deal.bitrixFields) && !Array.isArray(deal.customFields)) {
           deal.customFields = bitrixCustomFields('deal', deal.bitrixFields);
           deal.visibleCustomFieldKeys = deal.customFields.filter(field => field.value !== '').map(field => field.key);
@@ -967,8 +994,25 @@
       state.ui = loadUiPreferences(state.users);
       writeLocalState();
       document.documentElement.dataset.authenticated = 'true';
+      await loadDealPipeline();
       await initializeWorkspace();
       showAuthView('app', expectedSlug);
+    }
+
+    async function loadDealPipeline() {
+      dealPipeline = null;
+      dealPipelineError = '';
+      try {
+        const payload = await responseJson(await apiFetch('/api/deal-pipeline', { headers: { Accept: 'application/json' } }));
+        if (!payload?.id || !payload?.defaultStageId || !Array.isArray(payload.stages) || !payload.stages.some(stage => stage.active)) {
+          throw new Error('O funil de Negócios não possui etapas ativas.');
+        }
+        dealPipeline = payload;
+        document.documentElement.dataset.pipelineReady = 'true';
+      } catch (failure) {
+        dealPipelineError = failure.message || 'O funil de Negócios está indisponível.';
+        document.documentElement.dataset.pipelineReady = 'false';
+      }
     }
     async function initializeRoute() {
       const slug = tenantSlugFromPath();
@@ -1050,6 +1094,9 @@
       persistenceScheduled = false;
       workspaceWriteInFlight = false;
       queuedToasts = [];
+      dealPipeline = null;
+      dealPipelineError = '';
+      document.documentElement.dataset.pipelineReady = 'false';
       document.documentElement.dataset.workspaceReady = 'false';
       document.documentElement.dataset.workspaceWritable = 'false';
       document.documentElement.dataset.workspaceWriting = 'false';
@@ -1074,7 +1121,7 @@
       if (!payload.initialized || !payload.state) throw new Error('Workspace canônico indisponível.');
       workspaceVersion = payload.version;
       confirmedState = extractDurableState(payload.state);
-      state = mergeDurableState(payload.state, state);
+      state = canonicalizeDealReferences(mergeDurableState(payload.state, state));
       writeLocalState();
       render();
     }
@@ -1092,7 +1139,7 @@
         }));
         workspaceVersion = payload.version;
         confirmedState = extractDurableState(payload.state);
-        state = mergeDurableState(payload.state, state);
+        state = canonicalizeDealReferences(mergeDurableState(payload.state, state));
         writeLocalState();
         render();
         flushQueuedToasts();
@@ -1103,13 +1150,13 @@
             await loadCanonicalWorkspace();
             showToast('Dados atualizados em outra sessão. A versão atual foi recarregada.');
           } catch (_) {
-            state = mergeDurableState(confirmedState, state);
+            state = canonicalizeDealReferences(mergeDurableState(confirmedState, state));
             writeLocalState();
             render();
             showToast('Não foi possível salvar no banco.');
           }
         } else {
-          state = mergeDurableState(confirmedState, state);
+          state = canonicalizeDealReferences(mergeDurableState(confirmedState, state));
           writeLocalState();
           render();
           showToast('Não foi possível salvar no banco.');
@@ -1127,7 +1174,7 @@
         workspaceVersion = payload.version || 0;
         if (payload.initialized) {
           if (!payload.state) throw new Error('Workspace inicializado sem estado.');
-          state = mergeDurableState(payload.state, localCandidate);
+          state = canonicalizeDealReferences(mergeDurableState(payload.state, localCandidate));
           workspaceInitialized = true;
           confirmedState = extractDurableState(payload.state);
           saveState();
@@ -1136,7 +1183,7 @@
           return;
         }
         workspaceInitialized = false;
-        state = normalizeState(localCandidate);
+        state = canonicalizeDealReferences(normalizeState(localCandidate));
         saveState();
         setWorkspaceAccess(true, false, 'Banco vazio. Confirme a migração inicial para liberar alterações.', 'loading');
         render();
@@ -1170,7 +1217,7 @@
           body: JSON.stringify({ state: extractDurableState() })
         }));
         workspaceVersion = payload.version;
-        state = mergeDurableState(payload.state, state);
+        state = canonicalizeDealReferences(mergeDurableState(payload.state, state));
         workspaceInitialized = true;
         confirmedState = extractDurableState(payload.state);
         saveState();
@@ -1290,11 +1337,13 @@
 
     function rawFieldValue(record, name) {
       if (name === 'team') return record?.team || state.users.find(user => user.id === record?.responsibleId)?.team || '';
+      if (name === 'stage' && record?.stageId) return record.stageId;
       if (name.startsWith('custom:')) return record?.customFields?.find(field => field.key === name.slice(7))?.value ?? '';
       return record?.[name];
     }
 
     function searchableFieldValue(record, name) {
+      if (name === 'stage' && record?.stageId) return `${record.stageId} ${record.stage || ''}`;
       const value = rawFieldValue(record, name);
       if (['responsibleId', 'ownerId'].includes(name)) return `${value || ''} ${userName(value)}`;
       if (name === 'assistants') return (value || []).map(id => `${id} ${userName(id)}`).join(' ');
@@ -1376,7 +1425,10 @@
     }
 
     function filterOptions(scope, definition) {
-      if (definition.name === 'stage') return (scope.endsWith('leads') || scope === 'leads' ? leadStages : dealStages).map(value => ({ value, label: value }));
+      if (definition.name === 'stage') {
+        if (scope.endsWith('leads') || scope === 'leads') return leadStages.map(value => ({ value, label: value }));
+        return activeDealStages().map(stage => ({ value: stage.id, label: stage.name }));
+      }
       if (['responsibleId', 'ownerId'].includes(definition.name)) return filterableUsers().map(user => ({ value: user.id, label: user.name }));
       if (definition.name === 'assistants') return state.users.filter(user => user.role === 'Assistente').map(user => ({ value: user.id, label: user.name }));
       if (definition.name === 'team') return [...new Set(filterableUsers().map(user => user.team))].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(value => ({ value, label: value }));
@@ -1542,9 +1594,10 @@
       setTimeout(() => element.remove(), 3500);
     }
 
-    function stageTag(stage) {
-      const css = stage === 'Ganho' || stage === 'Lead convertido' ? 'green' : stage.includes('descartado') || stage.includes('Não Aprovado') || stage.includes('falha') ? 'red' : stage.includes('Faturando') || stage.includes('Pedido') ? 'amber' : stage.includes('Negociação') ? 'purple' : '';
-      return `<span class="tag ${css}">${escapeHTML(stage)}</span>`;
+    function stageTag(stage, stageId = null) {
+      const canonical = stageById(stageId);
+      const css = canonical?.semanticType === 'won' || stage === 'Lead convertido' ? 'green' : canonical?.semanticType === 'lost' || stage.includes('descartado') ? 'red' : '';
+      return `<span class="tag ${css}" ${canonical ? `style="border-color:${escapeHTML(canonical.color)}"` : ''}>${escapeHTML(canonical?.name || stage)}</span>`;
     }
 
     function renderSessionIdentity() {
@@ -1557,7 +1610,7 @@
     function updateCounts() {
       const unread = state.notifications.filter(item => item.userId === state.currentUserId && !item.read).length;
       document.getElementById('leadNavCount').textContent = visibleLeads().filter(item => item.stage === 'Em contato').length;
-      document.getElementById('dealNavCount').textContent = visibleDeals().filter(item => !['Ganho', 'Orçamento Não Aprovado', 'Analisar falha'].includes(item.stage)).length;
+      document.getElementById('dealNavCount').textContent = visibleDeals().filter(isOpen).length;
       document.getElementById('noticeNavCount').textContent = unread;
       document.getElementById('topNoticeCount').textContent = unread;
       document.getElementById('topNoticeCount').hidden = unread === 0;
@@ -1605,15 +1658,16 @@
     function dashboardHTML() {
       const dashboard = dashboardRecords();
       const { leads, deals } = dashboard;
-      const openDeals = deals.filter(item => !['Ganho', 'Orçamento Não Aprovado', 'Analisar falha'].includes(item.stage));
+      const openDeals = deals.filter(isOpen);
       const total = openDeals.reduce((sum, item) => sum + item.amount, 0);
-      const wonDeals = deals.filter(item => item.stage === 'Ganho');
+      const wonDeals = deals.filter(isWon);
       const won = wonDeals.reduce((sum, item) => sum + item.amount, 0);
-      const maxCount = Math.max(1, ...dealStages.map(stage => deals.filter(item => item.stage === stage).length));
-      const pipeline = dealStages.map(stage => {
-        const records = deals.filter(item => item.stage === stage);
+      const stages = activeDealStages();
+      const maxCount = Math.max(1, ...stages.map(stage => deals.filter(item => item.stageId === stage.id).length));
+      const pipeline = stages.map(stage => {
+        const records = deals.filter(item => item.stageId === stage.id);
         const amount = records.reduce((sum, item) => sum + item.amount, 0);
-        return `<div class="pipeline-row"><span title="${escapeHTML(stage)}">${escapeHTML(stage)}</span><div class="pipeline-track"><div class="pipeline-bar" style="width:${Math.max(4, records.length / maxCount * 100)}%"></div></div><b>${money(amount)}</b></div>`;
+        return `<div class="pipeline-row" data-pipeline-stage="${escapeHTML(stage.id)}"><span title="${escapeHTML(stage.name)}">${escapeHTML(stage.name)}</span><div class="pipeline-track"><div class="pipeline-bar" style="width:${Math.max(4, records.length / maxCount * 100)}%;background:${escapeHTML(stage.color)}"></div></div><b>${money(amount)}</b></div>`;
       }).join('');
       const recent = [
         ...leads.map(item => ({ type: 'Lead', title: item.name, subtitle: item.company, createdAt: item.createdAt })),
@@ -1649,9 +1703,12 @@
     }
 
     function renderStageProgress(stages, current, entity, id) {
-      const currentIndex = Math.max(0, stages.indexOf(current));
-      const segments = stages.map((stage, index) => `<button type="button" class="stage-segment ${index < currentIndex ? 'complete' : ''} ${stage === current ? 'current' : ''}" data-action="request-stage" data-entity="${entity}" data-id="${id}" data-stage-segment="${escapeHTML(stage)}" ${entity === 'deal' ? `data-stage-tooltip="${escapeHTML(stage)}"` : ''} aria-label="Mover para ${escapeHTML(stage)}">${escapeHTML(stage)}</button>`).join('');
-      return `<div class="stage-progress"><div class="stage-segments">${segments}</div><div class="stage-progress-label"><b>${escapeHTML(current)}</b> · etapa ${currentIndex + 1} de ${stages.length}</div></div>`;
+      const stageItems = entity === 'deal' ? stages : stages.map(name => ({ id: name, name }));
+      const currentId = entity === 'deal' ? current : current;
+      const currentIndex = Math.max(0, stageItems.findIndex(stage => stage.id === currentId));
+      const segments = stageItems.map((stage, index) => `<button type="button" class="stage-segment ${index < currentIndex ? 'complete' : ''} ${stage.id === currentId ? 'current' : ''}" data-action="request-stage" data-entity="${entity}" data-id="${id}" data-stage-id="${escapeHTML(stage.id)}" data-stage-segment="${escapeHTML(stage.name)}" ${entity === 'deal' ? `data-stage-tooltip="${escapeHTML(stage.name)}" style="--stage-color:${escapeHTML(stage.color)}"` : ''} aria-label="Mover para ${escapeHTML(stage.name)}">${escapeHTML(stage.name)}</button>`).join('');
+      const currentName = stageItems[currentIndex]?.name || 'Etapa indisponível';
+      return `<div class="stage-progress"><div class="stage-segments">${segments}</div><div class="stage-progress-label"><b>${escapeHTML(currentName)}</b> · etapa ${currentIndex + 1} de ${stageItems.length}</div></div>`;
     }
 
     function normalizedRelationshipName(value) {
@@ -1696,17 +1753,17 @@
     }
     function renderKanban(scope, records) {
       const isLead = scope === 'leads';
-      const stages = isLead ? leadStages : dealStages;
+      const stages = isLead ? leadStages.map(name => ({ id: name, name })) : activeDealStages();
       const entity = isLead ? 'lead' : 'deal';
       return `<div class="kanban-board" aria-label="Kanban de ${isLead ? 'Leads' : 'Negócios'}">${stages.map(stage => {
-        const stageRecords = records.filter(record => record.stage === stage);
+        const stageRecords = records.filter(record => isLead ? record.stage === stage.id : record.stageId === stage.id);
         const cards = stageRecords.map(record => {
           const title = isLead ? record.name : record.title;
           const subtitle = isLead ? `${record.id} · ${record.company}` : `${record.id} · ${money(record.amount)}`;
-          const options = stages.map(option => `<option ${option === record.stage ? 'selected' : ''}>${escapeHTML(option)}</option>`).join('');
+          const options = stages.map(option => `<option value="${escapeHTML(option.id)}" ${(isLead ? option.id === record.stage : option.id === record.stageId) ? 'selected' : ''}>${escapeHTML(option.name)}</option>`).join('');
           return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small>${!isLead ? dealRelationshipsHTML(record) : ''}<div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}">${options}</select>${!isLead ? `<div class="kanban-actions"><button class="button small" data-action="quote" data-id="${record.id}">Orçamento</button></div>` : ''}</article>`;
         }).join('');
-        return `<section class="kanban-column" data-kanban-stage="${escapeHTML(stage)}"><div class="kanban-column-head"><span>${escapeHTML(stage)}</span><span class="kanban-count">${stageRecords.length}</span></div><div class="kanban-cards">${cards || '<p class="hint">Nenhum registro nesta etapa.</p>'}</div></section>`;
+        return `<section class="kanban-column" data-kanban-stage="${escapeHTML(stage.id)}"><div class="kanban-column-head"><span>${escapeHTML(stage.name)}</span><span class="kanban-count">${stageRecords.length}</span></div><div class="kanban-cards">${cards || '<p class="hint">Nenhum registro nesta etapa.</p>'}</div></section>`;
       }).join('')}</div>`;
     }
 
@@ -1716,7 +1773,8 @@
       const filter = getFilterState(entity);
       const selectedStages = filter.criteria.stage?.value || [];
       const quickStage = selectedStages.length === 1 ? selectedStages[0] : 'Todos';
-      const stageFilter = stageOptions.length ? `<select data-stage-filter="${entity}" aria-label="Filtrar por etapa"><option>Todos</option>${stageOptions.map(stage => `<option ${quickStage === stage ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select>` : '';
+      const normalizedStages = entity === 'deals' ? stageOptions : stageOptions.map(name => ({ id: name, name }));
+      const stageFilter = normalizedStages.length ? `<select data-stage-filter="${entity}" aria-label="Filtrar por etapa"><option value="Todos">Todos</option>${normalizedStages.map(stage => `<option value="${escapeHTML(stage.id)}" ${quickStage === stage.id ? 'selected' : ''}>${escapeHTML(stage.name)}</option>`).join('')}</select>` : '';
       const countBadge = activeFilterCount(entity);
       const mode = stageOptions.length ? getViewMode(entity) : 'list';
       const viewSwitch = stageOptions.length ? `<div class="view-switch" aria-label="Modo de visualização"><button type="button" aria-label="Lista" class="${mode === 'list' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="list">☷ Lista</button><button type="button" aria-label="Kanban" class="${mode === 'kanban' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="kanban">▦ Kanban</button></div>` : '';
@@ -1749,11 +1807,13 @@
     }
 
     function dealsHTML() {
+      if (!dealPipeline) return `<div class="pipeline-unavailable" role="alert"><h2>Negócios indisponíveis</h2><p>${escapeHTML(dealPipelineError || 'Não foi possível carregar o funil desta empresa.')}</p></div>`;
       const records = applyRecordFilters('deals', visibleDeals());
-      if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com acompanhamento por etapas.', renderKanban('deals', records), records.length, dealStages);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(dealStages, item.stage, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const stages = activeDealStages();
+      if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Funil configurado da empresa com acompanhamento por etapas.', renderKanban('deals', records), records.length, stages);
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(stages, item.stageId, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Negócio</th><th>Empresa e Contato</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
-      return listShell('deals', 'Negócios', 'Pipeline fixa Vendas CMS com acompanhamento por etapas.', table, records.length, dealStages);
+      return listShell('deals', 'Negócios', 'Funil configurado da empresa com acompanhamento por etapas.', table, records.length, stages);
     }
     function notificationsHTML() {
       const records = state.notifications.filter(item => item.userId === state.currentUserId);
@@ -2142,6 +2202,7 @@
     }
 
     function openEntityDialog(entity, id = null) {
+      if (entity === 'deal' && !requireDealPipeline()) return false;
       const collections = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' };
       const collection = collections[entity];
       const record = id ? state[collection].find(item => item.id === id) : {};
@@ -2154,6 +2215,7 @@
       const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
       document.getElementById('entityFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record?.[name])).join('');
       dialog.showModal();
+      return true;
     }
 
     function fieldHTML(name, label, type, required, value, idPrefix = 'field') {
@@ -2167,7 +2229,10 @@
         const selected = Array.isArray(value) ? value[0] : '';
         return `<div class="field"><label for="${idPrefix}-${name}">${label}</label><select id="${idPrefix}-${name}" name="${name}"><option value="">Nenhum</option>${assistants.map(user => `<option value="${user.id}" ${user.id === selected ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
       }
-      if (type === 'stage') return `<div class="field"><label for="${idPrefix}-${name}">${label} *</label><select id="${idPrefix}-${name}" name="${name}" required>${dealStages.map(stage => `<option ${stage === value ? 'selected' : ''}>${escapeHTML(stage)}</option>`).join('')}</select></div>`;
+      if (type === 'stage') {
+        const selectedId = stageById(value)?.id || activeDealStages().find(stage => stage.name === value)?.id || initialStage()?.id;
+        return `<div class="field"><label for="${idPrefix}-${name}">${label} *</label><select id="${idPrefix}-${name}" name="stageId" required>${activeDealStages().map(stage => `<option value="${escapeHTML(stage.id)}" ${stage.id === selectedId ? 'selected' : ''}>${escapeHTML(stage.name)}</option>`).join('')}</select></div>`;
+      }
       return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><input id="${idPrefix}-${name}" name="${name}" type="${type}" ${type === 'number' ? 'min="0" step="0.01"' : ''} value="${escapeHTML(value ?? '')}" ${requiredAttr}></div>`;
     }
 
@@ -2186,6 +2251,14 @@
         return [input.dataset.customKey, value];
       }));
       const existing = form.dataset.id ? state[collection].find(item => item.id === form.dataset.id) : null;
+      if (entity === 'deal') {
+        if (!requireDealPipeline()) return;
+        const selectedStage = stageById(data.stageId || existing?.stageId || initialStage()?.id);
+        if (!selectedStage?.active) { showToast('Selecione uma etapa ativa do funil.'); return; }
+        data.pipelineId = dealPipeline.id;
+        data.stageId = selectedStage.id;
+        data.stage = selectedStage.name;
+      }
       if (data.assistants !== undefined) data.assistants = data.assistants ? [data.assistants] : [];
       if (data.amount !== undefined) data.amount = Number(data.amount);
       if (['lead', 'deal'].includes(entity)) data.team = state.users.find(user => user.id === data.responsibleId)?.team || currentUser().team;
@@ -2233,13 +2306,15 @@
 
     function convertLead(id) {
       const lead = state.leads.find(item => item.id === id);
-      if (!lead || lead.stage !== 'Em contato') return;
+      if (!lead || lead.stage !== 'Em contato' || !requireDealPipeline()) return;
+      const destination = initialStage();
+      if (!destination) return;
       const now = new Date().toISOString();
       lead.stage = 'Lead convertido';
       lead.updatedAt = now;
       const deal = {
         id: nextId('N', state.deals), title: `Oportunidade ${lead.company}`, company: lead.company,
-        contact: lead.name, amount: 0, stage: 'Em Contato', responsibleId: lead.responsibleId,
+        contact: lead.name, amount: 0, pipelineId: dealPipeline.id, stageId: destination.id, stage: destination.name, responsibleId: lead.responsibleId,
         team: lead.team || state.users.find(user => user.id === lead.responsibleId)?.team,
         assistants: [...(lead.assistants || [])], createdAt: now, updatedAt: now,
         stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [], quotes: []
@@ -2247,22 +2322,31 @@
       ensureSchemaFields(state, 'deals', deal);
       state.deals.unshift(deal);
       notify('Lead convertido em Negócio.', `${lead.name} → ${deal.id}`, lead.responsibleId);
-      saveState(); render(); toast(`Lead convertido. O Negócio ${deal.id} foi criado em Em Contato.`);
+      saveState(); render(); toast(`Lead convertido. O Negócio ${deal.id} foi criado em ${destination.name}.`);
     }
 
-    function commitStageChange(entity, record, targetStage) {
+    function commitStageChange(entity, record, targetStageRef) {
       const before = clone(state);
       const previousStage = record.stage;
+      const previousStageId = record.stageId || null;
+      const target = entity === 'deal' ? stageById(targetStageRef) : null;
+      const targetStage = target?.name || targetStageRef;
+      if (entity === 'deal' && (!target?.active || target.id === previousStageId)) { render(); return; }
       const now = new Date().toISOString();
       record.stage = targetStage;
+      if (entity === 'deal') {
+        record.pipelineId = dealPipeline.id;
+        record.stageId = target.id;
+      }
       record.updatedAt = now;
       record.stageChangedAt = now;
       record.stageChangedById = state.currentUserId;
       record.stageHistory ||= [];
-      record.stageHistory.push({ from: previousStage, to: targetStage, at: now, byId: state.currentUserId });
-      if (entity === 'deal' && targetStage === 'Ganho') record.wonAt = now;
+      record.stageHistory.push({ fromStageId: previousStageId, toStageId: target?.id || null, from: previousStage, to: targetStage, at: now, byId: state.currentUserId });
+      if (entity === 'deal' && target.semanticType === 'won') record.wonAt ||= now;
+      if (entity === 'deal' && target.semanticType !== 'won') delete record.wonAt;
       let message = `${entity === 'deal' ? 'Negócio' : 'Lead'} movido para ${targetStage}.`;
-      if (entity === 'deal' && targetStage === 'Faturando') {
+      if (entity === 'deal' && target.systemKey === 'billing') {
         record.responsibleId = 'u-billing';
         record.team = 'Faturamento';
         notify('Responsabilidade alterada automaticamente.', `${record.id} agora está com Equipe Faturamento`, 'u-billing');
@@ -2273,14 +2357,15 @@
       } else {
         notify(`Etapa do ${entity === 'deal' ? 'Negócio' : 'Lead'} alterada.`, `${record.id} → ${targetStage}`, record.responsibleId);
       }
-      undoSnapshot = { state: before, entity, id: record.id, from: previousStage, to: targetStage };
+      undoSnapshot = { state: before, entity, id: record.id, from: previousStageId || previousStage, to: target?.id || targetStage };
       saveState(); render(); toast(message, { label: 'Desfazer', action: 'undo-stage' });
     }
 
     function requestStageChange(entity, id, targetStage) {
       const collection = entity === 'lead' ? state.leads : state.deals;
       const record = collection.find(item => item.id === id);
-      if (!record || record.stage === targetStage) { render(); return; }
+      if (!record || (entity === 'lead' ? record.stage === targetStage : record.stageId === targetStage)) { render(); return; }
+      if (entity === 'deal' && !requireDealPipeline()) { render(); return; }
       if (entity === 'lead' && targetStage === 'Lead descartado') {
         const reason = prompt('Informe o motivo do descarte:');
         if (!reason?.trim()) { toast('O descarte exige um motivo.'); render(); return; }
@@ -2290,12 +2375,13 @@
         return;
       }
       if (entity === 'lead' && targetStage === 'Lead convertido') {
-        if (!confirm(`Converter ${record.name} e criar um Negócio em Em Contato?`)) { render(); return; }
+        if (!requireDealPipeline()) { render(); return; }
+        if (!confirm(`Converter ${record.name} e criar um Negócio em ${initialStage().name}?`)) { render(); return; }
         convertLead(id);
         return;
       }
-      const protectedDealStages = ['Faturando', 'Ganho', 'Orçamento Não Aprovado', 'Analisar falha'];
-      if (entity === 'deal' && protectedDealStages.includes(targetStage) && !confirm(`Confirmar a mudança do Negócio para ${targetStage}?`)) { render(); return; }
+      const target = entity === 'deal' ? stageById(targetStage) : null;
+      if (entity === 'deal' && target && (target.semanticType !== 'open' || target.systemKey === 'billing') && !confirm(`Confirmar a mudança do Negócio para ${target.name}?`)) { render(); return; }
       commitStageChange(entity, record, targetStage);
     }
 
@@ -2447,14 +2533,18 @@
         updatedAt: now
       };
       if (entity === 'deal') {
+        if (!requireDealPipeline()) throw new Error('Funil de Negócios indisponível para importação.');
         const responsibleId = responsibleIdFromBitrix(bitrixFieldValue(fields, 'Responsável', 'Pessoa responsável'), existing?.responsibleId);
         const exportedStage = bitrixFieldValue(fields, 'Fase', 'Etapa');
+        const importedStage = activeDealStages().find(stage => stage.name === exportedStage) || initialStage();
         return Object.assign(base, {
           title: bitrixFieldValue(fields, 'Nome do negócio', 'Título', 'Nome') || `Negócio Bitrix ${bitrixId}`,
           company: bitrixFieldValue(fields, 'Empresa'),
           contact: bitrixFieldValue(fields, 'Contato'),
           amount: parseBitrixMoney(bitrixFieldValue(fields, 'Total', 'Valor', 'Montante')),
-          stage: dealStages.includes(exportedStage) ? exportedStage : 'Em Contato',
+          pipelineId: dealPipeline.id,
+          stageId: importedStage.id,
+          stage: importedStage.name,
           responsibleId,
           team: state.users.find(user => user.id === responsibleId)?.team || currentUser().team,
           assistants: existing?.assistants || [],
@@ -2656,7 +2746,7 @@
         }));
         workspaceVersion = payload.version;
         confirmedState = extractDurableState(payload.state);
-        state = mergeDurableState(payload.state, state);
+        state = canonicalizeDealReferences(mergeDurableState(payload.state, state));
         writeLocalState();
         render();
         await loadDeletedRecords();
@@ -2676,7 +2766,7 @@
 
     function resetDemo() {
       if (!confirm('Restaurar os dados iniciais e descartar suas alterações?')) return;
-      state = mergeDurableState(extractDurableState(normalizeState(seedState())), state); saveState({ reset: true }); activeView = 'dashboard'; render(); toast('Dados iniciais restaurados.');
+      state = canonicalizeDealReferences(mergeDurableState(extractDurableState(normalizeState(seedState())), state)); saveState({ reset: true }); activeView = 'dashboard'; render(); toast('Dados iniciais restaurados.');
     }
 
     function toggleSidebar(open) {
@@ -2724,7 +2814,7 @@
       if (action === 'dashboard-filter-scope') setDashboardFilterScope(button.dataset.dashboardFilterScope);
       if (action === 'reset-dashboard-filters') resetDashboardFilters();
       if (action === 'set-view-mode') setViewMode(button.dataset.scope, button.dataset.mode);
-      if (action === 'request-stage') requestStageChange(button.dataset.entity, button.dataset.id, button.dataset.stageSegment);
+      if (action === 'request-stage') requestStageChange(button.dataset.entity, button.dataset.id, button.dataset.stageId || button.dataset.stageSegment);
       if (action === 'undo-stage') { button.closest('.toast')?.remove(); undoLastStageChange(); }
       if (action === 'open-filters') openFilterPanel(button.dataset.scope);
       if (action === 'add-filter-field') addFilterField();
