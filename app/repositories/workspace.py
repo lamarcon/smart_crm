@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -19,6 +21,7 @@ from app.models import (
     Deal,
     DealAssistant,
     DealStageHistory,
+    DealPipelineStage,
     ExternalSourceField,
     Lead,
     LeadAssistant,
@@ -209,6 +212,8 @@ class WorkspaceRepository:
                 model.deleted_at.is_not(None),
             )
         ).all()
+        if model is Deal:
+            return [self._deal_record(row)[1] for row in rows]
         return [_unpack(row.payload)[1] for row in rows]
 
     def restore_record(self, module: str, record_id: str) -> bool:
@@ -226,8 +231,70 @@ class WorkspaceRepository:
                 model.deleted_at.is_(None),
             )
         ).all()
-        unpacked = sorted((_unpack(row.payload) for row in rows), key=lambda pair: pair[0])
+        unpacked = sorted(
+            (
+                self._deal_record(row) if model is Deal else _unpack(row.payload)
+                for row in rows
+            ),
+            key=lambda pair: pair[0],
+        )
         return [record for _position, record in unpacked]
+
+    def _deal_record(self, row: Deal) -> tuple[int, dict[str, Any]]:
+        position, record = _unpack(row.payload)
+        canonical = deepcopy(record)
+        canonical.update(
+            {
+                "pipelineId": str(row.pipeline_id),
+                "stageId": str(row.stage_id),
+                "stage": row.stage,
+            }
+        )
+        if row.stage_changed_at is not None:
+            canonical["stageChangedAt"] = row.stage_changed_at.isoformat().replace(
+                "+00:00", "Z"
+            )
+        else:
+            canonical.pop("stageChangedAt", None)
+        if row.stage_changed_by_id is not None:
+            canonical["stageChangedById"] = row.stage_changed_by_id
+        else:
+            canonical.pop("stageChangedById", None)
+        if row.won_at is not None:
+            canonical["wonAt"] = row.won_at.isoformat().replace("+00:00", "Z")
+        else:
+            canonical.pop("wonAt", None)
+        histories = self.session.scalars(
+            select(DealStageHistory)
+            .where(
+                DealStageHistory.workspace_id == self.workspace_id,
+                DealStageHistory.deal_id == row.id,
+            )
+            .order_by(DealStageHistory.position.asc(), DealStageHistory.id.asc())
+        ).all()
+        canonical["stageHistory"] = [
+            {
+                "from": history.from_stage,
+                "to": history.to_stage,
+                "fromStageId": (
+                    str(history.from_stage_id) if history.from_stage_id is not None else None
+                ),
+                "toStageId": str(history.to_stage_id),
+                "at": history.changed_at.isoformat().replace("+00:00", "Z"),
+                "byId": history.changed_by_id,
+            }
+            for history in histories
+        ]
+        return position, canonical
+
+    def _legacy_stage(self, name: str) -> DealPipelineStage | None:
+        return self.session.scalar(
+            select(DealPipelineStage).where(
+                DealPipelineStage.workspace_id == self.workspace_id,
+                DealPipelineStage.name == name,
+                DealPipelineStage.archived_at.is_(None),
+            )
+        )
 
     def _soft_delete_absent(self, model, present: set[str], extra=()) -> None:  # noqa: ANN001
         criteria = [model.deleted_at.is_(None), *extra]
@@ -377,6 +444,19 @@ class WorkspaceRepository:
         self._soft_delete_absent(Deal, present)
         for position, record in enumerate(records):
             row = self._scoped_one(Deal, record["id"])
+            pipeline_id = record.get("pipelineId")
+            stage_id = record.get("stageId")
+            if (pipeline_id is None or stage_id is None) and row is not None:
+                pipeline_id = row.pipeline_id
+                stage_id = row.stage_id
+            if pipeline_id is None or stage_id is None:
+                legacy_stage = self._legacy_stage(str(record.get("stage", "")))
+                if legacy_stage is None:
+                    raise ValueError("deal stage reference unavailable")
+                pipeline_id = legacy_stage.pipeline_id
+                stage_id = legacy_stage.id
+            pipeline_id = UUID(str(pipeline_id))
+            stage_id = UUID(str(stage_id))
             company_text = record.get("company", "")
             contact_text = record.get("contact", "")
             values = dict(
@@ -390,6 +470,8 @@ class WorkspaceRepository:
                 contact_text=contact_text,
                 amount=Decimal(str(record.get("amount", 0))),
                 stage=record.get("stage", ""),
+                pipeline_id=pipeline_id,
+                stage_id=stage_id,
                 stage_changed_at=_date(record.get("stageChangedAt")),
                 stage_changed_by_id=record.get("stageChangedById"),
                 won_at=_date(record.get("wonAt")),
@@ -411,14 +493,47 @@ class WorkspaceRepository:
             )
             for assistant_position, user_id in enumerate(record.get("assistants") or []):
                 self.session.add(DealAssistant(workspace_id=self.workspace_id, deal_id=record["id"], user_id=user_id, position=assistant_position))
-            self.session.execute(
-                delete(DealStageHistory).where(
-                    DealStageHistory.workspace_id == self.workspace_id,
-                    DealStageHistory.deal_id == record["id"],
+            existing_history_count = int(
+                self.session.scalar(
+                    select(func.count())
+                    .select_from(DealStageHistory)
+                    .where(
+                        DealStageHistory.workspace_id == self.workspace_id,
+                        DealStageHistory.deal_id == record["id"],
+                    )
                 )
+                or 0
             )
-            for history_position, history in enumerate(record.get("stageHistory") or []):
-                self.session.add(DealStageHistory(workspace_id=self.workspace_id, deal_id=record["id"], position=history_position, from_stage=history.get("from"), to_stage=history.get("to", ""), changed_at=_date(history.get("at")) or _now(), changed_by_id=history.get("byId")))
+            histories = record.get("stageHistory") or []
+            for history_position, history in enumerate(
+                histories[existing_history_count:],
+                start=existing_history_count,
+            ):
+                to_stage_id = history.get("toStageId")
+                if to_stage_id is None:
+                    to_stage = self._legacy_stage(str(history.get("to", "")))
+                    if to_stage is None:
+                        raise ValueError("history target stage reference unavailable")
+                    to_stage_id = to_stage.id
+                from_stage_id = history.get("fromStageId")
+                if from_stage_id is None and history.get("from"):
+                    from_stage = self._legacy_stage(str(history["from"]))
+                    from_stage_id = from_stage.id if from_stage is not None else None
+                self.session.add(
+                    DealStageHistory(
+                        workspace_id=self.workspace_id,
+                        deal_id=record["id"],
+                        position=history_position,
+                        from_stage=history.get("from"),
+                        to_stage=history.get("to", ""),
+                        from_stage_id=(
+                            UUID(str(from_stage_id)) if from_stage_id is not None else None
+                        ),
+                        to_stage_id=UUID(str(to_stage_id)),
+                        changed_at=_date(history.get("at")) or _now(),
+                        changed_by_id=history.get("byId"),
+                    )
+                )
             self._reconcile_quotes(record["id"], record.get("quotes") or [])
 
     def _reconcile_quotes(self, deal_id: str, records: list[dict[str, Any]]) -> None:

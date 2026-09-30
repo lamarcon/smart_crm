@@ -4,18 +4,21 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Barrier
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func, select, text
 
 from app.database import Database, DatabaseSettings
+from app.models import DealPipelineStage, DealStageHistory
 from app.policies import PrincipalScope
 from app.repositories.workspace import WorkspaceRepository, team_id_for_name
-from app.schemas import WorkspaceReferenceError, WorkspaceState
+from app.schemas import DealPipelineUpdateRequest, WorkspaceReferenceError, WorkspaceState
+from app.services.pipeline import DealPipelineService
 from app.services.workspace import (
     WorkspaceAlreadyInitialized,
     WorkspaceAuthorizationError,
@@ -24,6 +27,7 @@ from app.services.workspace import (
     WorkspaceRecordNotFound,
     WorkspaceRestoreConflict,
     WorkspaceService,
+    WorkspaceStageConflict,
 )
 
 
@@ -85,6 +89,19 @@ def state() -> WorkspaceState:
     return WorkspaceState.model_validate(state_data())
 
 
+def without_pipeline_metadata(state_value: dict) -> dict:
+    comparable = deepcopy(state_value)
+    for deal in comparable.get("deals", []):
+        deal.pop("pipelineId", None)
+        deal.pop("stageId", None)
+        if deal.get("stageHistory") == []:
+            deal.pop("stageHistory")
+        for history in deal.get("stageHistory") or []:
+            history.pop("fromStageId", None)
+            history.pop("toStageId", None)
+    return comparable
+
+
 @pytest.fixture
 def service():
     root_engine = create_engine(DATABASE_URL)
@@ -126,7 +143,8 @@ def test_bootstrap_initializes_version_one_with_exact_counts(service) -> None:
     result = workspace.bootstrap(state())
     assert result.version == 1
     assert result.counts.model_dump(by_alias=True) == {"users": 2, "leads": 1, "contacts": 1, "companies": 1, "deals": 1, "quotes": 1, "notifications": 1, "customFields": 0}
-    assert result.state.model_dump(by_alias=True, exclude_none=True) == state_data()
+    loaded = result.state.model_dump(by_alias=True, exclude_none=True)
+    assert without_pipeline_metadata(loaded) == state_data()
 
 
 def test_repeated_bootstrap_returns_typed_conflict_without_changes(service) -> None:
@@ -193,7 +211,9 @@ def test_simultaneous_saves_have_one_complete_winner_and_one_conflict(service) -
     loaded = workspace.load()
     expected = candidates[0] if winning_name.endswith("A") else candidates[1]
     assert loaded.version == 2
-    assert loaded.state.model_dump(by_alias=True, exclude_none=True) == expected.model_dump(by_alias=True, exclude_none=True)
+    actual = loaded.state.model_dump(by_alias=True, exclude_none=True)
+    submitted = expected.model_dump(by_alias=True, exclude_none=True)
+    assert without_pipeline_metadata(actual) == submitted
 
 
 def test_stale_save_returns_current_version_and_keeps_database_unchanged(service) -> None:
@@ -387,3 +407,170 @@ def test_non_admin_stale_version_fails_before_merge_and_keeps_database(service) 
     loaded = workspace.load()
     assert loaded.version == 1
     assert loaded.state.leads[0]["name"] == "Lead"
+
+
+def test_workspace_load_and_save_use_canonical_stage_identity_and_name(service) -> None:
+    workspace, _database = service
+    workspace.bootstrap(state())
+    loaded = workspace.load()
+    deal = loaded.state.deals[0]
+    original_pipeline_id = deal["pipelineId"]
+    original_stage_id = deal["stageId"]
+    deal["stage"] = "forged display"
+    deal["stageHistory"] = [
+        {"from": "forged", "to": "forged", "at": "2000-01-01T00:00:00Z"}
+    ]
+
+    result = workspace.save(loaded.version, loaded.state)
+
+    assert result.state.deals[0]["pipelineId"] == original_pipeline_id
+    assert result.state.deals[0]["stageId"] == original_stage_id
+    assert result.state.deals[0]["stage"] == "Em Contato"
+    assert result.state.deals[0]["stageHistory"] == []
+
+
+def test_workspace_stage_move_builds_immutable_server_history_and_semantics(service) -> None:
+    workspace, database = service
+    workspace.bootstrap(state())
+    loaded = workspace.load()
+    original_stage_id = loaded.state.deals[0]["stageId"]
+    with database.session_scope() as session:
+        won = session.scalar(
+            select(DealPipelineStage).where(
+                DealPipelineStage.workspace_id == "default",
+                DealPipelineStage.semantic_type == "won",
+            )
+        )
+    deal = loaded.state.deals[0]
+    deal["stageId"] = str(won.id)
+    deal["stage"] = "forged won label"
+    deal["stageHistory"] = [{"to": "forged"}]
+
+    moved = workspace.save(loaded.version, loaded.state)
+    canonical = moved.state.deals[0]
+    assert canonical["stageId"] == str(won.id)
+    assert canonical["stage"] == won.name
+    assert canonical["wonAt"]
+    assert len(canonical["stageHistory"]) == 1
+    assert canonical["stageHistory"][0]["fromStageId"] == original_stage_id
+    assert canonical["stageHistory"][0]["toStageId"] == str(won.id)
+    assert canonical["stageHistory"][0]["byId"] == TEST_PRINCIPAL.user_id
+    assert canonical["stageHistory"][0]["to"] == won.name
+
+    canonical["stageHistory"] = []
+    canonical["stageChangedById"] = "forged-user"
+    preserved = workspace.save(moved.version, moved.state)
+    assert len(preserved.state.deals[0]["stageHistory"]) == 1
+    assert preserved.state.deals[0]["stageChangedById"] == TEST_PRINCIPAL.user_id
+    with database.session_scope() as session:
+        assert session.scalar(select(func.count()).select_from(DealStageHistory)) == 1
+
+
+def test_new_deal_requires_active_initial_stage_and_invalid_stage_rolls_back(service) -> None:
+    workspace, database = service
+    workspace.bootstrap(state())
+    loaded = workspace.load()
+    existing = deepcopy(loaded.state.deals[0])
+    existing["id"] = "N-2"
+    existing["title"] = "Novo canônico"
+    existing["quotes"] = []
+    existing["stageHistory"] = [{"to": "forged"}]
+    loaded.state.deals.append(existing)
+
+    created = workspace.save(loaded.version, loaded.state)
+    new_deal = next(item for item in created.state.deals if item["id"] == "N-2")
+    assert new_deal["stageId"] == created.state.deals[0]["stageId"]
+    assert new_deal["pipelineId"] == created.state.deals[0]["pipelineId"]
+    assert new_deal["stage"] == "Em Contato"
+    assert new_deal["stageHistory"] == []
+
+    forged = deepcopy(created.state)
+    forged.deals[0]["stageId"] = str(uuid.uuid4())
+    with pytest.raises(WorkspaceStageConflict) as error:
+        workspace.save(created.version, forged)
+    assert error.value.current_version == created.version
+    assert workspace.load().version == created.version
+
+    with database.session_scope() as session:
+        stage = session.scalar(
+            select(DealPipelineStage).where(
+                DealPipelineStage.workspace_id == "default",
+                DealPipelineStage.name == "Analisar falha",
+            )
+        )
+        stage.archived_at = datetime.now(timezone.utc)
+        archived_stage_id = stage.id
+    archived = workspace.load().state
+    archived.deals[0]["stageId"] = str(archived_stage_id)
+    with pytest.raises(WorkspaceStageConflict):
+        workspace.save(created.version, archived)
+    assert workspace.load().version == created.version
+
+
+def test_deleted_and_restored_deal_keeps_canonical_stage_and_history(service) -> None:
+    workspace, _database = service
+    workspace.bootstrap(state())
+    loaded = workspace.load()
+    canonical = deepcopy(loaded.state.deals[0])
+    loaded.state.deals = []
+
+    deleted = workspace.save(loaded.version, loaded.state)
+    deleted_record = workspace.list_deleted("deals")[0]
+    assert deleted_record["pipelineId"] == canonical["pipelineId"]
+    assert deleted_record["stageId"] == canonical["stageId"]
+    assert deleted_record["stage"] == canonical["stage"]
+
+    restored = workspace.restore(deleted.version, "deals", canonical["id"])
+    assert restored.state.deals[0]["pipelineId"] == canonical["pipelineId"]
+    assert restored.state.deals[0]["stageId"] == canonical["stageId"]
+    assert restored.state.deals[0]["stageHistory"] == canonical["stageHistory"]
+
+
+def test_pipeline_transfer_invalidates_stale_workspace_snapshot(service) -> None:
+    workspace, database = service
+    workspace.bootstrap(state())
+    stale = workspace.load()
+    pipeline_service = DealPipelineService()
+    with database.session_scope() as session:
+        pipeline = pipeline_service.load(session, TEST_PRINCIPAL)
+        source = next(stage for stage in pipeline.stages if stage.name == "Em Contato")
+        target = next(stage for stage in pipeline.stages if stage.semantic_type == "won")
+        stages = []
+        position = 0
+        for stage in pipeline.stages:
+            archived = stage.id == source.id
+            stages.append(
+                {
+                    "id": stage.id,
+                    "name": stage.name,
+                    "semanticType": stage.semantic_type,
+                    "color": stage.color,
+                    "position": stage.position if archived else position,
+                    "archived": archived,
+                }
+            )
+            if not archived:
+                position += 1
+        request = DealPipelineUpdateRequest.model_validate(
+            {
+                "pipelineVersion": pipeline.pipeline_version,
+                "workspaceVersion": pipeline.workspace_version,
+                "defaultStageId": next(
+                    stage.id
+                    for stage in pipeline.stages
+                    if stage.semantic_type == "open" and stage.id != source.id
+                ),
+                "stages": stages,
+                "transfers": {str(source.id): str(target.id)},
+            }
+        )
+        pipeline_service.update(session, TEST_PRINCIPAL, request)
+
+    with pytest.raises(WorkspaceConflict) as error:
+        workspace.save(stale.version, stale.state)
+    assert error.value.current_version == stale.version + 1
+    current = workspace.load()
+    assert current.version == stale.version + 1
+    assert current.state.deals[0]["stageId"] == str(target.id)
+    assert current.state.deals[0]["stage"] == target.name
+    assert len(current.state.deals[0]["stageHistory"]) == 1

@@ -58,6 +58,7 @@ from app.services.workspace import (
     WorkspaceRestoreConflict,
     WorkspaceResult,
     WorkspaceService,
+    WorkspaceStageConflict,
 )
 from app.tenant_database import TenantDatabaseRouter, TenantUnavailableError
 
@@ -318,6 +319,18 @@ def create_app(
         _request: Request, _error_value: WorkspaceRestoreConflict
     ) -> JSONResponse:
         return _error(409, "restore_conflict", "O registro não pode ser recuperado.")
+
+    @app.exception_handler(WorkspaceStageConflict)
+    async def workspace_stage_conflict(
+        _request: Request,
+        error: WorkspaceStageConflict,
+    ) -> JSONResponse:
+        return _error(
+            409,
+            "stage_configuration_changed",
+            "Configuração de etapas foi alterada.",
+            currentVersion=error.current_version,
+        )
 
     @app.exception_handler(WorkspaceAuthorizationError)
     async def authorization_error(

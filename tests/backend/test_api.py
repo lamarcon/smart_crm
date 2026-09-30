@@ -23,6 +23,7 @@ from app.services.workspace import (
     WorkspaceRecordNotFound,
     WorkspaceRestoreConflict,
     WorkspaceResult,
+    WorkspaceStageConflict,
 )
 
 
@@ -456,3 +457,18 @@ def test_workspace_authorization_failure_returns_stable_403(client_factory) -> N
         "error": {"code": "forbidden", "message": "Acesso negado."}
     }
     assert "record is outside principal scope" not in response.text
+
+
+def test_workspace_stage_conflict_returns_stable_409(client_factory) -> None:
+    client, _service = client_factory(
+        service=FakeService(failure=WorkspaceStageConflict(7))
+    )
+
+    response = client.put("/api/workspace", json={"version": 7, "state": STATE_DATA})
+
+    assert response.status_code == 409
+    assert response.json()["error"] == {
+        "code": "stage_configuration_changed",
+        "message": "Configuração de etapas foi alterada.",
+        "currentVersion": 7,
+    }

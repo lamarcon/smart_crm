@@ -238,6 +238,8 @@ T10 → T11 → T12
 
 ### T7: Canonicalize workspace deal stages
 
+**Status**: ✅ Complete
+
 **What**: Integrate stable stage IDs with generic workspace load/save while preserving legacy names and server-owned history.  
 **Where**: `app/services/workspace.py`  
 **Depends on**: T6  
@@ -251,12 +253,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Load returns canonical `pipelineId`, `stageId` and display name for each visible deal.
-- [ ] Save accepts only active same-workspace stage IDs and replaces submitted display text with canonical name.
-- [ ] Server movement history cannot be erased or forged by the browser.
-- [ ] Archived/stale stage and workspace conflict return 409 without modifying records.
-- [ ] Repository/service tests cover new, edited, deleted/restored and concurrent deals with at least 14 new assertions.
-- [ ] Build gate passes with no prior test removed/skipped.
+- [x] Load returns canonical `pipelineId`, `stageId` and display name for each visible deal.
+- [x] Save accepts only active same-workspace stage IDs and replaces submitted display text with canonical name.
+- [x] Server movement history cannot be erased or forged by the browser.
+- [x] Archived/stale stage and workspace conflict return 409 without modifying records.
+- [x] Repository/service tests cover new, edited, deleted/restored and concurrent deals with at least 14 new assertions.
+- [x] Build gate passes with no prior test removed/skipped.
 
 **Tests**: PostgreSQL integration  
 **Gate**: build  

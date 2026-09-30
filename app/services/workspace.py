@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from app.policies import (
     can_read_record,
 )
 from app.repositories.workspace import WorkspaceRepository, team_id_for_name
+from app.repositories.pipeline import DealPipelineAggregate, DealPipelineRepository
 from app.schemas import PersistedCounts, WorkspaceState, count_state, validate_references
 
 
@@ -53,6 +55,12 @@ class WorkspaceRestoreConflict(WorkspaceServiceError):
 
 class WorkspaceAuthorizationError(WorkspaceServiceError):
     pass
+
+
+class WorkspaceStageConflict(WorkspaceServiceError):
+    def __init__(self, current_version: int) -> None:
+        super().__init__("Configuração de etapas foi alterada")
+        self.current_version = current_version
 
 
 @dataclass(frozen=True)
@@ -250,6 +258,30 @@ def merge_authorized_state(
     return merged
 
 
+def _preserve_server_stage_metadata(
+    canonical: WorkspaceState,
+    submitted: WorkspaceState,
+) -> WorkspaceState:
+    canonical_deals = {
+        str(record.get("id")): record for record in canonical.deals
+    }
+    data = submitted.model_dump(by_alias=True, exclude_none=True)
+    protected_fields = (
+        "stageHistory",
+        "stageChangedAt",
+        "stageChangedById",
+        "wonAt",
+    )
+    for record in data["deals"]:
+        existing = canonical_deals.get(str(record.get("id")))
+        for field in protected_fields:
+            if existing is not None and field in existing:
+                record[field] = deepcopy(existing[field])
+            else:
+                record.pop(field, None)
+    return WorkspaceState.model_validate(data)
+
+
 def _state_with_principal_identity(
     state: WorkspaceState,
     principal: PrincipalScope,
@@ -265,8 +297,14 @@ class WorkspaceService:
     def __init__(
         self,
         repository_factory: Callable[[Session, str], WorkspaceRepository] = WorkspaceRepository,
+        pipeline_repository_factory: Callable[
+            [Session, str], DealPipelineRepository
+        ] = DealPipelineRepository,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.repository_factory = repository_factory
+        self.pipeline_repository_factory = pipeline_repository_factory
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def _repository(
         self,
@@ -274,6 +312,13 @@ class WorkspaceService:
         principal: PrincipalScope,
     ) -> WorkspaceRepository:
         return self.repository_factory(session, principal.workspace_id)
+
+    def _pipeline_repository(
+        self,
+        session: Session,
+        principal: PrincipalScope,
+    ) -> DealPipelineRepository:
+        return self.pipeline_repository_factory(session, principal.workspace_id)
 
     def load(self, session: Session, principal: PrincipalScope) -> WorkspaceLoad:
         _require_action(principal, Action.READ)
@@ -297,9 +342,20 @@ class WorkspaceService:
         _require_action(principal, Action.IMPORT_DATA)
         state = _state_with_principal_identity(state, principal)
         repository = self._repository(session, principal)
+        pipeline_repository = self._pipeline_repository(session, principal)
+        pipeline_repository.lock_default()
+        aggregate = pipeline_repository.load_default()
         workspace = self._locked_workspace(session, principal)
         if workspace.initialized_at is not None:
             raise WorkspaceAlreadyInitialized(workspace.version)
+        state = self._canonicalize_deal_stages(
+            state,
+            None,
+            aggregate,
+            principal,
+            workspace.version,
+            allow_legacy_new=True,
+        )
         repository.reconcile(state)
         workspace.version = 1
         workspace.initialized_at = datetime.now(timezone.utc)
@@ -315,10 +371,21 @@ class WorkspaceService:
     ) -> WorkspaceResult:
         _require_action(principal, Action.UPDATE)
         repository = self._repository(session, principal)
+        pipeline_repository = self._pipeline_repository(session, principal)
+        pipeline_repository.lock_default()
+        aggregate = pipeline_repository.load_default()
         workspace = self._locked_initialized(session, principal)
         self._check_version(workspace, expected_version)
         canonical = repository.read_active()
+        state = _preserve_server_stage_metadata(canonical, state)
         merged = merge_authorized_state(canonical, state, principal)
+        merged = self._canonicalize_deal_stages(
+            merged,
+            canonical,
+            aggregate,
+            principal,
+            workspace.version,
+        )
         repository.reconcile(merged)
         workspace.version += 1
         session.flush()
@@ -334,8 +401,20 @@ class WorkspaceService:
         _require_action(principal, Action.RESET_WORKSPACE)
         state = _state_with_principal_identity(state, principal)
         repository = self._repository(session, principal)
+        pipeline_repository = self._pipeline_repository(session, principal)
+        pipeline_repository.lock_default()
+        aggregate = pipeline_repository.load_default()
         workspace = self._locked_initialized(session, principal)
         self._check_version(workspace, expected_version)
+        canonical = repository.read_active()
+        state = self._canonicalize_deal_stages(
+            state,
+            canonical,
+            aggregate,
+            principal,
+            workspace.version,
+            allow_legacy_new=True,
+        )
         repository.reconcile(state)
         workspace.version += 1
         session.flush()
@@ -386,6 +465,138 @@ class WorkspaceService:
             state=projected,
             counts=count_state(projected),
         )
+
+    def _canonicalize_deal_stages(
+        self,
+        submitted: WorkspaceState,
+        canonical: WorkspaceState | None,
+        aggregate: DealPipelineAggregate,
+        principal: PrincipalScope,
+        workspace_version: int,
+        *,
+        allow_legacy_new: bool = False,
+    ) -> WorkspaceState:
+        data = submitted.model_dump(by_alias=True, exclude_none=True)
+        canonical_deals = {
+            str(record.get("id")): record
+            for record in (canonical.deals if canonical is not None else [])
+        }
+        active_by_id = {stage.id: stage for stage in aggregate.stages}
+        active_by_name = {stage.name: stage for stage in aggregate.stages}
+        pipeline = aggregate.pipeline
+        now = self.clock()
+        now_text = now.isoformat().replace("+00:00", "Z")
+
+        def parse_uuid(value: object) -> UUID:
+            try:
+                return UUID(str(value))
+            except (TypeError, ValueError, AttributeError):
+                raise WorkspaceStageConflict(workspace_version) from None
+
+        def stage_for_reference(record: dict, existing: dict | None):  # noqa: ANN202
+            pipeline_value = record.get("pipelineId")
+            stage_value = record.get("stageId")
+            if pipeline_value is None and stage_value is None and existing is not None:
+                pipeline_value = existing.get("pipelineId")
+                stage_value = existing.get("stageId")
+            elif pipeline_value is None or stage_value is None:
+                if allow_legacy_new and existing is None:
+                    legacy = active_by_name.get(str(record.get("stage", "")))
+                    if legacy is not None:
+                        return legacy
+                raise WorkspaceStageConflict(workspace_version)
+            pipeline_id = parse_uuid(pipeline_value)
+            stage_id = parse_uuid(stage_value)
+            stage = active_by_id.get(stage_id)
+            if pipeline_id != pipeline.id or stage is None:
+                raise WorkspaceStageConflict(workspace_version)
+            return stage
+
+        def imported_history(items: list[dict]) -> list[dict]:
+            result: list[dict] = []
+            for item in items:
+                target = None
+                if item.get("toStageId") is not None:
+                    target = active_by_id.get(parse_uuid(item["toStageId"]))
+                if target is None:
+                    target = active_by_name.get(str(item.get("to", "")))
+                if target is None:
+                    raise WorkspaceStageConflict(workspace_version)
+                source = None
+                if item.get("fromStageId") is not None:
+                    source = active_by_id.get(parse_uuid(item["fromStageId"]))
+                if source is None and item.get("from"):
+                    source = active_by_name.get(str(item["from"]))
+                result.append(
+                    {
+                        "from": item.get("from"),
+                        "to": item.get("to") or target.name,
+                        "fromStageId": str(source.id) if source is not None else None,
+                        "toStageId": str(target.id),
+                        "at": item.get("at") or now_text,
+                        "byId": item.get("byId") or principal.user_id,
+                    }
+                )
+            return result
+
+        for record in data["deals"]:
+            existing = canonical_deals.get(str(record.get("id")))
+            stage = stage_for_reference(record, existing)
+            if existing is None and not allow_legacy_new and stage.id != pipeline.default_stage_id:
+                raise WorkspaceStageConflict(workspace_version)
+
+            if existing is None:
+                history = (
+                    imported_history(list(record.get("stageHistory") or []))
+                    if allow_legacy_new
+                    else []
+                )
+                if not allow_legacy_new:
+                    record["stageChangedAt"] = record.get("stageChangedAt") or now_text
+                    record["stageChangedById"] = principal.user_id
+            else:
+                history = deepcopy(existing.get("stageHistory") or [])
+                existing_stage_id = parse_uuid(existing.get("stageId"))
+                if existing_stage_id != stage.id:
+                    previous = active_by_id.get(existing_stage_id)
+                    if previous is None:
+                        raise WorkspaceStageConflict(workspace_version)
+                    history.append(
+                        {
+                            "from": previous.name,
+                            "to": stage.name,
+                            "fromStageId": str(previous.id),
+                            "toStageId": str(stage.id),
+                            "at": now_text,
+                            "byId": principal.user_id,
+                        }
+                    )
+                    record["stageChangedAt"] = now_text
+                    record["stageChangedById"] = principal.user_id
+                else:
+                    if existing.get("stageChangedAt") is not None:
+                        record["stageChangedAt"] = existing["stageChangedAt"]
+                    else:
+                        record.pop("stageChangedAt", None)
+                    if existing.get("stageChangedById") is not None:
+                        record["stageChangedById"] = existing["stageChangedById"]
+                    else:
+                        record.pop("stageChangedById", None)
+
+            record.update(
+                {
+                    "pipelineId": str(pipeline.id),
+                    "stageId": str(stage.id),
+                    "stage": stage.name,
+                    "stageHistory": history,
+                }
+            )
+            if stage.semantic_type == "won":
+                previous_won_at = existing.get("wonAt") if existing is not None else None
+                record["wonAt"] = previous_won_at or now_text
+            else:
+                record.pop("wonAt", None)
+        return WorkspaceState.model_validate(data)
 
     @staticmethod
     def _workspace(session: Session, principal: PrincipalScope) -> Workspace:
