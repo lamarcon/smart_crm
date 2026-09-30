@@ -211,6 +211,8 @@ T10 → T11 → T12
 
 ### T6: Expose authorized pipeline and history APIs
 
+**Status**: ✅ Complete
+
 **What**: Add read/update/history routes, `MANAGE_PIPELINE` policy and stable HTTP error mapping.  
 **Where**: `app/main.py`  
 **Depends on**: T5  
@@ -224,11 +226,11 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Authenticated roles can read active stages; only admin can include archived, update or read audit.
-- [ ] 401/403/409/422/503 responses use stable codes and never disclose tenant/DSN details.
-- [ ] Forged route, workspace, pipeline and stage identifiers cannot cross tenant scope.
-- [ ] API tests cover every route, success, validation, permission, conflict and dependency failure with at least 16 new assertions.
-- [ ] Full gate passes with no prior test removed/skipped.
+- [x] Authenticated roles can read active stages; only admin can include archived, update or read audit.
+- [x] 401/403/409/422/503 responses use stable codes and never disclose tenant/DSN details.
+- [x] Forged route, workspace, pipeline and stage identifiers cannot cross tenant scope.
+- [x] API tests cover every route, success, validation, permission, conflict and dependency failure with at least 16 new assertions.
+- [x] Full gate passes with no prior test removed/skipped.
 
 **Tests**: API + PostgreSQL integration  
 **Gate**: full  

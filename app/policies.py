@@ -17,6 +17,7 @@ class Action(str, Enum):
     IMPORT_DATA = "import_data"
     RESET_WORKSPACE = "reset_workspace"
     RESTORE_DELETED = "restore_deleted"
+    MANAGE_PIPELINE = "manage_pipeline"
 
 
 CURRENT_ROLES = frozenset(
@@ -30,6 +31,7 @@ ADMIN_ACTIONS = frozenset(
         Action.IMPORT_DATA,
         Action.RESET_WORKSPACE,
         Action.RESTORE_DELETED,
+        Action.MANAGE_PIPELINE,
     }
 )
 TENANT_WIDE_MODULES = frozenset({"contacts", "companies"})

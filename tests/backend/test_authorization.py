@@ -88,6 +88,7 @@ def test_individual_roles_use_responsible_or_assistant_scope(role: str, module: 
         Action.IMPORT_DATA,
         Action.RESET_WORKSPACE,
         Action.RESTORE_DELETED,
+        Action.MANAGE_PIPELINE,
     ],
 )
 def test_administrative_actions_are_admin_only(action: Action) -> None:

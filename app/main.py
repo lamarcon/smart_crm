@@ -26,6 +26,10 @@ from app.database import Database, database
 from app.policies import Action, can_perform_action
 from app.schemas import (
     BootstrapRequest,
+    DealPipelineAuditPage,
+    DealPipelineHistoryQuery,
+    DealPipelineResponse,
+    DealPipelineUpdateRequest,
     LOGIN_FAILURE_MESSAGE,
     LocateTenantRequest,
     LocateTenantResponse,
@@ -38,6 +42,13 @@ from app.schemas import (
     normalize_tenant_identifier,
 )
 from app.services.auth import AuthenticationError, AuthService, SessionContext
+from app.services.pipeline import (
+    DealPipelineAuthorizationError,
+    DealPipelineService,
+    DealPipelineValidationError,
+    DealPipelineVersionConflict,
+)
+from app.repositories.pipeline import PipelineNotFoundError, PipelineScopeError
 from app.services.workspace import (
     WorkspaceAlreadyInitialized,
     WorkspaceAuthorizationError,
@@ -106,6 +117,7 @@ def create_app(
     *,
     database_instance: Database | None = None,
     workspace_service: WorkspaceService | None = None,
+    pipeline_service: DealPipelineService | None = None,
     static_dir: Path = STATIC_DIR,
     auth_service: AuthService | None = None,
     tenant_router: TenantDatabaseRouter | None = None,
@@ -117,6 +129,7 @@ def create_app(
     active_database = database_instance or database
     active_health_check = health_check or active_database.check_database
     service = workspace_service or WorkspaceService()
+    active_pipeline_service = pipeline_service or DealPipelineService()
     active_auth_settings = auth_settings or AuthSettings(
         expected_origin="https://sc2030.brbots.com"
     )
@@ -210,7 +223,9 @@ def create_app(
             request._body = bytes(body)
 
         response = await call_next(request)
-        if request.url.path.startswith(("/api/auth", "/api/workspace")):
+        if request.url.path.startswith(
+            ("/api/auth", "/api/workspace", "/api/deal-pipeline")
+        ):
             response.headers["Cache-Control"] = "no-store"
         return _add_security_headers(response)
 
@@ -311,6 +326,50 @@ def create_app(
     ) -> JSONResponse:
         audit_request_denial(request, "forbidden")
         return _error(403, "forbidden", "Acesso negado.")
+
+    @app.exception_handler(DealPipelineAuthorizationError)
+    async def pipeline_authorization_error(
+        request: Request,
+        _error_value: DealPipelineAuthorizationError,
+    ) -> JSONResponse:
+        audit_request_denial(request, "forbidden")
+        return _error(403, "forbidden", "Acesso negado.")
+
+    @app.exception_handler(DealPipelineValidationError)
+    async def pipeline_validation_error(
+        _request: Request,
+        error: DealPipelineValidationError,
+    ) -> JSONResponse:
+        return _error(422, error.code, str(error), path=error.field)
+
+    @app.exception_handler(DealPipelineVersionConflict)
+    async def pipeline_version_conflict(
+        _request: Request,
+        error: DealPipelineVersionConflict,
+    ) -> JSONResponse:
+        details: dict[str, object] = {
+            "currentPipelineVersion": error.current_version,
+        }
+        if error.current_workspace_version is not None:
+            details["currentWorkspaceVersion"] = error.current_workspace_version
+        return _error(
+            409,
+            "pipeline_version_conflict",
+            "Versão do funil desatualizada.",
+            **details,
+        )
+
+    @app.exception_handler(PipelineNotFoundError)
+    @app.exception_handler(PipelineScopeError)
+    async def pipeline_unavailable(
+        _request: Request,
+        _error_value: PipelineNotFoundError | PipelineScopeError,
+    ) -> JSONResponse:
+        return _error(
+            503,
+            "pipeline_unavailable",
+            "Configuração do funil temporariamente indisponível.",
+        )
 
     @app.exception_handler(SQLAlchemyError)
     async def database_error(_request: Request, error: SQLAlchemyError) -> JSONResponse:
@@ -529,6 +588,47 @@ def create_app(
                 payload.module,
                 payload.record_id,
             )
+        )
+
+    @app.get("/api/deal-pipeline", response_model=DealPipelineResponse)
+    def load_deal_pipeline(
+        include_archived: bool = Query(default=False),
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> DealPipelineResponse:
+        require_action(principal, Action.READ)
+        if include_archived:
+            require_action(principal, Action.MANAGE_PIPELINE)
+        return active_pipeline_service.load(
+            principal.tenant_session,
+            principal.context.principal,
+            include_archived=include_archived,
+        )
+
+    @app.put("/api/deal-pipeline", response_model=DealPipelineResponse)
+    def update_deal_pipeline(
+        payload: DealPipelineUpdateRequest,
+        request: Request,
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> DealPipelineResponse:
+        require_expected_origin(request)
+        require_action(principal, Action.MANAGE_PIPELINE)
+        return active_pipeline_service.update(
+            principal.tenant_session,
+            principal.context.principal,
+            payload,
+        )
+
+    @app.get("/api/deal-pipeline/history", response_model=DealPipelineAuditPage)
+    def deal_pipeline_history(
+        query: DealPipelineHistoryQuery = Depends(),
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> DealPipelineAuditPage:
+        require_action(principal, Action.MANAGE_PIPELINE)
+        return active_pipeline_service.history(
+            principal.tenant_session,
+            principal.context.principal,
+            before_id=query.before,
+            limit=query.limit,
         )
 
     @app.get("/")
