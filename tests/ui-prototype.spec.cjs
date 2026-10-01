@@ -103,6 +103,16 @@ async function waitForMockState(page, predicate, timeoutMs = 5000) {
   throw new Error('estado canônico mockado não atingiu a condição esperada');
 }
 
+async function waitForPipelineWrites(page, count, timeoutMs = 5000) {
+  const api = apiByPage.get(page);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (api.pipelineWrites.length >= count) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(`o mock não recebeu ${count} atualização(ões) do funil`);
+}
+
 async function openFresh(options = {}) {
   const context = await browser.newContext({ viewport: options.viewport || { width: 1366, height: 768 } });
   const page = await context.newPage();
@@ -112,7 +122,8 @@ async function openFresh(options = {}) {
     initialized: Boolean(initialState), version: initialState ? 1 : 0, state: initialState,
     session: { ...AUTH_SESSION, ...(options.session || {}) },
     loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false,
-    pipeline, pipelineFailure: Boolean(options.pipelineFailure),
+    pipeline, pipelineFailure: Boolean(options.pipelineFailure), pipelineConflict: false,
+    pipelineValidationFailure: null, pipelineWrites: [],
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
@@ -120,13 +131,36 @@ async function openFresh(options = {}) {
     status: 200, contentType: 'application/json',
     body: JSON.stringify(api.session)
   }));
-  await context.route('**/api/deal-pipeline', route => route.fulfill({
-    status: api.pipelineFailure ? 503 : 200,
-    contentType: 'application/json',
-    body: JSON.stringify(api.pipelineFailure
-      ? { error: { code: 'database_unavailable', message: 'Funil indisponível.' } }
-      : api.pipeline)
-  }));
+  await context.route('**/api/deal-pipeline', route => {
+    const request = route.request();
+    if (request.method() === 'PUT') {
+      const payload = request.postDataJSON();
+      api.pipelineWrites.push(clone(payload));
+      if (api.pipelineConflict) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'pipeline_version_conflict', message: 'Versão do funil desatualizada.', currentPipelineVersion: api.pipeline.pipelineVersion + 1 } }) });
+      if (api.pipelineValidationFailure) return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: api.pipelineValidationFailure }) });
+      const previousById = new Map(api.pipeline.stages.map(stage => [stage.id, stage]));
+      api.pipeline.stages = payload.stages.map((stage, index) => {
+        const previous = previousById.get(stage.id);
+        return {
+          id: stage.id || `30000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+          name: stage.name, semanticType: stage.semanticType, color: stage.color, position: index,
+          systemKey: previous?.systemKey || null, active: !stage.archived, initial: stage.id === payload.defaultStageId,
+          archivedAt: stage.archived ? '2026-10-01T00:00:00Z' : null
+        };
+      });
+      api.pipeline.pipelineVersion += 1;
+      api.pipeline.workspaceVersion += Object.keys(payload.transfers || {}).length ? 1 : 0;
+      api.pipeline.defaultStageId = payload.defaultStageId;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(api.pipeline) });
+    }
+    return route.fulfill({
+      status: api.pipelineFailure ? 503 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify(api.pipelineFailure
+        ? { error: { code: 'database_unavailable', message: 'Funil indisponível.' } }
+        : api.pipeline)
+    });
+  });
   await context.route('**/api/workspace**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -201,7 +235,7 @@ async function openFresh(options = {}) {
   });
   const tenantUrl = new URL(api.session.tenant_slug, BASE_URL).toString();
   await page.goto(tenantUrl, { waitUntil: 'domcontentloaded' });
-  await page.locator('#workspaceBanner').waitFor();
+  await page.locator('#workspaceBanner').waitFor({ state: 'attached' });
   if (options.autoBootstrap !== false && !api.loadFailure && !api.initialized) {
     const confirm = page.getByRole('button', { name: 'Confirmar migração' });
     await confirm.waitFor();
@@ -569,7 +603,7 @@ async function storageEntries(page) {
 
   await runAuth('MT-04 currentUserId e role do workspace não substituem a sessão', '/cliente-a', async ({ page }) => {
     await page.locator('#crmApp').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('[data-admin-nav]').isHidden(), true);
+    assert.equal(await page.locator('[data-admin-nav]').evaluateAll(elements => elements.every(element => element.hidden)), true);
     assert.match(await page.locator('#page-dashboard').innerText(), /perfil Vendedor/);
     assert.doesNotMatch(await page.locator('#sessionUserName').innerText(), /Estado Local/);
   }, { authenticated: true, session: SELLER_SESSION, workspaceState: minimalWorkspace() });
@@ -577,7 +611,7 @@ async function storageEntries(page) {
   await runAuth('MT-04 snapshot legado no localStorage não personifica usuário', '/cliente-a', async ({ page }) => {
     await page.locator('#crmApp').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#sessionUserName').innerText(), SELLER_SESSION.user_name);
-    assert.equal(await page.locator('[data-admin-nav]').isHidden(), true);
+    assert.equal(await page.locator('[data-admin-nav]').evaluateAll(elements => elements.every(element => element.hidden)), true);
     assert.equal((await storageEntries(page))[STORAGE_KEY], undefined);
   }, {
     authenticated: true,
@@ -622,7 +656,7 @@ async function storageEntries(page) {
   await runAuth('MT-04 preferência adulterada não eleva perfil nem identidade', '/cliente-a', async ({ page }) => {
     await page.locator('#crmApp').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#sessionUserRole').innerText(), 'Vendedor');
-    assert.equal(await page.locator('[data-admin-nav]').isHidden(), true);
+    assert.equal(await page.locator('[data-admin-nav]').evaluateAll(elements => elements.every(element => element.hidden)), true);
   }, {
     authenticated: true,
     session: SELLER_SESSION,
@@ -632,7 +666,7 @@ async function storageEntries(page) {
 
   await runAuth('MT-04 tentativa DOM de abrir admin falha fechada pela identidade imutável', '/cliente-a', async ({ page }) => {
     await page.locator('#crmApp').waitFor({ state: 'visible' });
-    const adminNav = page.locator('[data-admin-nav]');
+    const adminNav = page.locator('[data-view="admin"]');
     await adminNav.evaluate(element => { element.hidden = false; });
     await adminNav.click();
     assert.equal(await page.locator('#page-admin').isVisible(), false);
@@ -680,7 +714,7 @@ async function storageEntries(page) {
 
   await runAuth('MT-04 preferência corrompida é descartada sem conceder acesso', '/cliente-a', async ({ page }) => {
     await page.locator('#crmApp').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('[data-admin-nav]').isHidden(), true);
+    assert.equal(await page.locator('[data-admin-nav]').evaluateAll(elements => elements.every(element => element.hidden)), true);
     const value = (await storageEntries(page))[uiStorageKey(SELLER_SESSION)];
     assert.doesNotThrow(() => JSON.parse(value));
   }, {
@@ -954,13 +988,14 @@ async function storageEntries(page) {
     assert.equal(await drawer.locator('#drawerCustomPanel b').count(), 0);
   });
 
-  await run('DEMO-04 Administrador navega pelos sete destinos', async page => {
+  await run('DEMO-04 Administrador navega pelos destinos autorizados', async page => {
     const destinations = [
       ['Visão geral', 'Visão geral'], ['Leads', 'Leads'], ['Contatos', 'Contatos'],
       ['Empresas', 'Empresas'], ['Negócios', 'Negócios'], ['Notificações', 'Notificações'],
+      ['Funil de negócios', 'Funil de negócios'],
       ['Usuários e permissões', 'Usuários e permissões']
     ];
-    assert.equal(await page.locator('.nav button:visible').count(), 7);
+    assert.equal(await page.locator('.nav button:visible').count(), 8);
     for (const [button, heading] of destinations) {
       await goTo(page, button);
       assert.equal(await page.locator('#topTitle').innerText(), heading);
@@ -2602,6 +2637,126 @@ async function storageEntries(page) {
     assert.equal(await page.evaluate(() => openEntityDialog('deal')), false);
     assert.match(await page.locator('#toastRegion').innerText(), /Funil indisponível/);
   }, { pipelineFailure: true });
+
+  await run('PIPE-ADMIN-01 edita e salva o agregado versionado com ordenação acessível', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Funil de negócios');
+    const rows = page.locator('[data-pipeline-editor-stage]');
+    assert.equal(await rows.count(), 9);
+    assert.equal(await rows.first().locator('[data-pipeline-field="semanticType"]').isDisabled(), true);
+    assert.match(await rows.nth(5).innerText(), /Automação interna: billing/);
+
+    const originalOrder = await rows.evaluateAll(items => items.map(item => item.dataset.pipelineEditorStage));
+    await page.evaluate(() => {
+      const items = [...document.querySelectorAll('[data-pipeline-editor-stage]')];
+      const transfer = new DataTransfer();
+      items.at(-1).dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: transfer }));
+      items[0].dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+      items[0].dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    });
+    const draggedOrder = await rows.evaluateAll(items => items.map(item => item.dataset.pipelineEditorStage));
+    assert.equal(draggedOrder[0], originalOrder.at(-1));
+    assert.equal(new Set(draggedOrder).size, 9);
+    await rows.first().getByRole('button', { name: /Descer/ }).click();
+    const keyboardOrder = await rows.evaluateAll(items => items.map(item => item.dataset.pipelineEditorStage));
+    assert.equal(keyboardOrder[1], originalOrder.at(-1));
+
+    const firstCanonical = page.locator(`[data-pipeline-editor-stage="${DEAL_STAGE_IDS[0]}"]`);
+    await firstCanonical.locator('[data-pipeline-field="name"]').fill('Contato customizado');
+    await firstCanonical.locator('[data-pipeline-field="color"]').fill('#123456');
+    await page.locator(`input[name="pipeline-default-stage"][value="${DEAL_STAGE_IDS[1]}"]`).check();
+    await page.getByRole('button', { name: 'Adicionar etapa' }).click();
+    assert.equal(await rows.count(), 10);
+    const createdRow = rows.last();
+    assert.equal(await createdRow.locator('[data-pipeline-field="semanticType"]').isEnabled(), true);
+    await createdRow.locator('[data-pipeline-field="name"]').fill('Qualificação jurídica');
+    await createdRow.locator('[data-pipeline-field="semanticType"]').selectOption('open');
+    await createdRow.locator('[data-pipeline-field="color"]').fill('#ABCDEF');
+
+    await page.getByRole('button', { name: 'Salvar funil' }).click();
+    await waitForPipelineWrites(page, 1);
+    await page.getByText('Funil atualizado com sucesso.', { exact: true }).waitFor();
+    assert.equal(api.pipelineWrites.length, 1);
+    const payload = api.pipelineWrites[0];
+    assert.equal(payload.pipelineVersion, 1);
+    assert.equal(payload.workspaceVersion, 1);
+    assert.equal(payload.defaultStageId, DEAL_STAGE_IDS[1]);
+    assert.deepEqual(payload.stages.map(stage => stage.position), Array.from({ length: 10 }, (_, index) => index));
+    assert.deepEqual(payload.stages.find(stage => stage.id === DEAL_STAGE_IDS[0]), {
+      id: DEAL_STAGE_IDS[0], name: 'Contato customizado', semanticType: 'open', color: '#123456',
+      position: payload.stages.findIndex(stage => stage.id === DEAL_STAGE_IDS[0]), archived: false
+    });
+    assert.equal(payload.stages.some(stage => stage.name === 'Qualificação jurídica' && stage.id === undefined && stage.color === '#ABCDEF'), true);
+    assert.equal(api.pipeline.pipelineVersion, 2);
+    assert.equal(await page.locator('[data-pipeline-editor-stage]').count(), 10);
+  });
+
+  await run('PIPE-ADMIN-02 valida limites e associa 422 à etapa afetada', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Funil de negócios');
+    const rows = page.locator('[data-pipeline-editor-stage]');
+    const firstName = rows.nth(0).locator('[data-pipeline-field="name"]');
+    const secondName = rows.nth(1).locator('[data-pipeline-field="name"]');
+    await secondName.fill(await firstName.inputValue());
+    await page.getByRole('button', { name: 'Salvar funil' }).click();
+    assert.equal(api.pipelineWrites.length, 0);
+    assert.equal(await page.getByText('O nome da etapa deve ser único.', { exact: true }).count(), 2);
+    assert.match(await page.locator('#pipelineEditorStatus').innerText(), /Corrija/);
+
+    await page.evaluate(() => reloadPipelineEditor());
+    api.pipelineValidationFailure = { code: 'duplicate_stage_name', message: 'Nome recusado pelo servidor.', path: 'stages[0].name' };
+    await page.locator('[data-pipeline-editor-stage]').first().locator('[data-pipeline-field="name"]').fill('Nome local válido');
+    await page.getByRole('button', { name: 'Salvar funil' }).click();
+    await waitForPipelineWrites(page, 1);
+    const serverStageError = page.locator('.stage-error').filter({ hasText: 'Nome recusado pelo servidor.' });
+    await serverStageError.waitFor();
+    assert.equal(await serverStageError.count(), 1);
+    assert.match(await page.locator('#pipelineEditorStatus').innerText(), /Nome recusado/);
+
+    api.pipelineValidationFailure = null;
+    await page.evaluate(() => {
+      while (pipelineEditorDraft.stages.length < 50) addPipelineStage();
+    });
+    assert.equal(await page.locator('[data-pipeline-editor-stage]').count(), 50);
+    assert.equal(await page.evaluate(() => addPipelineStage()), false);
+    assert.match(await page.locator('#pipelineEditorStatus').innerText(), /máximo 50/);
+  });
+
+  await run('PIPE-ADMIN-03 preserva rascunho no 409 e recarrega explicitamente no móvel', async page => {
+    const api = apiByPage.get(page);
+    await page.getByRole('button', { name: 'Abrir menu' }).click();
+    await goTo(page, 'Funil de negócios');
+    const first = page.locator('[data-pipeline-editor-stage]').first();
+    const serverName = api.pipeline.stages[0].name;
+    await first.locator('[data-pipeline-field="name"]').fill('Rascunho local');
+    api.pipelineConflict = true;
+    await page.getByRole('button', { name: 'Salvar funil' }).click();
+    await waitForPipelineWrites(page, 1);
+    await page.getByText(/alterado em outra sessão/).waitFor();
+    assert.equal(await page.getByText(/alterado em outra sessão/).count(), 1);
+    assert.equal(await page.locator('[data-pipeline-editor-stage]').first().locator('[data-pipeline-field="name"]').inputValue(), 'Rascunho local');
+    assert.equal(api.pipeline.stages[0].name, serverName);
+
+    api.pipelineConflict = false;
+    api.pipeline.pipelineVersion += 1;
+    api.pipeline.stages[0].name = 'Versão atual do servidor';
+    await page.getByRole('button', { name: 'Recarregar funil' }).click();
+    await page.waitForFunction(() => document.querySelector('[data-pipeline-editor-stage] [data-pipeline-field="name"]')?.value === 'Versão atual do servidor');
+    assert.equal(await page.locator('[data-pipeline-editor-stage]').first().locator('[data-pipeline-field="name"]').inputValue(), 'Versão atual do servidor');
+    assert.equal(await page.locator('.pipeline-conflict').count(), 0);
+    assert.equal(await page.locator('[data-pipeline-editor-stage]').first().getByRole('button', { name: /Descer/ }).isVisible(), true);
+    const box = await page.locator('[data-pipeline-editor-stage]').first().boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 390);
+  }, { viewport: { width: 390, height: 844 } });
+
+  await run('PIPE-ADMIN-04 nega a página e mutações aos demais perfis', async page => {
+    assert.equal(await page.getByRole('button', { name: 'Funil de negócios' }).count(), 0);
+    await page.evaluate(() => showView('pipeline-admin'));
+    assert.equal(await page.locator('#page-dashboard').isVisible(), true);
+    assert.equal(await page.locator('#page-pipeline-admin').isVisible(), false);
+    assert.equal(await page.evaluate(() => addPipelineStage()), false);
+    assert.equal(await page.evaluate(() => savePipelineEditor()), false);
+  }, { session: SELLER_SESSION, preloadState: minimalWorkspace() });
 
   await run('PCCP-01 a PCCP-03 removem avisos de demonstração sem ocultar alertas operacionais', async page => {
     for (const destination of ['Visão geral', 'Leads', 'Contatos', 'Empresas', 'Negócios', 'Notificações']) {

@@ -291,6 +291,20 @@
     .user-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
     .user-summary > div { padding: 13px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
     .user-summary b { display: block; margin-top: 4px; font-size: 20px; }
+    .pipeline-editor { display: grid; gap: 14px; }
+    .pipeline-editor-status { min-height: 20px; margin: 0; color: var(--slate-500); font-size: 13px; }
+    .pipeline-editor-status.error { color: var(--red-600); font-weight: 700; }
+    .pipeline-stage-list { display: grid; gap: 10px; }
+    .pipeline-stage-row { display: grid; grid-template-columns: 32px minmax(180px, 2fr) minmax(130px, 1fr) 92px minmax(132px, 1fr) auto; gap: 10px; align-items: start; padding: 12px; border: 1px solid var(--slate-200); border-radius: 11px; background: white; }
+    .pipeline-stage-row.dragging { opacity: .55; border-color: var(--blue-500); }
+    .pipeline-stage-row .drag-handle { cursor: grab; align-self: center; color: var(--slate-500); font-size: 20px; text-align: center; }
+    .pipeline-stage-row .field { min-width: 0; }
+    .pipeline-stage-row .field input[type="color"] { padding: 4px; }
+    .pipeline-stage-row .stage-initial { display: flex; align-items: center; gap: 6px; min-height: 40px; font-size: 12px; font-weight: 700; }
+    .pipeline-stage-row .stage-actions { display: flex; gap: 5px; padding-top: 21px; }
+    .pipeline-stage-row .stage-error { grid-column: 2 / -1; min-height: 16px; margin: -4px 0 0; color: var(--red-600); font-size: 12px; font-weight: 700; }
+    .pipeline-system-key { min-height: 16px; color: var(--slate-500); font-size: 11px; }
+    .pipeline-conflict { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid #fdb022; border-radius: 9px; background: #fffaeb; color: #7a2e0e; }
     .user-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
     dialog.filter-dialog { width: min(940px, calc(100% - 28px)); }
     .filter-layout { min-height: min(680px, calc(100vh - 50px)); display: grid; grid-template-columns: 245px minmax(0, 1fr); }
@@ -351,6 +365,10 @@
       .filter-controls { grid-template-columns: 1fr; }
       .kanban-board { min-height: 480px; }
       .user-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pipeline-stage-row { grid-template-columns: 28px minmax(180px, 2fr) minmax(130px, 1fr) 82px; }
+      .pipeline-stage-row .stage-initial { grid-column: 2; }
+      .pipeline-stage-row .stage-actions { grid-column: 3 / -1; padding-top: 0; }
+      .pipeline-stage-row .stage-error { grid-column: 2 / -1; }
       .bootstrap-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 560px) {
@@ -361,6 +379,9 @@
       .pipeline-row { grid-template-columns: 112px minmax(80px, 1fr) 65px; }
       .form-grid { grid-template-columns: 1fr; }
       .user-summary { grid-template-columns: 1fr; }
+      .pipeline-stage-row { grid-template-columns: 28px 1fr; }
+      .pipeline-stage-row .field, .pipeline-stage-row .stage-initial, .pipeline-stage-row .stage-actions, .pipeline-stage-row .stage-error { grid-column: 2; }
+      .pipeline-stage-row .stage-actions { flex-wrap: wrap; }
       .field.full { grid-column: auto; }
       .notice { grid-template-columns: 34px 1fr; }
       .notice .button { grid-column: 2; justify-self: start; }
@@ -410,6 +431,7 @@
         <button data-view="companies"><span class="nav-icon">▦</span>Empresas</button>
         <button data-view="deals"><span class="nav-icon">◇</span>Negócios <span class="nav-count" id="dealNavCount">0</span></button>
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
+        <button data-view="pipeline-admin" data-admin-nav hidden><span class="nav-icon">⇄</span>Funil de negócios</button>
         <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
       </nav>
 
@@ -438,6 +460,7 @@
         <section class="page" id="page-companies"></section>
         <section class="page" id="page-deals"></section>
         <section class="page" id="page-notifications"></section>
+        <section class="page" id="page-pipeline-admin"></section>
         <section class="page" id="page-admin"></section>
       </div>
     </main>
@@ -590,6 +613,20 @@
     const leadStages = ['Em contato', 'Lead descartado', 'Lead convertido'];
     let dealPipeline = null;
     let dealPipelineError = '';
+    let pipelineEditorDraft = null;
+    let pipelineEditorDirty = false;
+    let pipelineEditorSaving = false;
+    let pipelineEditorConflict = false;
+    let pipelineDraggedKey = null;
+
+    function resetPipelineEditorDraft() {
+      pipelineEditorDraft = dealPipeline ? {
+        defaultStageId: dealPipeline.defaultStageId,
+        stages: activeDealStages().map(stage => ({ ...clone(stage), _key: stage.id, error: '' }))
+      } : null;
+      pipelineEditorDirty = false;
+      pipelineEditorConflict = false;
+    }
 
     function activeDealStages() {
       return (dealPipeline?.stages || []).filter(stage => stage.active).sort((left, right) => left.position - right.position);
@@ -634,6 +671,7 @@
       companies: ['Empresas', 'Organizações e contas atendidas'],
       deals: ['Negócios', 'Pipeline Vendas CMS e orçamentos'],
       notifications: ['Notificações', 'Atualizações relevantes da sua operação'],
+      'pipeline-admin': ['Funil de negócios', 'Configure etapas, ordem e estado inicial'],
       admin: ['Usuários e permissões', 'Convites, cargos e perfis de acesso']
     };
     const entityConfigs = {
@@ -1008,9 +1046,11 @@
           throw new Error('O funil de Negócios não possui etapas ativas.');
         }
         dealPipeline = payload;
+        resetPipelineEditorDraft();
         document.documentElement.dataset.pipelineReady = 'true';
       } catch (failure) {
         dealPipelineError = failure.message || 'O funil de Negócios está indisponível.';
+        pipelineEditorDraft = null;
         document.documentElement.dataset.pipelineReady = 'false';
       }
     }
@@ -1096,6 +1136,10 @@
       queuedToasts = [];
       dealPipeline = null;
       dealPipelineError = '';
+      pipelineEditorDraft = null;
+      pipelineEditorDirty = false;
+      pipelineEditorSaving = false;
+      pipelineEditorConflict = false;
       document.documentElement.dataset.pipelineReady = 'false';
       document.documentElement.dataset.workspaceReady = 'false';
       document.documentElement.dataset.workspaceWritable = 'false';
@@ -1820,6 +1864,179 @@
       return `<div class="page-toolbar"><div><h2>Notificações</h2><p>Avisos para ${escapeHTML(currentUser().name)}.</p></div><div class="toolbar-actions"><button class="button" data-action="read-all">✓ Marcar todas como lidas</button></div></div><div class="notice-list">${records.map(item => `<article class="notice ${item.read ? '' : 'unread'}"><span class="notice-icon">♢</span><div><p>${escapeHTML(item.text)}</p><small>${escapeHTML(item.detail)} · ${escapeHTML(item.time)}</small></div>${item.read ? '<span class="tag green">Lida</span>' : `<button class="button small" data-action="read" data-id="${item.id}">Marcar como lida</button>`}</article>`).join('') || emptyHTML('Nenhuma notificação para este perfil')}</div>`;
     }
 
+    function pipelineSemanticLabel(value) {
+      return ({ open: 'Em andamento', won: 'Ganho', lost: 'Perdido' })[value] || value;
+    }
+
+    function pipelineEditorHTML() {
+      if (currentUser().role !== 'Administrador') return '';
+      if (!dealPipeline || !pipelineEditorDraft) {
+        return `<div class="pipeline-unavailable" role="alert"><h2>Funil indisponível</h2><p>${escapeHTML(dealPipelineError || 'Não foi possível carregar o funil desta empresa.')}</p><button class="button" data-action="reload-pipeline-editor">Tentar novamente</button></div>`;
+      }
+      const stages = pipelineEditorDraft.stages;
+      const rows = stages.map((stage, index) => {
+        const existing = Boolean(stage.id);
+        const semanticOptions = ['open', 'won', 'lost'].map(value => `<option value="${value}" ${stage.semanticType === value ? 'selected' : ''}>${pipelineSemanticLabel(value)}</option>`).join('');
+        return `<article class="pipeline-stage-row" data-pipeline-editor-stage="${escapeHTML(stage._key)}" draggable="true">
+          <span class="drag-handle" title="Arrastar para reordenar" aria-hidden="true">☷</span>
+          <div class="field"><label>Nome</label><input data-pipeline-field="name" maxlength="80" value="${escapeHTML(stage.name)}" aria-label="Nome da etapa ${index + 1}"><span class="pipeline-system-key">${stage.systemKey ? `Automação interna: ${escapeHTML(stage.systemKey)}` : '&nbsp;'}</span></div>
+          <div class="field"><label>Tipo semântico</label><select data-pipeline-field="semanticType" aria-label="Tipo semântico da etapa ${index + 1}" ${existing ? 'disabled' : ''}>${semanticOptions}</select><span class="pipeline-system-key">${existing ? 'Imutável após criação' : 'Definido na criação'}</span></div>
+          <div class="field"><label>Cor</label><input type="color" data-pipeline-field="color" value="${escapeHTML(stage.color)}" aria-label="Cor da etapa ${index + 1}"></div>
+          <label class="stage-initial"><input type="radio" name="pipeline-default-stage" value="${escapeHTML(stage._key)}" ${pipelineEditorDraft.defaultStageId === stage.id ? 'checked' : ''} ${!existing || stage.semanticType !== 'open' ? 'disabled' : ''}> Etapa inicial</label>
+          <div class="stage-actions"><button class="button small" type="button" data-action="move-pipeline-stage" data-direction="up" data-key="${escapeHTML(stage._key)}" ${index === 0 ? 'disabled' : ''} aria-label="Subir ${escapeHTML(stage.name)}">↑ Subir</button><button class="button small" type="button" data-action="move-pipeline-stage" data-direction="down" data-key="${escapeHTML(stage._key)}" ${index === stages.length - 1 ? 'disabled' : ''} aria-label="Descer ${escapeHTML(stage.name)}">↓ Descer</button></div>
+          <p class="stage-error" role="alert">${escapeHTML(stage.error || '')}</p>
+        </article>`;
+      }).join('');
+      const conflict = pipelineEditorConflict ? `<div class="pipeline-conflict" role="alert"><span>O funil foi alterado em outra sessão. Sua edição local foi preservada; recarregue para ver a versão atual.</span><button class="button small" type="button" data-action="reload-pipeline-editor">Recarregar funil</button></div>` : '';
+      return `<div class="page-toolbar"><div><h2>Funil de negócios</h2><p>Versão ${dealPipeline.pipelineVersion} · nomes e cores são editáveis; tipo semântico e automação interna são imutáveis.</p></div><div class="toolbar-actions"><button class="button" type="button" data-action="add-pipeline-stage">+ Adicionar etapa</button><button class="button primary" type="button" data-action="save-pipeline-editor" ${pipelineEditorSaving ? 'disabled' : ''}>${pipelineEditorSaving ? 'Salvando…' : 'Salvar funil'}</button></div></div><section class="pipeline-editor" aria-label="Editor do funil">${conflict}<p class="pipeline-editor-status" id="pipelineEditorStatus" role="status">${pipelineEditorDirty ? 'Alterações ainda não salvas.' : 'Funil sincronizado com o servidor.'}</p><div class="pipeline-stage-list">${rows}</div></section>`;
+    }
+
+    function syncPipelineEditorDraftFromDom() {
+      if (!pipelineEditorDraft) return;
+      document.querySelectorAll('[data-pipeline-editor-stage]').forEach(row => {
+        const stage = pipelineEditorDraft.stages.find(candidate => candidate._key === row.dataset.pipelineEditorStage);
+        if (!stage) return;
+        stage.name = row.querySelector('[data-pipeline-field="name"]')?.value ?? stage.name;
+        stage.color = row.querySelector('[data-pipeline-field="color"]')?.value?.toUpperCase() || stage.color;
+        const semantic = row.querySelector('[data-pipeline-field="semanticType"]');
+        if (semantic && !semantic.disabled) stage.semanticType = semantic.value;
+        const initial = row.querySelector('input[name="pipeline-default-stage"]');
+        if (initial?.checked && stage.id) pipelineEditorDraft.defaultStageId = stage.id;
+      });
+    }
+
+    function setPipelineEditorStatus(message, error = false) {
+      const status = document.getElementById('pipelineEditorStatus');
+      if (!status) return;
+      status.textContent = message;
+      status.classList.toggle('error', error);
+    }
+
+    function clearPipelineStageErrors() {
+      (pipelineEditorDraft?.stages || []).forEach(stage => { stage.error = ''; });
+    }
+
+    function validatePipelineEditor() {
+      syncPipelineEditorDraftFromDom();
+      clearPipelineStageErrors();
+      const stages = pipelineEditorDraft?.stages || [];
+      if (!stages.length) return 'O funil precisa ter ao menos uma etapa.';
+      if (stages.length > 50) return 'O funil aceita no máximo 50 etapas ativas.';
+      const seen = new Map();
+      for (const stage of stages) {
+        stage.name = stage.name.trim();
+        if (!stage.name || stage.name.length > 80) stage.error = 'Use um nome entre 1 e 80 caracteres.';
+        if (!/^#[0-9A-F]{6}$/.test(stage.color)) stage.error ||= 'Use uma cor hexadecimal válida.';
+        const normalized = stage.name.toLocaleLowerCase('pt-BR');
+        if (seen.has(normalized)) {
+          stage.error = 'O nome da etapa deve ser único.';
+          seen.get(normalized).error = 'O nome da etapa deve ser único.';
+        } else seen.set(normalized, stage);
+      }
+      const counts = { open: 0, won: 0, lost: 0 };
+      stages.forEach(stage => { counts[stage.semanticType] = (counts[stage.semanticType] || 0) + 1; });
+      if (!counts.open || !counts.won || !counts.lost) return 'Mantenha ao menos uma etapa de cada tipo: andamento, ganho e perdido.';
+      const initial = stages.find(stage => stage.id === pipelineEditorDraft.defaultStageId);
+      if (!initial || initial.semanticType !== 'open') return 'Escolha uma etapa inicial ativa do tipo Em andamento.';
+      return stages.some(stage => stage.error) ? 'Corrija as etapas destacadas.' : '';
+    }
+
+    function addPipelineStage() {
+      if (currentUser().role !== 'Administrador' || !pipelineEditorDraft) return false;
+      syncPipelineEditorDraftFromDom();
+      if (pipelineEditorDraft.stages.length >= 50) { setPipelineEditorStatus('O funil aceita no máximo 50 etapas ativas.', true); return false; }
+      pipelineEditorDraft.stages.push({ id: null, _key: `new-${Date.now()}-${pipelineEditorDraft.stages.length}`, name: 'Nova etapa', semanticType: 'open', color: '#2563EB', systemKey: null, active: true, error: '' });
+      pipelineEditorDirty = true;
+      render();
+      return true;
+    }
+
+    function movePipelineStage(key, direction) {
+      if (currentUser().role !== 'Administrador' || !pipelineEditorDraft) return false;
+      syncPipelineEditorDraftFromDom();
+      const from = pipelineEditorDraft.stages.findIndex(stage => stage._key === key);
+      const to = direction === 'up' ? from - 1 : direction === 'down' ? from + 1 : -1;
+      if (from < 0 || to < 0 || to >= pipelineEditorDraft.stages.length) return false;
+      const [stage] = pipelineEditorDraft.stages.splice(from, 1);
+      pipelineEditorDraft.stages.splice(to, 0, stage);
+      pipelineEditorDirty = true;
+      render();
+      return true;
+    }
+
+    function reorderPipelineStage(sourceKey, targetKey) {
+      if (!pipelineEditorDraft || sourceKey === targetKey) return false;
+      syncPipelineEditorDraftFromDom();
+      const from = pipelineEditorDraft.stages.findIndex(stage => stage._key === sourceKey);
+      const to = pipelineEditorDraft.stages.findIndex(stage => stage._key === targetKey);
+      if (from < 0 || to < 0) return false;
+      const [stage] = pipelineEditorDraft.stages.splice(from, 1);
+      pipelineEditorDraft.stages.splice(to, 0, stage);
+      pipelineEditorDirty = true;
+      render();
+      return true;
+    }
+
+    async function reloadPipelineEditor() {
+      if (currentUser().role !== 'Administrador') return false;
+      await loadDealPipeline();
+      render();
+      return Boolean(dealPipeline);
+    }
+
+    async function savePipelineEditor() {
+      if (currentUser().role !== 'Administrador' || !dealPipeline || !pipelineEditorDraft || pipelineEditorSaving) return false;
+      const validation = validatePipelineEditor();
+      if (validation) { render(); setPipelineEditorStatus(validation, true); return false; }
+      pipelineEditorSaving = true;
+      pipelineEditorConflict = false;
+      render();
+      const payload = {
+        pipelineVersion: dealPipeline.pipelineVersion,
+        workspaceVersion: dealPipeline.workspaceVersion,
+        defaultStageId: pipelineEditorDraft.defaultStageId,
+        stages: pipelineEditorDraft.stages.map((stage, position) => ({
+          ...(stage.id ? { id: stage.id } : {}), name: stage.name, semanticType: stage.semanticType,
+          color: stage.color, position, archived: false
+        })),
+        transfers: {}
+      };
+      try {
+        const updated = await responseJson(await apiFetch('/api/deal-pipeline', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload)
+        }));
+        dealPipeline = updated;
+        canonicalizeDealReferences();
+        resetPipelineEditorDraft();
+        writeLocalState();
+        render();
+        showToast('Funil atualizado com sucesso.');
+        return true;
+      } catch (failure) {
+        if (failure.status === 409) {
+          pipelineEditorConflict = true;
+          render();
+          setPipelineEditorStatus('Conflito de versão: recarregue o funil antes de salvar novamente.', true);
+          return false;
+        }
+        if (failure.status === 422) {
+          const path = failure.payload?.error?.path || '';
+          const match = String(path).match(/stages(?:\.|\[)(\d+)/);
+          if (match && pipelineEditorDraft.stages[Number(match[1])]) pipelineEditorDraft.stages[Number(match[1])].error = failure.message;
+          render();
+          setPipelineEditorStatus(failure.message || 'Corrija a configuração informada.', true);
+          return false;
+        }
+        render();
+        setPipelineEditorStatus('Não foi possível salvar o funil.', true);
+        return false;
+      } finally {
+        pipelineEditorSaving = false;
+        const button = document.querySelector('[data-action="save-pipeline-editor"]');
+        if (button) { button.disabled = false; button.textContent = 'Salvar funil'; }
+      }
+    }
+
     function usersAdminHTML() {
       if (currentUser().role !== 'Administrador') return '';
       const statusClass = status => status === 'Ativo' ? 'green' : status === 'Pendente' ? 'amber' : status === 'Cancelado' ? 'red' : '';
@@ -1903,20 +2120,21 @@
     function render() {
       renderSessionIdentity();
       updateCounts();
-      document.querySelector('[data-admin-nav]').hidden = currentUser().role !== 'Administrador';
+      document.querySelectorAll('[data-admin-nav]').forEach(item => { item.hidden = currentUser().role !== 'Administrador'; });
       document.getElementById('page-dashboard').innerHTML = dashboardHTML();
       document.getElementById('page-leads').innerHTML = leadsHTML();
       document.getElementById('page-contacts').innerHTML = contactsHTML();
       document.getElementById('page-companies').innerHTML = companiesHTML();
       document.getElementById('page-deals').innerHTML = dealsHTML();
       document.getElementById('page-notifications').innerHTML = notificationsHTML();
+      document.getElementById('page-pipeline-admin').innerHTML = pipelineEditorHTML();
       document.getElementById('page-admin').innerHTML = usersAdminHTML();
       showView(activeView, false);
       syncBootstrapAccess();
     }
 
     function showView(view, closeMobile = true) {
-      if (view === 'admin' && currentUser().role !== 'Administrador') view = 'dashboard';
+      if (['admin', 'pipeline-admin'].includes(view) && currentUser().role !== 'Administrador') view = 'dashboard';
       if (!pageMeta[view]) view = 'dashboard';
       activeView = view;
       document.querySelectorAll('.page').forEach(page => page.classList.toggle('active', page.id === `page-${view}`));
@@ -2795,6 +3013,10 @@
       if (action === 'confirm-bootstrap') { confirmBootstrap(); return; }
       if (action === 'open-bootstrap') { openBootstrapDialog(); return; }
       if (durableActions.has(action) && !requireWritableWorkspace()) return;
+      if (action === 'add-pipeline-stage') addPipelineStage();
+      if (action === 'move-pipeline-stage') movePipelineStage(button.dataset.key, button.dataset.direction);
+      if (action === 'save-pipeline-editor') savePipelineEditor();
+      if (action === 'reload-pipeline-editor') reloadPipelineEditor();
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
       if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
@@ -2837,6 +3059,7 @@
     document.addEventListener('input', event => {
       if (event.target.dataset.search) { const scope = event.target.dataset.search; getFilterState(scope).query = event.target.value; saveState(); render(); const input = document.querySelector(`[data-search="${scope}"]`); input?.focus(); input?.setSelectionRange(input.value.length, input.value.length); }
       if (['quoteQuantity', 'quoteUnit', 'quoteDiscount'].includes(event.target.id)) updateQuoteTotal();
+      if (event.target.dataset.pipelineField) { syncPipelineEditorDraftFromDom(); pipelineEditorDirty = true; setPipelineEditorStatus('Alterações ainda não salvas.'); }
     });
 
     document.addEventListener('change', event => {
@@ -2844,6 +3067,7 @@
       if (event.target.id === 'deletedModule') loadDeletedRecords();
       if (event.target.id === 'customFieldType') document.getElementById('customFieldOptionsWrap').hidden = !['select', 'multiselect'].includes(event.target.value);
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }
+      if (event.target.name === 'pipeline-default-stage') { syncPipelineEditorDraftFromDom(); pipelineEditorDirty = true; setPipelineEditorStatus('Alterações ainda não salvas.'); }
       if (event.target.name === 'filter-operator' && event.target.closest('#filterDialog')) { syncFilterDraftFromPanel(); renderFilterPanel(); }
       if (event.target.dataset.stageControl) {
         if (!requireWritableWorkspace()) { render(); return; }
@@ -2860,6 +3084,28 @@
     document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));
     document.getElementById('sidebarOverlay').addEventListener('click', () => toggleSidebar(false));
     document.getElementById('entityDrawerOverlay').addEventListener('click', () => closeEntityDrawer());
+    document.addEventListener('dragstart', event => {
+      const row = event.target.closest('[data-pipeline-editor-stage]');
+      if (!row || currentUser().role !== 'Administrador') return;
+      pipelineDraggedKey = row.dataset.pipelineEditorStage;
+      row.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', pipelineDraggedKey);
+    });
+    document.addEventListener('dragover', event => {
+      if (pipelineDraggedKey && event.target.closest('[data-pipeline-editor-stage]')) event.preventDefault();
+    });
+    document.addEventListener('drop', event => {
+      const target = event.target.closest('[data-pipeline-editor-stage]');
+      if (!target || !pipelineDraggedKey) return;
+      event.preventDefault();
+      reorderPipelineStage(pipelineDraggedKey, target.dataset.pipelineEditorStage);
+      pipelineDraggedKey = null;
+    });
+    document.addEventListener('dragend', event => {
+      event.target.closest('[data-pipeline-editor-stage]')?.classList.remove('dragging');
+      pipelineDraggedKey = null;
+    });
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && document.getElementById('entityDrawer').classList.contains('open')) {
         event.preventDefault();

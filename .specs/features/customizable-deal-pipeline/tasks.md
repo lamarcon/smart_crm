@@ -294,6 +294,8 @@ T10 → T11 → T12
 
 ### T9: Add the administrator pipeline editor
 
+**Status**: ✅ Complete
+
 **What**: Add the Funil de negócios admin page with create, rename, color, semantic type, initial stage and accessible ordering controls.  
 **Where**: `app/static/index.html`  
 **Depends on**: T8  
@@ -307,12 +309,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Page is visible only to Administrador and sends one versioned aggregate update.
-- [ ] Drag/drop and up/down controls produce the same continuous order.
-- [ ] UI validates bounds, protects immutable fields and reports 422 errors at the affected row.
-- [ ] HTTP 409 discards no server data and offers an explicit reload.
-- [ ] Desktop/mobile browser tests cover every editor action, keyboard alternative, permissions and conflict with at least 14 new assertions.
-- [ ] Full gate passes with no prior test removed/skipped.
+- [x] Page is visible only to Administrador and sends one versioned aggregate update.
+- [x] Drag/drop and up/down controls produce the same continuous order.
+- [x] UI validates bounds, protects immutable fields and reports 422 errors at the affected row.
+- [x] HTTP 409 discards no server data and offers an explicit reload.
+- [x] Desktop/mobile browser tests cover every editor action, keyboard alternative, permissions and conflict with at least 14 new assertions.
+- [x] Full gate passes with no prior test removed/skipped.
 
 **Tests**: browser e2e  
 **Gate**: full  
