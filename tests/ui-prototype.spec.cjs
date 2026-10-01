@@ -123,7 +123,8 @@ async function openFresh(options = {}) {
     session: { ...AUTH_SESSION, ...(options.session || {}) },
     loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false,
     pipeline, pipelineFailure: Boolean(options.pipelineFailure), pipelineConflict: false,
-    pipelineValidationFailure: null, pipelineWrites: [],
+    pipelineValidationFailure: null, pipelineServerFailure: false, pipelineWrites: [],
+    pipelineHistory: clone(options.pipelineHistory || []), pipelineHistoryRequests: [],
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
@@ -131,6 +132,22 @@ async function openFresh(options = {}) {
     status: 200, contentType: 'application/json',
     body: JSON.stringify(api.session)
   }));
+  await context.route('**/api/deal-pipeline/history**', route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    api.pipelineHistoryRequests.push(request.url());
+    if (api.session.role !== 'Administrador') {
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'forbidden', message: 'Acesso negado.' } }) });
+    }
+    const before = Number(url.searchParams.get('before')) || null;
+    const limit = Number(url.searchParams.get('limit')) || 50;
+    const available = api.pipelineHistory.filter(item => before === null || item.id < before);
+    const items = available.slice(0, limit);
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ items, nextBefore: items.length === limit ? items.at(-1).id : null })
+    });
+  });
   await context.route('**/api/deal-pipeline', route => {
     const request = route.request();
     if (request.method() === 'PUT') {
@@ -138,8 +155,30 @@ async function openFresh(options = {}) {
       api.pipelineWrites.push(clone(payload));
       if (api.pipelineConflict) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'pipeline_version_conflict', message: 'Versão do funil desatualizada.', currentPipelineVersion: api.pipeline.pipelineVersion + 1 } }) });
       if (api.pipelineValidationFailure) return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: api.pipelineValidationFailure }) });
+      if (api.pipelineServerFailure) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Banco indisponível.' } }) });
+      const beforePipeline = clone(api.pipeline);
       const previousById = new Map(api.pipeline.stages.map(stage => [stage.id, stage]));
-      api.pipeline.stages = payload.stages.map((stage, index) => {
+      const transferCounts = {};
+      for (const submitted of payload.stages.filter(stage => stage.archived && stage.id)) {
+        const source = previousById.get(submitted.id);
+        const targetId = payload.transfers?.[submitted.id];
+        const target = previousById.get(targetId);
+        const active = (api.state?.deals || []).filter(deal => deal.stageId === submitted.id);
+        const deleted = (api.deleted.deals || []).filter(deal => deal.stageId === submitted.id);
+        const total = active.length + deleted.length;
+        if (total && (!target || target.id === submitted.id || !target.active)) {
+          return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: { code: 'pipeline_archive_target_invalid', message: 'Escolha uma etapa ativa diferente.', path: `transfers.${submitted.id}` } }) });
+        }
+        transferCounts[submitted.id] = total;
+        if (target) {
+          for (const deal of [...active, ...deleted]) {
+            deal.stageId = target.id;
+            deal.pipelineId = api.pipeline.id;
+            deal.stage = target.name;
+          }
+        }
+      }
+      const nextStages = payload.stages.map((stage, index) => {
         const previous = previousById.get(stage.id);
         return {
           id: stage.id || `30000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
@@ -149,8 +188,20 @@ async function openFresh(options = {}) {
         };
       });
       api.pipeline.pipelineVersion += 1;
-      api.pipeline.workspaceVersion += Object.keys(payload.transfers || {}).length ? 1 : 0;
+      if (Object.values(transferCounts).some(count => count > 0)) api.version += 1;
+      api.pipeline.workspaceVersion = api.version;
       api.pipeline.defaultStageId = payload.defaultStageId;
+      api.pipeline.transferCounts = transferCounts;
+      api.pipeline.stages = nextStages.filter(stage => stage.active);
+      api.pipelineHistory.unshift({
+        id: Math.max(0, ...api.pipelineHistory.map(item => item.id)) + 1,
+        pipelineId: api.pipeline.id, actorUserId: api.session.user_id,
+        pipelineVersion: api.pipeline.pipelineVersion, action: 'pipeline.updated',
+        actions: payload.stages.filter(stage => stage.archived).map(stage => ({ type: 'stage.archived', stageId: stage.id, transferCount: transferCounts[stage.id] || 0, targetStageId: payload.transfers?.[stage.id] || null })),
+        beforeState: beforePipeline, afterState: clone(api.pipeline),
+        transferSummary: Object.entries(payload.transfers || {}).map(([sourceStageId, targetStageId]) => ({ sourceStageId, targetStageId, count: transferCounts[sourceStageId] || 0 })),
+        createdAt: '2026-10-01T10:30:00Z'
+      });
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(api.pipeline) });
     }
     return route.fulfill({
@@ -469,6 +520,34 @@ function minimalWorkspace() {
     },
     ui: { filtersByUser: {}, savedFilters: [], viewModesByUser: {}, dashboardScopeByUser: {} }
   };
+}
+
+function workspaceWithDeal(stage = DEAL_STAGES[2]) {
+  const workspace = minimalWorkspace();
+  workspace.deals.push({
+    id: 'deal-pipeline-active', title: 'Negócio na etapa ocupada', company: 'Empresa Pipeline',
+    contact: 'Contato Pipeline', amount: 2500, stage, responsibleId: 'u-admin', assistants: [],
+    updatedAt: '1 out, 10:00', quotes: [], stageHistory: []
+  });
+  return workspace;
+}
+
+function pipelineAuditHistory(total = 55) {
+  return Array.from({ length: total }, (_, index) => {
+    const id = total - index;
+    return {
+      id,
+      pipelineId: defaultDealPipeline().id,
+      actorUserId: id === total ? 'u-admin' : 'u-paula',
+      pipelineVersion: id + 1,
+      action: id === total ? 'pipeline.stage_archived' : 'pipeline.updated',
+      actions: [{ type: 'stage.archived', stageId: DEAL_STAGE_IDS[2], targetStageId: DEAL_STAGE_IDS[6] }],
+      beforeState: { defaultStageId: DEAL_STAGE_IDS[0], stageName: 'Orçamentos enviados' },
+      afterState: { defaultStageId: DEAL_STAGE_IDS[0], stageName: 'Ganho' },
+      transferSummary: [{ sourceStageId: DEAL_STAGE_IDS[2], targetStageId: DEAL_STAGE_IDS[6], count: 2 }],
+      createdAt: `2026-10-01T10:${String(id % 60).padStart(2, '0')}:00Z`
+    };
+  });
 }
 
 function uiStorageKey(session) {
@@ -2757,6 +2836,151 @@ async function storageEntries(page) {
     assert.equal(await page.evaluate(() => addPipelineStage()), false);
     assert.equal(await page.evaluate(() => savePipelineEditor()), false);
   }, { session: SELLER_SESSION, preloadState: minimalWorkspace() });
+
+  await run('PIPE-ADMIN-05 arquiva etapa vazia diretamente e preserva a versão do workspace', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Funil de negócios');
+    await page.getByRole('button', { name: `Arquivar ${DEAL_STAGES[5]}` }).click();
+    await waitForPipelineWrites(page, 1);
+    await page.getByText('Etapa arquivada com sucesso.', { exact: true }).waitFor();
+
+    assert.equal(await page.locator('#pipelineArchiveDialog').isVisible(), false);
+    assert.equal(api.pipelineWrites.length, 1);
+    assert.equal(api.pipelineWrites[0].stages.find(stage => stage.id === DEAL_STAGE_IDS[5]).archived, true);
+    assert.deepEqual(api.pipelineWrites[0].transfers, {});
+    assert.equal(api.pipeline.pipelineVersion, 2);
+    assert.equal(api.pipeline.workspaceVersion, 1);
+    assert.equal(await page.locator('[data-pipeline-editor-stage]').count(), 8);
+  }, { preloadState: minimalWorkspace() });
+
+  await run('PIPE-ADMIN-06 exige destino e explica o efeito semântico incluindo excluídos', async page => {
+    const api = apiByPage.get(page);
+    api.deleted.deals.push({
+      ...clone(api.state.deals[0]), id: 'deal-pipeline-deleted', deletedAt: '2026-10-01T09:00:00Z'
+    });
+    await goTo(page, 'Funil de negócios');
+    await page.getByRole('button', { name: `Arquivar ${DEAL_STAGES[2]}` }).click();
+    const dialog = page.locator('#pipelineArchiveDialog');
+    await dialog.waitFor();
+
+    assert.match(await dialog.locator('#pipelineArchiveCount').innerText(), /2 negócios/);
+    assert.match(await dialog.locator('#pipelineArchiveCount').innerText(), /1 excluído/);
+    const target = dialog.getByLabel('Transferir negócios para *');
+    assert.equal(await target.locator(`option[value="${DEAL_STAGE_IDS[2]}"]`).count(), 0);
+    assert.equal(await target.locator('option:not([value=""])').count(), 8);
+    await target.selectOption(DEAL_STAGE_IDS[0]);
+    assert.match(await dialog.locator('#pipelineArchiveSemantic').innerText(), /permanecem em andamento/);
+    await target.selectOption(DEAL_STAGE_IDS[6]);
+    assert.match(await dialog.locator('#pipelineArchiveSemantic').innerText(), /marcados como ganhos/);
+    await target.selectOption(DEAL_STAGE_IDS[7]);
+    assert.match(await dialog.locator('#pipelineArchiveSemantic').innerText(), /marcados como perdidos/);
+    await dialog.getByRole('button', { name: 'Cancelar' }).click();
+    assert.equal(await dialog.isVisible(), false);
+    assert.equal(api.pipelineWrites.length, 0);
+    assert.equal(await page.locator('[data-pipeline-editor-stage]').count(), 9);
+  }, { preloadState: workspaceWithDeal() });
+
+  await run('PIPE-ADMIN-07 transfere atomicamente e atualiza versões e histórico', async page => {
+    const api = apiByPage.get(page);
+    api.deleted.deals.push({
+      ...clone(api.state.deals[0]), id: 'deal-pipeline-deleted', deletedAt: '2026-10-01T09:00:00Z'
+    });
+    await goTo(page, 'Funil de negócios');
+    await page.getByRole('button', { name: `Arquivar ${DEAL_STAGES[2]}` }).click();
+    const dialog = page.locator('#pipelineArchiveDialog');
+    await dialog.getByLabel('Transferir negócios para *').selectOption(DEAL_STAGE_IDS[6]);
+    await dialog.getByRole('button', { name: 'Arquivar e transferir' }).click();
+    await waitForPipelineWrites(page, 1);
+    await page.getByText('2 negócios transferidos e etapa arquivada.', { exact: true }).waitFor();
+
+    assert.equal(api.pipelineWrites[0].transfers[DEAL_STAGE_IDS[2]], DEAL_STAGE_IDS[6]);
+    assert.deepEqual(api.pipelineWrites[0].stages.filter(stage => !stage.archived).map(stage => stage.position), Array.from({ length: 8 }, (_, index) => index));
+    assert.equal(api.pipeline.pipelineVersion, 2);
+    assert.equal(api.pipeline.workspaceVersion, 2);
+    assert.equal(api.version, 2);
+    const localDeal = (await stateFrom(page)).deals.find(deal => deal.id === 'deal-pipeline-active');
+    assert.deepEqual({ stageId: localDeal.stageId, stage: localDeal.stage }, { stageId: DEAL_STAGE_IDS[6], stage: DEAL_STAGES[6] });
+    assert.equal(api.deleted.deals[0].stageId, DEAL_STAGE_IDS[6]);
+    const history = page.locator('[data-pipeline-history-item]').first();
+    await history.waitFor();
+    assert.match(await history.innerText(), /u-admin/);
+    assert.match(await history.innerText(), /pipeline.updated/);
+    assert.match(await history.innerText(), /Antes/i);
+    assert.match(await history.innerText(), /Depois/i);
+    assert.match(await history.innerText(), /2 negócio/);
+  }, { preloadState: workspaceWithDeal() });
+
+  await run('PIPE-ADMIN-08 rejeita destino inválido e falha atômica sem corromper o estado local', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Funil de negócios');
+    await page.getByRole('button', { name: `Arquivar ${DEAL_STAGES[2]}` }).click();
+    const dialog = page.locator('#pipelineArchiveDialog');
+    await dialog.getByRole('button', { name: 'Arquivar e transferir' }).click();
+    assert.match(await dialog.locator('#pipelineArchiveError').innerText(), /Escolha uma etapa ativa diferente/);
+    assert.equal(api.pipelineWrites.length, 0);
+
+    api.pipelineValidationFailure = {
+      code: 'pipeline_archive_target_invalid', message: 'A etapa de destino ficou indisponível.',
+      path: `transfers.${DEAL_STAGE_IDS[2]}`
+    };
+    await dialog.getByLabel('Transferir negócios para *').selectOption(DEAL_STAGE_IDS[6]);
+    await dialog.getByRole('button', { name: 'Arquivar e transferir' }).click();
+    await waitForPipelineWrites(page, 1);
+    await dialog.getByText('A etapa de destino ficou indisponível.', { exact: true }).waitFor();
+    assert.match(await dialog.locator('#pipelineArchiveError').innerText(), /A etapa de destino ficou indisponível/);
+    assert.equal(await dialog.isVisible(), true);
+    assert.equal(await page.locator(`[data-pipeline-editor-stage="${DEAL_STAGE_IDS[2]}"]`).count(), 1);
+    assert.equal((await stateFrom(page)).deals[0].stageId, DEAL_STAGE_IDS[2]);
+
+    api.pipelineValidationFailure = null;
+    api.pipelineConflict = true;
+    await dialog.getByRole('button', { name: 'Arquivar e transferir' }).click();
+    await waitForPipelineWrites(page, 2);
+    await dialog.getByText(/mudou em outra sessão/).waitFor();
+    assert.match(await dialog.locator('#pipelineArchiveError').innerText(), /mudou em outra sessão/);
+    assert.equal(api.pipeline.pipelineVersion, 1);
+    assert.equal((await stateFrom(page)).deals[0].stageId, DEAL_STAGE_IDS[2]);
+
+    api.pipelineConflict = false;
+    api.pipelineServerFailure = true;
+    await dialog.getByRole('button', { name: 'Arquivar e transferir' }).click();
+    await waitForPipelineWrites(page, 3);
+    await dialog.getByText(/Operação revertida/).waitFor();
+    assert.match(await dialog.locator('#pipelineArchiveError').innerText(), /Operação revertida/);
+    assert.equal(await dialog.isVisible(), true);
+    assert.equal(api.pipeline.pipelineVersion, 1);
+    assert.equal((await stateFrom(page)).deals[0].stageId, DEAL_STAGE_IDS[2]);
+  }, { preloadState: workspaceWithDeal() });
+
+  await run('PIPE-ADMIN-09 pagina o histórico em blocos de 50 com contexto completo', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Funil de negócios');
+    const items = page.locator('[data-pipeline-history-item]');
+    await items.first().waitFor();
+    assert.equal(await items.count(), 50);
+    assert.match(await items.first().innerText(), /u-admin/);
+    assert.match(await items.first().innerText(), /pipeline.stage_archived/);
+    assert.match(await items.first().innerText(), /Antes/i);
+    assert.match(await items.first().innerText(), /Depois/i);
+    assert.match(await items.first().innerText(), /2 negócio/);
+    assert.match(await items.first().innerText(), /01\/10\/2026/);
+    await page.getByRole('button', { name: 'Histórico anterior' }).click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-pipeline-history-item]').length === 5);
+    assert.equal(await items.count(), 5);
+    assert.equal(api.pipelineHistoryRequests.some(url => url.includes('before=6') && url.includes('limit=50')), true);
+    await page.getByRole('button', { name: 'Histórico mais recente' }).click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-pipeline-history-item]').length === 50);
+    assert.equal(await items.count(), 50);
+  }, { preloadState: minimalWorkspace(), pipelineHistory: pipelineAuditHistory() });
+
+  await run('PIPE-ADMIN-10 não consulta nem expõe histórico a não administradores', async page => {
+    const api = apiByPage.get(page);
+    assert.equal(await page.getByRole('button', { name: 'Funil de negócios' }).count(), 0);
+    await page.evaluate(() => showView('pipeline-admin'));
+    assert.equal(await page.locator('#page-pipeline-admin').isVisible(), false);
+    assert.equal(await page.locator('[data-pipeline-history-item]').count(), 0);
+    assert.equal(api.pipelineHistoryRequests.length, 0);
+  }, { session: SELLER_SESSION, preloadState: minimalWorkspace(), pipelineHistory: pipelineAuditHistory(1) });
 
   await run('PCCP-01 a PCCP-03 removem avisos de demonstração sem ocultar alertas operacionais', async page => {
     for (const destination of ['Visão geral', 'Leads', 'Contatos', 'Empresas', 'Negócios', 'Notificações']) {

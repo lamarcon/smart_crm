@@ -305,6 +305,22 @@
     .pipeline-stage-row .stage-error { grid-column: 2 / -1; min-height: 16px; margin: -4px 0 0; color: var(--red-600); font-size: 12px; font-weight: 700; }
     .pipeline-system-key { min-height: 16px; color: var(--slate-500); font-size: 11px; }
     .pipeline-conflict { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid #fdb022; border-radius: 9px; background: #fffaeb; color: #7a2e0e; }
+    .pipeline-archive-summary { margin: 0 0 15px; padding: 12px; border: 1px solid var(--slate-200); border-radius: 9px; color: var(--navy-700); background: var(--slate-50); line-height: 1.5; }
+    .pipeline-semantic-warning { margin: 12px 0 0; padding: 10px 12px; border-radius: 9px; color: #7a2e0e; background: var(--amber-100); font-size: 12px; line-height: 1.45; }
+    .pipeline-history { display: grid; gap: 12px; margin-top: 24px; }
+    .pipeline-history-head { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+    .pipeline-history-head h3 { margin: 0 0 3px; }
+    .pipeline-history-head p { margin: 0; color: var(--slate-500); font-size: 12px; }
+    .pipeline-history-list { display: grid; gap: 10px; }
+    .pipeline-history-item { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--slate-200); border-radius: 11px; background: white; }
+    .pipeline-history-meta { display: flex; justify-content: space-between; gap: 12px; color: var(--slate-500); font-size: 12px; }
+    .pipeline-history-meta strong { color: var(--navy-800); }
+    .pipeline-history-states { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .pipeline-history-state { min-width: 0; padding: 10px; border-radius: 8px; background: var(--slate-50); }
+    .pipeline-history-state b { display: block; margin-bottom: 5px; font-size: 11px; text-transform: uppercase; }
+    .pipeline-history-state pre { overflow: auto; max-height: 150px; margin: 0; color: var(--slate-600); font: 11px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+    .pipeline-history-transfer { margin: 0; color: var(--navy-700); font-size: 12px; font-weight: 700; }
+    .pipeline-history-controls { display: flex; justify-content: flex-end; gap: 8px; }
     .user-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
     dialog.filter-dialog { width: min(940px, calc(100% - 28px)); }
     .filter-layout { min-height: min(680px, calc(100vh - 50px)); display: grid; grid-template-columns: 245px minmax(0, 1fr); }
@@ -382,6 +398,8 @@
       .pipeline-stage-row { grid-template-columns: 28px 1fr; }
       .pipeline-stage-row .field, .pipeline-stage-row .stage-initial, .pipeline-stage-row .stage-actions, .pipeline-stage-row .stage-error { grid-column: 2; }
       .pipeline-stage-row .stage-actions { flex-wrap: wrap; }
+      .pipeline-history-head, .pipeline-history-meta { align-items: stretch; flex-direction: column; }
+      .pipeline-history-states { grid-template-columns: 1fr; }
       .field.full { grid-column: auto; }
       .notice { grid-template-columns: 34px 1fr; }
       .notice .button { grid-column: 2; justify-self: start; }
@@ -485,6 +503,19 @@
       <p class="bootstrap-error" id="deletedRecordsError" role="alert"></p>
     </div>
     <div class="modal-foot"><button type="button" class="button" data-close="deletedRecordsDialog">Fechar</button></div>
+  </dialog>
+
+  <dialog id="pipelineArchiveDialog">
+    <form id="pipelineArchiveForm" novalidate>
+      <div class="modal-head"><div><h3>Arquivar etapa</h3><p class="hint">A transferência é aplicada em uma única transação.</p></div><button type="button" class="close-button" data-action="cancel-pipeline-archive" aria-label="Fechar">×</button></div>
+      <div class="modal-body">
+        <p class="pipeline-archive-summary" id="pipelineArchiveCount"></p>
+        <div class="field"><label for="pipelineArchiveTarget">Transferir negócios para *</label><select id="pipelineArchiveTarget" name="targetStageId" required></select></div>
+        <p class="pipeline-semantic-warning" id="pipelineArchiveSemantic" role="status"></p>
+        <p class="bootstrap-error" id="pipelineArchiveError" role="alert"></p>
+      </div>
+      <div class="modal-foot"><button type="button" class="button" data-action="cancel-pipeline-archive">Cancelar</button><button type="submit" class="button danger">Arquivar e transferir</button></div>
+    </form>
   </dialog>
 
   <dialog id="entityDialog">
@@ -618,6 +649,8 @@
     let pipelineEditorSaving = false;
     let pipelineEditorConflict = false;
     let pipelineDraggedKey = null;
+    let pipelineArchiveContext = null;
+    let pipelineHistoryState = { items: null, nextBefore: null, before: null, backStack: [], loading: false, error: '' };
 
     function resetPipelineEditorDraft() {
       pipelineEditorDraft = dealPipeline ? {
@@ -1140,6 +1173,8 @@
       pipelineEditorDirty = false;
       pipelineEditorSaving = false;
       pipelineEditorConflict = false;
+      pipelineArchiveContext = null;
+      resetPipelineHistory();
       document.documentElement.dataset.pipelineReady = 'false';
       document.documentElement.dataset.workspaceReady = 'false';
       document.documentElement.dataset.workspaceWritable = 'false';
@@ -1868,6 +1903,69 @@
       return ({ open: 'Em andamento', won: 'Ganho', lost: 'Perdido' })[value] || value;
     }
 
+    function resetPipelineHistory() {
+      pipelineHistoryState = { items: null, nextBefore: null, before: null, backStack: [], loading: false, error: '' };
+    }
+
+    function pipelineHistoryHTML() {
+      if (currentUser().role !== 'Administrador') return '';
+      const stateView = pipelineHistoryState;
+      let body = '<p class="hint">Nenhuma alteração registrada.</p>';
+      if (stateView.loading && stateView.items === null) body = '<p class="hint">Carregando histórico…</p>';
+      else if (stateView.error) body = `<p class="bootstrap-error" role="alert">${escapeHTML(stateView.error)}</p>`;
+      else if (stateView.items?.length) {
+        body = `<div class="pipeline-history-list">${stateView.items.map(item => {
+          const when = item.createdAt ? new Date(item.createdAt).toLocaleString('pt-BR') : 'Instante indisponível';
+          const transfers = (item.transferSummary || []).map(summary => `${Number(summary.count || 0)} ${Number(summary.count || 0) === 1 ? 'negócio' : 'negócios'}: ${summary.sourceStageId} → ${summary.targetStageId}`).join(' · ') || 'Sem transferência de negócios';
+          return `<article class="pipeline-history-item" data-pipeline-history-item="${escapeHTML(item.id)}">
+            <div class="pipeline-history-meta"><span><strong>${escapeHTML(item.action || 'pipeline.updated')}</strong> · versão ${escapeHTML(item.pipelineVersion)}</span><span>${escapeHTML(item.actorUserId || 'ator indisponível')} · ${escapeHTML(when)}</span></div>
+            <p class="pipeline-history-transfer">${escapeHTML(transfers)}</p>
+            <div class="pipeline-history-states"><div class="pipeline-history-state"><b>Antes</b><pre>${escapeHTML(JSON.stringify(item.beforeState || {}, null, 2))}</pre></div><div class="pipeline-history-state"><b>Depois</b><pre>${escapeHTML(JSON.stringify(item.afterState || {}, null, 2))}</pre></div></div>
+          </article>`;
+        }).join('')}</div>`;
+      }
+      return `<section class="pipeline-history" aria-label="Histórico do funil"><div class="pipeline-history-head"><div><h3>Histórico administrativo</h3><p>Ator, instante, ação, estados e transferências; 50 registros por página.</p></div>${stateView.loading ? '<span class="hint">Atualizando…</span>' : ''}</div>${body}<div class="pipeline-history-controls"><button type="button" class="button small" data-action="pipeline-history-newer" ${!stateView.backStack.length || stateView.loading ? 'disabled' : ''}>Histórico mais recente</button><button type="button" class="button small" data-action="pipeline-history-older" ${!stateView.nextBefore || stateView.loading ? 'disabled' : ''}>Histórico anterior</button></div></section>`;
+    }
+
+    async function loadPipelineHistory(before = null, backStack = pipelineHistoryState.backStack) {
+      if (currentUser().role !== 'Administrador' || pipelineHistoryState.loading) return false;
+      pipelineHistoryState.loading = true;
+      pipelineHistoryState.error = '';
+      render();
+      try {
+        const query = new URLSearchParams({ limit: '50' });
+        if (before !== null) query.set('before', String(before));
+        const payload = await responseJson(await apiFetch(`/api/deal-pipeline/history?${query}`, { headers: { Accept: 'application/json' } }));
+        pipelineHistoryState = {
+          items: Array.isArray(payload.items) ? payload.items : [],
+          nextBefore: payload.nextBefore ?? null,
+          before,
+          backStack: [...backStack],
+          loading: false,
+          error: ''
+        };
+        render();
+        return true;
+      } catch (failure) {
+        pipelineHistoryState.loading = false;
+        pipelineHistoryState.error = failure.status === 403 ? 'Você não possui permissão para consultar o histórico.' : 'Não foi possível carregar o histórico do funil.';
+        render();
+        return false;
+      }
+    }
+
+    function loadOlderPipelineHistory() {
+      if (!pipelineHistoryState.nextBefore) return false;
+      return loadPipelineHistory(pipelineHistoryState.nextBefore, [...pipelineHistoryState.backStack, pipelineHistoryState.before]);
+    }
+
+    function loadNewerPipelineHistory() {
+      if (!pipelineHistoryState.backStack.length) return false;
+      const backStack = [...pipelineHistoryState.backStack];
+      const before = backStack.pop();
+      return loadPipelineHistory(before, backStack);
+    }
+
     function pipelineEditorHTML() {
       if (currentUser().role !== 'Administrador') return '';
       if (!dealPipeline || !pipelineEditorDraft) {
@@ -1883,12 +1981,12 @@
           <div class="field"><label>Tipo semântico</label><select data-pipeline-field="semanticType" aria-label="Tipo semântico da etapa ${index + 1}" ${existing ? 'disabled' : ''}>${semanticOptions}</select><span class="pipeline-system-key">${existing ? 'Imutável após criação' : 'Definido na criação'}</span></div>
           <div class="field"><label>Cor</label><input type="color" data-pipeline-field="color" value="${escapeHTML(stage.color)}" aria-label="Cor da etapa ${index + 1}"></div>
           <label class="stage-initial"><input type="radio" name="pipeline-default-stage" value="${escapeHTML(stage._key)}" ${pipelineEditorDraft.defaultStageId === stage.id ? 'checked' : ''} ${!existing || stage.semanticType !== 'open' ? 'disabled' : ''}> Etapa inicial</label>
-          <div class="stage-actions"><button class="button small" type="button" data-action="move-pipeline-stage" data-direction="up" data-key="${escapeHTML(stage._key)}" ${index === 0 ? 'disabled' : ''} aria-label="Subir ${escapeHTML(stage.name)}">↑ Subir</button><button class="button small" type="button" data-action="move-pipeline-stage" data-direction="down" data-key="${escapeHTML(stage._key)}" ${index === stages.length - 1 ? 'disabled' : ''} aria-label="Descer ${escapeHTML(stage.name)}">↓ Descer</button></div>
+          <div class="stage-actions"><button class="button small" type="button" data-action="move-pipeline-stage" data-direction="up" data-key="${escapeHTML(stage._key)}" ${index === 0 ? 'disabled' : ''} aria-label="Subir ${escapeHTML(stage.name)}">↑ Subir</button><button class="button small" type="button" data-action="move-pipeline-stage" data-direction="down" data-key="${escapeHTML(stage._key)}" ${index === stages.length - 1 ? 'disabled' : ''} aria-label="Descer ${escapeHTML(stage.name)}">↓ Descer</button>${existing ? `<button class="button small danger" type="button" data-action="request-pipeline-archive" data-key="${escapeHTML(stage._key)}" aria-label="Arquivar ${escapeHTML(stage.name)}">Arquivar</button>` : ''}</div>
           <p class="stage-error" role="alert">${escapeHTML(stage.error || '')}</p>
         </article>`;
       }).join('');
       const conflict = pipelineEditorConflict ? `<div class="pipeline-conflict" role="alert"><span>O funil foi alterado em outra sessão. Sua edição local foi preservada; recarregue para ver a versão atual.</span><button class="button small" type="button" data-action="reload-pipeline-editor">Recarregar funil</button></div>` : '';
-      return `<div class="page-toolbar"><div><h2>Funil de negócios</h2><p>Versão ${dealPipeline.pipelineVersion} · nomes e cores são editáveis; tipo semântico e automação interna são imutáveis.</p></div><div class="toolbar-actions"><button class="button" type="button" data-action="add-pipeline-stage">+ Adicionar etapa</button><button class="button primary" type="button" data-action="save-pipeline-editor" ${pipelineEditorSaving ? 'disabled' : ''}>${pipelineEditorSaving ? 'Salvando…' : 'Salvar funil'}</button></div></div><section class="pipeline-editor" aria-label="Editor do funil">${conflict}<p class="pipeline-editor-status" id="pipelineEditorStatus" role="status">${pipelineEditorDirty ? 'Alterações ainda não salvas.' : 'Funil sincronizado com o servidor.'}</p><div class="pipeline-stage-list">${rows}</div></section>`;
+      return `<div class="page-toolbar"><div><h2>Funil de negócios</h2><p>Versão ${dealPipeline.pipelineVersion} · nomes e cores são editáveis; tipo semântico e automação interna são imutáveis.</p></div><div class="toolbar-actions"><button class="button" type="button" data-action="add-pipeline-stage">+ Adicionar etapa</button><button class="button primary" type="button" data-action="save-pipeline-editor" ${pipelineEditorSaving ? 'disabled' : ''}>${pipelineEditorSaving ? 'Salvando…' : 'Salvar funil'}</button></div></div><section class="pipeline-editor" aria-label="Editor do funil">${conflict}<p class="pipeline-editor-status" id="pipelineEditorStatus" role="status">${pipelineEditorDirty ? 'Alterações ainda não salvas.' : 'Funil sincronizado com o servidor.'}</p><div class="pipeline-stage-list">${rows}</div></section>${pipelineHistoryHTML()}`;
     }
 
     function syncPipelineEditorDraftFromDom() {
@@ -1977,6 +2075,116 @@
       return true;
     }
 
+    function pipelineArchiveSemanticMessage(source, target) {
+      if (!target) return 'Escolha uma etapa ativa diferente.';
+      if (source.semanticType === target.semanticType) {
+        if (target.semanticType === 'open') return 'Os negócios permanecem em andamento; apenas mudam de etapa.';
+        return `Os negócios permanecem com o resultado ${pipelineSemanticLabel(target.semanticType)}.`;
+      }
+      if (target.semanticType === 'won') return 'Atenção: todos os negócios transferidos serão marcados como ganhos.';
+      if (target.semanticType === 'lost') return 'Atenção: todos os negócios transferidos serão marcados como perdidos.';
+      return 'Atenção: negócios encerrados voltarão a ficar em andamento.';
+    }
+
+    function updatePipelineArchiveSemantic() {
+      if (!pipelineArchiveContext) return;
+      const targetId = document.getElementById('pipelineArchiveTarget').value;
+      const target = pipelineArchiveContext.targets.find(stage => stage.id === targetId);
+      document.getElementById('pipelineArchiveSemantic').textContent = pipelineArchiveSemanticMessage(pipelineArchiveContext.source, target);
+      document.getElementById('pipelineArchiveError').textContent = '';
+    }
+
+    function closePipelineArchive() {
+      const dialog = document.getElementById('pipelineArchiveDialog');
+      if (dialog.open) dialog.close();
+      pipelineArchiveContext = null;
+    }
+
+    async function requestPipelineStageArchive(key) {
+      if (currentUser().role !== 'Administrador' || !dealPipeline || !pipelineEditorDraft || pipelineEditorSaving) return false;
+      syncPipelineEditorDraftFromDom();
+      const source = pipelineEditorDraft.stages.find(stage => stage._key === key && stage.id);
+      if (!source) return false;
+      try {
+        const deletedPayload = await responseJson(await apiFetch('/api/workspace/deleted?module=deals', { headers: { Accept: 'application/json' } }));
+        const activeCount = (state.deals || []).filter(deal => deal.stageId === source.id).length;
+        const deletedCount = (deletedPayload.records || []).filter(deal => deal.stageId === source.id).length;
+        const targets = pipelineEditorDraft.stages.filter(stage => stage.id && stage.id !== source.id && stage.active !== false);
+        pipelineArchiveContext = { source: clone(source), activeCount, deletedCount, total: activeCount + deletedCount, targets };
+        if (pipelineArchiveContext.total === 0) return submitPipelineStageArchive(null);
+
+        const dialog = document.getElementById('pipelineArchiveDialog');
+        document.getElementById('pipelineArchiveCount').textContent = `${pipelineArchiveContext.total} negócios serão transferidos (${activeCount} ativos e ${deletedCount} ${deletedCount === 1 ? 'excluído' : 'excluídos'}). A etapa “${source.name}” será arquivada.`;
+        document.getElementById('pipelineArchiveTarget').innerHTML = `<option value="">Selecione uma etapa</option>${targets.map(stage => `<option value="${escapeHTML(stage.id)}">${escapeHTML(stage.name)} · ${escapeHTML(pipelineSemanticLabel(stage.semanticType))}</option>`).join('')}`;
+        document.getElementById('pipelineArchiveSemantic').textContent = 'Escolha uma etapa ativa diferente.';
+        document.getElementById('pipelineArchiveError').textContent = '';
+        dialog.showModal();
+        return true;
+      } catch (failure) {
+        setPipelineEditorStatus('Não foi possível conferir os negócios da etapa. Nenhuma alteração foi aplicada.', true);
+        return false;
+      }
+    }
+
+    async function submitPipelineStageArchive(targetId) {
+      if (currentUser().role !== 'Administrador' || !pipelineArchiveContext || pipelineEditorSaving) return false;
+      const context = pipelineArchiveContext;
+      const selectedTargetId = targetId ?? document.getElementById('pipelineArchiveTarget').value;
+      if (context.total > 0 && !context.targets.some(stage => stage.id === selectedTargetId)) {
+        document.getElementById('pipelineArchiveError').textContent = 'Escolha uma etapa ativa diferente.';
+        return false;
+      }
+      let activePosition = 0;
+      const payload = {
+        pipelineVersion: dealPipeline.pipelineVersion,
+        workspaceVersion: dealPipeline.workspaceVersion,
+        defaultStageId: pipelineEditorDraft.defaultStageId,
+        stages: pipelineEditorDraft.stages.map((stage, index) => {
+          const archived = stage.id === context.source.id;
+          const canonical = archived ? stageById(stage.id) : null;
+          return {
+            ...(stage.id ? { id: stage.id } : {}),
+            name: canonical?.name || stage.name,
+            semanticType: canonical?.semanticType || stage.semanticType,
+            color: canonical?.color || stage.color,
+            position: archived ? index : activePosition++,
+            archived
+          };
+        }),
+        transfers: context.total > 0 ? { [context.source.id]: selectedTargetId } : {}
+      };
+      pipelineEditorSaving = true;
+      const submit = document.querySelector('#pipelineArchiveForm button[type="submit"]');
+      if (submit) { submit.disabled = true; submit.textContent = 'Aplicando…'; }
+      try {
+        const updated = await responseJson(await apiFetch('/api/deal-pipeline', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload)
+        }));
+        dealPipeline = updated;
+        workspaceVersion = updated.workspaceVersion;
+        resetPipelineEditorDraft();
+        closePipelineArchive();
+        await loadCanonicalWorkspace();
+        resetPipelineHistory();
+        await loadPipelineHistory();
+        showToast(context.total ? `${context.total} negócios transferidos e etapa arquivada.` : 'Etapa arquivada com sucesso.');
+        return true;
+      } catch (failure) {
+        const message = failure.status === 422
+          ? (failure.message || 'A etapa de destino ficou indisponível.')
+          : failure.status === 409
+            ? 'O funil mudou em outra sessão. Recarregue antes de transferir.'
+            : 'Operação revertida: nenhuma etapa ou negócio foi alterado.';
+        if (document.getElementById('pipelineArchiveDialog').open) document.getElementById('pipelineArchiveError').textContent = message;
+        else setPipelineEditorStatus(message, true);
+        return false;
+      } finally {
+        pipelineEditorSaving = false;
+        const button = document.querySelector('#pipelineArchiveForm button[type="submit"]');
+        if (button) { button.disabled = false; button.textContent = 'Arquivar e transferir'; }
+      }
+    }
+
     async function reloadPipelineEditor() {
       if (currentUser().role !== 'Administrador') return false;
       await loadDealPipeline();
@@ -2010,6 +2218,8 @@
         resetPipelineEditorDraft();
         writeLocalState();
         render();
+        resetPipelineHistory();
+        await loadPipelineHistory();
         showToast('Funil atualizado com sucesso.');
         return true;
       } catch (failure) {
@@ -2144,6 +2354,7 @@
       document.getElementById('topSubtitle').textContent = subtitle;
       if (closeMobile) toggleSidebar(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (view === 'pipeline-admin' && currentUser().role === 'Administrador' && pipelineHistoryState.items === null && !pipelineHistoryState.loading) void loadPipelineHistory();
     }
 
     const formDefinitions = {
@@ -3017,6 +3228,10 @@
       if (action === 'move-pipeline-stage') movePipelineStage(button.dataset.key, button.dataset.direction);
       if (action === 'save-pipeline-editor') savePipelineEditor();
       if (action === 'reload-pipeline-editor') reloadPipelineEditor();
+      if (action === 'request-pipeline-archive') requestPipelineStageArchive(button.dataset.key);
+      if (action === 'cancel-pipeline-archive') closePipelineArchive();
+      if (action === 'pipeline-history-older') loadOlderPipelineHistory();
+      if (action === 'pipeline-history-newer') loadNewerPipelineHistory();
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
       if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
@@ -3068,6 +3283,7 @@
       if (event.target.id === 'customFieldType') document.getElementById('customFieldOptionsWrap').hidden = !['select', 'multiselect'].includes(event.target.value);
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }
       if (event.target.name === 'pipeline-default-stage') { syncPipelineEditorDraftFromDom(); pipelineEditorDirty = true; setPipelineEditorStatus('Alterações ainda não salvas.'); }
+      if (event.target.id === 'pipelineArchiveTarget') updatePipelineArchiveSemantic();
       if (event.target.name === 'filter-operator' && event.target.closest('#filterDialog')) { syncFilterDraftFromPanel(); renderFilterPanel(); }
       if (event.target.dataset.stageControl) {
         if (!requireWritableWorkspace()) { render(); return; }
@@ -3081,6 +3297,7 @@
     document.getElementById('bitrixImportForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) importBitrixSample(event.currentTarget); });
     document.getElementById('filterForm').addEventListener('submit', event => { event.preventDefault(); applyFilterPanel(); });
     document.getElementById('userForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveUser(event.currentTarget); });
+    document.getElementById('pipelineArchiveForm').addEventListener('submit', event => { event.preventDefault(); submitPipelineStageArchive(document.getElementById('pipelineArchiveTarget').value); });
     document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));
     document.getElementById('sidebarOverlay').addEventListener('click', () => toggleSidebar(false));
     document.getElementById('entityDrawerOverlay').addEventListener('click', () => closeEntityDrawer());

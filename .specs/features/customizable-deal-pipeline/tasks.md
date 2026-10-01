@@ -322,6 +322,8 @@ T10 → T11 → T12
 
 ### T10: Add transfer confirmation and audit history UI
 
+**Status**: ✅ Complete
+
 **What**: Add archive/transfer confirmation, semantic impact summary and paginated administrative history.  
 **Where**: `app/static/index.html`  
 **Depends on**: T9  
@@ -335,12 +337,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Empty stage can archive directly; occupied stage modal requires an active different destination.
-- [ ] Modal shows total including soft-deleted records and warns when semantic outcome changes.
-- [ ] Success refreshes pipeline/workspace versions; failure leaves local state consistent with server.
-- [ ] History renders actor, instant, action, before/after and transfer summary 50 at a time.
-- [ ] Browser tests cover cancel, each semantic destination, invalid/stale target, rollback feedback and history permission with at least 14 new assertions.
-- [ ] Build gate passes with no prior test removed/skipped.
+- [x] Empty stage can archive directly; occupied stage modal requires an active different destination.
+- [x] Modal shows total including soft-deleted records and warns when semantic outcome changes.
+- [x] Success refreshes pipeline/workspace versions; failure leaves local state consistent with server.
+- [x] History renders actor, instant, action, before/after and transfer summary 50 at a time.
+- [x] Browser tests cover cancel, each semantic destination, invalid/stale target, rollback feedback and history permission with at least 14 new assertions.
+- [x] Build gate passes with no prior test removed/skipped.
 
 **Tests**: browser e2e  
 **Gate**: build  
