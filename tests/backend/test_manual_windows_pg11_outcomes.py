@@ -285,7 +285,7 @@ def test_policy_emits_separate_exact_alembic_and_loopback_uvicorn_commands():
         "-m", "alembic", "-c", "alembic-control.ini", "current"
     ]
     assert json.loads(tenant_upgrade.stdout) == [
-        "-m", "alembic", "-c", "alembic.ini", "upgrade", "a4c9d2e7f1b6"
+        "-m", "alembic", "-c", "alembic.ini", "upgrade", "c7f3a9d8e2b1"
     ]
     assert json.loads(tenant_current.stdout) == [
         "-m", "alembic", "-c", "alembic.ini", "current"
@@ -313,8 +313,22 @@ def test_initializer_migrates_and_verifies_control_then_selected_tenant_before_p
     assert "$env:SMART_CRM_DATABASE_URL" in initialize
     assert "Assert-SmartCrmAlembicRevision" in initialize
     assert "c01a5d8e4f20" in initialize
-    assert "a4c9d2e7f1b6" in initialize
+    assert "c7f3a9d8e2b1" in initialize
     assert "alembic" not in start.lower()
+
+
+def test_pipeline_release_preserves_side_by_side_identity_hba_and_rollback_contract():
+    deploy = PROJECT_ROOT / "deploy/manual-windows-pg11"
+    readme = (deploy / "LEIA-ME.md").read_text(encoding="utf-8")
+    policy = POLICY.read_text(encoding="utf-8")
+
+    assert "C:\\brbots\\apps\\smart-crm-<SHA>" in readme
+    assert "Nao sobrescreva a release ativa" in readme
+    assert "SmartCRMService" in readme
+    assert "host smartcrm,smartcrm_control all 0.0.0.0/0 reject" in policy
+    assert "restaure a tarefa anterior" in readme
+    assert "Rollback de um tenant nunca redireciona para o banco de outro tenant." in readme
+    assert "c7f3a9d8e2b1" in readme
 
 
 def test_alembic_revision_gate_rejects_wrong_or_unheaded_revision():

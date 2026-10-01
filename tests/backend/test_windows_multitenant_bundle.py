@@ -108,10 +108,13 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
             "app/admin_cli.py",
             "app/fleet.py",
             "app/server.py",
+            "migrations/versions/c7f3a9d8e2b1_add_customizable_deal_pipeline.py",
         } <= names
         assert not any(name.endswith(("server.env", ".bin", ".key")) for name in names)
         manifest = bundle.read("MANIFEST.sha256").decode("utf-8")
         assert "migrations_control/env.py" in manifest
+        assert "migrations/versions/c7f3a9d8e2b1_add_customizable_deal_pipeline.py" in manifest
+        assert "app/fleet.py" in manifest
         assert "argon2_cffi_bindings-25.1.0-cp39-abi3-win_amd64.whl" in manifest
     assert digest_file.read_text(encoding="ascii") == f"{builder.sha256(archive)}  {archive.name}\n"
 

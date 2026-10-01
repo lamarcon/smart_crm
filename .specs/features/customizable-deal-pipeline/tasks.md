@@ -350,6 +350,8 @@ T10 → T11 → T12
 
 ### T11: Advance tenant revisions safely in fleet and package flows
 
+**Status**: ✅ Complete
+
 **What**: Extend explicit fleet migration/package contracts to target the new head and update control revision only after tenant verification.  
 **Where**: `app/fleet.py`  
 **Depends on**: T10  
@@ -363,12 +365,12 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] Migration requires explicit tenant, backup acknowledgement, confirmation and valid target revision.
-- [ ] Database head and identity are verified before `expected_tenant_revision` advances.
-- [ ] Failure leaves the control revision unchanged and reports per-tenant redacted status.
-- [ ] Package/runbook contracts preserve release side-by-side, service identity, HBA boundary and application rollback compatibility.
-- [ ] Fleet/package tests add at least 14 assertions, including failure injection and untouched unselected tenants.
-- [ ] Build gate passes with no prior test removed/skipped.
+- [x] Migration requires explicit tenant, backup acknowledgement, confirmation and valid target revision.
+- [x] Database head and identity are verified before `expected_tenant_revision` advances.
+- [x] Failure leaves the control revision unchanged and reports per-tenant redacted status.
+- [x] Package/runbook contracts preserve release side-by-side, service identity, HBA boundary and application rollback compatibility.
+- [x] Fleet/package tests add at least 14 assertions, including failure injection and untouched unselected tenants.
+- [x] Build gate passes with no prior test removed/skipped.
 
 **Tests**: unit + contract + PostgreSQL integration  
 **Gate**: build  

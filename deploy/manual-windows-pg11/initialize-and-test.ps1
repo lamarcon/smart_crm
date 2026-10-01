@@ -51,7 +51,7 @@ try {
         $tenantCurrent = Get-SmartCrmTenantAlembicCurrentArguments
         $tenantRevision = & ".\.venv\Scripts\python.exe" @tenantCurrent 2>&1
         Assert-SmartCrmCommandSucceeded -ExitCode $LASTEXITCODE -FailureMessage "Nao foi possivel confirmar a revisao do banco tenant smartcrm."
-        Assert-SmartCrmAlembicRevision -Output $tenantRevision -ExpectedRevision "a4c9d2e7f1b6" -DatabaseLabel "tenant smartcrm"
+        Assert-SmartCrmAlembicRevision -Output $tenantRevision -ExpectedRevision "c7f3a9d8e2b1" -DatabaseLabel "tenant smartcrm"
     }
     finally { Pop-Location }
 

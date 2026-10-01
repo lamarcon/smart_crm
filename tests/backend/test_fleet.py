@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
 from app.control_database import ControlDatabase, ControlRepository
-from app.control_models import ControlBase
+from app.control_models import ControlBase, ControlTenant
 from app.fleet import FleetOperationError, FleetService, format_preflight
 from app.security.database_urls import DatabaseTransportSecurityError
 from app.security.secrets import InMemorySecretProvider
@@ -25,6 +25,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 TENANT_HEAD = "c7f3a9d8e2b1"
+PREVIOUS_TENANT_HEAD = "a4c9d2e7f1b6"
 OLD_REVISION = "9f7a2c31d5e8"
 
 
@@ -44,6 +45,11 @@ def fleet_setup():  # noqa: ANN201
         "ready": f"fleet_ready_{suffix}",
         "mismatch": f"fleet_mismatch_{suffix}",
         "old": f"fleet_old_{suffix}",
+        "upgrade": f"fleet_upgrade_{suffix}",
+        "unselected": f"fleet_unselected_{suffix}",
+        "runnerfail": f"fleet_runnerfail_{suffix}",
+        "verifyfail": f"fleet_verifyfail_{suffix}",
+        "controlfail": f"fleet_controlfail_{suffix}",
     }
     with root_engine.begin() as connection:
         for schema in schemas.values():
@@ -56,12 +62,17 @@ def fleet_setup():  # noqa: ANN201
     ControlBase.metadata.create_all(control_engine)
     control_database = ControlDatabase(engine=control_engine)
 
-    tenant_ids = {name: uuid4() for name in ("ready", "mismatch", "old", "outage")}
+    tenant_names = (
+        "ready", "mismatch", "old", "outage", "upgrade", "unselected",
+        "runnerfail", "verifyfail", "controlfail",
+    )
+    tenant_ids = {name: uuid4() for name in tenant_names}
     tenant_urls = {
         name: make_url(TEST_DATABASE_URL).update_query_dict(
             {"options": f"-csearch_path={schemas[name]}"}
         ).render_as_string(hide_password=False)
-        for name in ("ready", "mismatch", "old")
+        for name in schemas
+        if name != "control"
     }
     tenant_urls["outage"] = make_url(TEST_DATABASE_URL).set(port=1, database="missing").render_as_string(hide_password=False)
 
@@ -85,6 +96,21 @@ def fleet_setup():  # noqa: ANN201
         connection.commit()
     old_engine.dispose()
 
+    for name in ("upgrade", "unselected", "runnerfail", "verifyfail", "controlfail"):
+        engine = create_engine(tenant_urls[name])
+        with engine.connect() as connection:
+            command.upgrade(_config(connection), PREVIOUS_TENANT_HEAD)
+            connection.execute(
+                text(
+                    "INSERT INTO tenant_identity "
+                    "(singleton_key, control_tenant_id, workspace_id, schema_contract) "
+                    "VALUES ('identity', :tenant_id, 'default', 'tenant-v1')"
+                ),
+                {"tenant_id": tenant_ids[name]},
+            )
+            connection.commit()
+        engine.dispose()
+
     with control_database.session_scope() as session:
         repository = ControlRepository(session)
         for name, status in (
@@ -92,13 +118,22 @@ def fleet_setup():  # noqa: ANN201
             ("mismatch", "active"),
             ("old", "provisioning"),
             ("outage", "active"),
+            ("upgrade", "active"),
+            ("unselected", "active"),
+            ("runnerfail", "active"),
+            ("verifyfail", "active"),
+            ("controlfail", "active"),
         ):
             tenant = repository.create_tenant(
                 tenant_id=tenant_ids[name],
                 slug=f"cliente-{name}",
                 display_name=f"Cliente {name}",
                 secret_ref=f"db-{name}",
-                expected_tenant_revision=TENANT_HEAD,
+                expected_tenant_revision=(
+                    PREVIOUS_TENANT_HEAD
+                    if name in {"upgrade", "unselected", "runnerfail", "verifyfail", "controlfail"}
+                    else TENANT_HEAD
+                ),
             )
             if status == "active":
                 repository.transition_tenant(tenant.id, "active")
@@ -216,7 +251,7 @@ def test_one_outage_does_not_hide_or_fail_other_tenants(fleet_setup) -> None:  #
     assert (results["cliente-outage"].connected, results["cliente-outage"].code) == (
         False, "unavailable"
     )
-    assert len(results) == 4
+    assert len(results) == 9
 
 
 def test_preflight_selection_never_opens_unselected_tenant(fleet_setup, monkeypatch) -> None:  # noqa: ANN001
@@ -258,15 +293,19 @@ def test_preflight_sanitizes_untrusted_revision_text(fleet_setup) -> None:  # no
     assert "revision=invalid" in output
 
 @pytest.mark.parametrize(
-    ("selection", "backup", "confirmed", "message"),
+    ("selection", "backup", "confirmed", "target_revision", "message"),
     [
-        ([], True, True, "explicit tenant selection is required"),
-        (["cliente-ready"], False, True, "verified backup acknowledgement is required"),
-        (["cliente-ready"], True, False, "operator confirmation is required"),
+        ([], True, True, TENANT_HEAD, "explicit tenant selection is required"),
+        (["cliente-ready"], False, True, TENANT_HEAD, "verified backup acknowledgement is required"),
+        (["cliente-ready"], True, False, TENANT_HEAD, "operator confirmation is required"),
+        (["cliente-ready"], True, True, "", "target revision is required"),
+        (["cliente-ready"], True, True, "head", "target revision must be the packaged tenant head"),
+        (["cliente-ready"], True, True, "missing-revision", "target revision must be the packaged tenant head"),
     ],
 )
 def test_migration_requires_selection_backup_and_confirmation(
-    fleet_setup, selection, backup: bool, confirmed: bool, message: str  # noqa: ANN001
+    fleet_setup, selection, backup: bool, confirmed: bool,
+    target_revision: str, message: str  # noqa: ANN001
 ) -> None:
     service, _control, _secrets, _tenant_ids, _urls = fleet_setup
     calls: list[str] = []
@@ -274,51 +313,62 @@ def test_migration_requires_selection_backup_and_confirmation(
     with pytest.raises(FleetOperationError, match=message):
         service.migrate(
             selection,
+            target_revision=target_revision,
             backup_acknowledged=backup,
             confirmed=confirmed,
-            migration_runner=lambda tenant: calls.append(tenant.slug),
+            migration_runner=lambda tenant, target: calls.append(f"{tenant.slug}:{target}"),
         )
 
     assert calls == []
-
-
-def test_migration_invokes_only_explicitly_selected_tenants(fleet_setup) -> None:  # noqa: ANN001
-    service, _control, _secrets, _tenant_ids, _urls = fleet_setup
-    migrated: list[str] = []
-
-    results = service.migrate(
-        ["cliente-ready"], backup_acknowledged=True, confirmed=True,
-        migration_runner=lambda tenant: migrated.append(tenant.slug),
-        verify_after=False,
-    )
-
-    assert migrated == ["cliente-ready"]
-    assert [(item.slug, item.succeeded, item.code) for item in results] == [
-        ("cliente-ready", True, "migrated")
-    ]
 
 
 def test_migration_continues_after_independent_tenant_failure(fleet_setup) -> None:  # noqa: ANN001
     service, _control, _secrets, _tenant_ids, _urls = fleet_setup
     calls: list[str] = []
 
-    def runner(tenant) -> None:  # noqa: ANN001
-        calls.append(tenant.slug)
-        if tenant.slug == "cliente-ready":
-            raise RuntimeError("dsn=must-not-leak")
+    def runner(tenant, target_revision: str) -> None:  # noqa: ANN001
+        calls.append(f"{tenant.slug}:{target_revision}")
+        raise RuntimeError("dsn=must-not-leak")
 
     results = service.migrate(
-        ["cliente-ready", "cliente-old"],
+        ["cliente-runnerfail", "cliente-ready"],
+        target_revision=TENANT_HEAD,
         backup_acknowledged=True, confirmed=True, migration_runner=runner,
-        verify_after=False,
     )
 
-    assert calls == ["cliente-ready", "cliente-old"]
+    assert calls == [f"cliente-runnerfail:{TENANT_HEAD}"]
     assert [(item.slug, item.succeeded, item.code) for item in results] == [
-        ("cliente-ready", False, "migration_failed"),
-        ("cliente-old", True, "migrated"),
+        ("cliente-runnerfail", False, "migration_failed"),
+        ("cliente-ready", True, "already_current"),
     ]
     assert "dsn=must-not-leak" not in repr(results)
+
+
+def test_migration_invokes_only_explicitly_selected_tenants(fleet_setup) -> None:  # noqa: ANN001
+    service, _control, _secrets, _tenant_ids, tenant_urls = fleet_setup
+    migrated: list[str] = []
+
+    def runner(tenant, target_revision: str) -> None:  # noqa: ANN001
+        migrated.append(tenant.slug)
+        service._run_migration(tenant, target_revision)
+
+    results = service.migrate(
+        ["cliente-runnerfail"],
+        target_revision=TENANT_HEAD,
+        backup_acknowledged=True,
+        confirmed=True,
+        migration_runner=runner,
+    )
+
+    unselected_engine = create_engine(tenant_urls["unselected"])
+    with unselected_engine.connect() as connection:
+        unselected_revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
+    unselected_engine.dispose()
+    assert migrated == ["cliente-runnerfail"]
+    assert unselected_revision == PREVIOUS_TENANT_HEAD
+    assert [(item.slug, item.succeeded, item.code) for item in results] == [
+        ("cliente-runnerfail", True, "migrated")
+    ]
 
 
 def test_active_identity_mismatch_is_never_migrated(fleet_setup) -> None:  # noqa: ANN001
@@ -326,8 +376,9 @@ def test_active_identity_mismatch_is_never_migrated(fleet_setup) -> None:  # noq
     calls: list[str] = []
 
     results = service.migrate(
-        ["cliente-mismatch"], backup_acknowledged=True, confirmed=True,
-        migration_runner=lambda tenant: calls.append(tenant.slug),
+        ["cliente-mismatch"], target_revision=TENANT_HEAD,
+        backup_acknowledged=True, confirmed=True,
+        migration_runner=lambda tenant, target: calls.append(f"{tenant.slug}:{target}"),
     )
 
     assert calls == []
@@ -336,35 +387,133 @@ def test_active_identity_mismatch_is_never_migrated(fleet_setup) -> None:  # noq
     ]
 
 
-def test_provisioning_database_without_identity_can_be_migrated_then_activated(fleet_setup) -> None:  # noqa: ANN001
+def test_previous_revision_mismatch_blocks_runner_and_control_update(
+    fleet_setup, monkeypatch
+) -> None:  # noqa: ANN001
+    service, control, _secrets, tenant_ids, _urls = fleet_setup
+    calls: list[str] = []
+    original_probe = service._probe
+
+    def stale_probe(tenant):  # noqa: ANN001, ANN202
+        return replace(original_probe(tenant), revision=PREVIOUS_TENANT_HEAD, ready=False)
+
+    monkeypatch.setattr(service, "_probe", stale_probe)
+    result = service.migrate(
+        ["cliente-ready"], target_revision=TENANT_HEAD,
+        backup_acknowledged=True, confirmed=True,
+        migration_runner=lambda tenant, target: calls.append(f"{tenant.slug}:{target}"),
+    )[0]
+
+    with control.session_scope() as session:
+        tenant = session.get(ControlTenant, tenant_ids["ready"])
+        assert tenant is not None
+        assert tenant.expected_tenant_revision == TENANT_HEAD
+        assert tenant.status == "active"
+    assert calls == []
+    assert (result.succeeded, result.code) == (False, "revision_mismatch")
+
+
+def test_provisioning_database_without_identity_is_not_migrated(fleet_setup) -> None:  # noqa: ANN001
     service, _control, _secrets, _tenant_ids, _urls = fleet_setup
     calls: list[str] = []
 
     results = service.migrate(
-        ["cliente-old"], backup_acknowledged=True, confirmed=True,
-        migration_runner=lambda tenant: calls.append(tenant.slug),
-        verify_after=False,
+        ["cliente-old"], target_revision=TENANT_HEAD,
+        backup_acknowledged=True, confirmed=True,
+        migration_runner=lambda tenant, target: calls.append(f"{tenant.slug}:{target}"),
     )
 
-    assert calls == ["cliente-old"]
-    assert (results[0].succeeded, results[0].code) == (True, "migrated")
+    assert calls == []
+    assert (results[0].succeeded, results[0].code) == (False, "identity_unbound")
 
 
 def test_default_runner_upgrades_only_selected_schema(fleet_setup) -> None:  # noqa: ANN001
-    service, _control, _secrets, _tenant_ids, tenant_urls = fleet_setup
+    service, control, _secrets, tenant_ids, tenant_urls = fleet_setup
 
     results = service.migrate(
-        ["cliente-old"], backup_acknowledged=True, confirmed=True,
+        ["cliente-upgrade"], target_revision=TENANT_HEAD,
+        backup_acknowledged=True, confirmed=True,
     )
 
-    engine = create_engine(tenant_urls["old"])
-    with engine.connect() as connection:
-        revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-    engine.dispose()
-    assert revision == TENANT_HEAD
-    assert (results[0].succeeded, results[0].code) == (
-        True, "migrated_pending_activation"
+    revisions = {}
+    for name in ("upgrade", "unselected"):
+        engine = create_engine(tenant_urls[name])
+        with engine.connect() as connection:
+            revisions[name] = connection.scalar(text("SELECT version_num FROM alembic_version"))
+        engine.dispose()
+    with control.session_scope() as session:
+        selected = session.get(ControlTenant, tenant_ids["upgrade"])
+        unselected = session.get(ControlTenant, tenant_ids["unselected"])
+        assert selected is not None
+        assert unselected is not None
+        assert (selected.expected_tenant_revision, selected.status, selected.profile_version) == (
+            TENANT_HEAD, "active", 2
+        )
+        assert (unselected.expected_tenant_revision, unselected.status, unselected.profile_version) == (
+            PREVIOUS_TENANT_HEAD, "active", 1
+        )
+    assert revisions == {"upgrade": TENANT_HEAD, "unselected": PREVIOUS_TENANT_HEAD}
+    assert [(item.slug, item.succeeded, item.code) for item in results] == [
+        ("cliente-upgrade", True, "migrated")
+    ]
+
+
+def test_post_migration_identity_failure_keeps_control_revision_and_status(fleet_setup) -> None:  # noqa: ANN001
+    service, control, _secrets, tenant_ids, tenant_urls = fleet_setup
+
+    def corrupt_identity_after_upgrade(tenant, target_revision: str) -> None:  # noqa: ANN001
+        service._run_migration(tenant, target_revision)
+        engine = create_engine(tenant_urls["verifyfail"])
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE tenant_identity SET control_tenant_id = :tenant_id"),
+                {"tenant_id": uuid4()},
+            )
+        engine.dispose()
+
+    result = service.migrate(
+        ["cliente-verifyfail"], target_revision=TENANT_HEAD,
+        backup_acknowledged=True, confirmed=True,
+        migration_runner=corrupt_identity_after_upgrade,
+    )[0]
+
+    with control.session_scope() as session:
+        tenant = session.get(ControlTenant, tenant_ids["verifyfail"])
+        assert tenant is not None
+        assert tenant.expected_tenant_revision == PREVIOUS_TENANT_HEAD
+        assert tenant.status == "active"
+        assert tenant.profile_version == 1
+    assert (result.slug, result.succeeded, result.code) == (
+        "cliente-verifyfail", False, "verification_failed"
     )
+    assert "smartcrm_local_dev" not in repr(result)
+
+
+def test_control_update_failure_is_redacted_and_does_not_publish_revision(
+    fleet_setup, monkeypatch
+) -> None:  # noqa: ANN001
+    service, control, _secrets, tenant_ids, tenant_urls = fleet_setup
+
+    def fail_control_update(*_args, **_kwargs):  # noqa: ANN002, ANN003, ANN202
+        raise RuntimeError("postgresql://user:plain-secret@control/db")
+
+    monkeypatch.setattr(service, "_advance_control_revision", fail_control_update)
+    result = service.migrate(
+        ["cliente-controlfail"], target_revision=TENANT_HEAD,
+        backup_acknowledged=True, confirmed=True,
+    )[0]
+
+    engine = create_engine(tenant_urls["controlfail"])
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == TENANT_HEAD
+    engine.dispose()
+    with control.session_scope() as session:
+        tenant = session.get(ControlTenant, tenant_ids["controlfail"])
+        assert tenant is not None
+        assert tenant.expected_tenant_revision == PREVIOUS_TENANT_HEAD
+        assert tenant.status == "active"
+    assert (result.succeeded, result.code) == (False, "control_update_failed")
+    assert "plain-secret" not in repr(result)
 
 
 def test_web_routes_never_expose_fleet_migration(fleet_setup) -> None:  # noqa: ANN001

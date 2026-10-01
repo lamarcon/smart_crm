@@ -10,6 +10,7 @@ from uuid import UUID
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -49,7 +50,7 @@ class FleetMigrationResult:
     code: str
 
 
-MigrationRunner = Callable[[ControlTenant], None]
+MigrationRunner = Callable[[ControlTenant, str], None]
 
 
 class FleetService:
@@ -157,26 +158,71 @@ class FleetService:
     def preflight(self, selectors: Sequence[str] | None = None) -> list[FleetPreflightResult]:
         return [self._probe(tenant) for tenant in self._select(selectors)]
 
-    def _run_migration(self, tenant: ControlTenant) -> None:
+    def _packaged_head(self) -> str:
+        try:
+            config = Config()
+            config.set_main_option("script_location", str(self._migrations_dir))
+            head = ScriptDirectory.from_config(config).get_current_head()
+        except Exception:
+            raise FleetOperationError("packaged tenant head is invalid") from None
+        if head is None or not _REVISION_PATTERN.fullmatch(head):
+            raise FleetOperationError("packaged tenant head is invalid")
+        return head
+
+    def _validate_target_revision(self, target_revision: str) -> str:
+        if not target_revision:
+            raise FleetOperationError("target revision is required")
+        if (
+            not _REVISION_PATTERN.fullmatch(target_revision)
+            or target_revision != self._packaged_head()
+        ):
+            raise FleetOperationError("target revision must be the packaged tenant head")
+        return target_revision
+
+    def _run_migration(self, tenant: ControlTenant, target_revision: str) -> None:
         engine = self._engine(tenant)
         try:
             with engine.connect() as connection:
                 config = Config()
                 config.set_main_option("script_location", str(self._migrations_dir))
                 config.attributes["connection"] = connection
-                command.upgrade(config, "head")
+                command.upgrade(config, target_revision)
                 connection.commit()
         finally:
             engine.dispose()
+
+    def _advance_control_revision(
+        self,
+        tenant: ControlTenant,
+        *,
+        previous_revision: str,
+        target_revision: str,
+    ) -> bool:
+        with self._control_database.session_scope() as session:
+            current = session.scalar(
+                select(ControlTenant)
+                .where(ControlTenant.id == tenant.id)
+                .with_for_update()
+            )
+            if (
+                current is None
+                or current.status != tenant.status
+                or current.expected_tenant_revision != previous_revision
+            ):
+                return False
+            current.expected_tenant_revision = target_revision
+            current.profile_version += 1
+            session.flush()
+            return True
 
     def migrate(
         self,
         selectors: Sequence[str],
         *,
+        target_revision: str,
         backup_acknowledged: bool,
         confirmed: bool,
         migration_runner: MigrationRunner | None = None,
-        verify_after: bool = True,
     ) -> list[FleetMigrationResult]:
         if not selectors:
             raise FleetOperationError("explicit tenant selection is required")
@@ -184,6 +230,7 @@ class FleetService:
             raise FleetOperationError("verified backup acknowledgement is required")
         if not confirmed:
             raise FleetOperationError("operator confirmation is required")
+        target_revision = self._validate_target_revision(target_revision)
 
         tenants = self._select(selectors)
         runner = migration_runner or self._run_migration
@@ -193,38 +240,60 @@ class FleetService:
             if not before.connected:
                 results.append(FleetMigrationResult(tenant.id, tenant.slug, False, "unavailable"))
                 continue
-            if tenant.status == "active" and before.identity_matches is not True:
+            if before.identity_matches is not True:
+                code = (
+                    "identity_unbound"
+                    if before.identity_matches is None
+                    else "identity_mismatch"
+                )
                 results.append(
-                    FleetMigrationResult(tenant.id, tenant.slug, False, "identity_mismatch")
+                    FleetMigrationResult(tenant.id, tenant.slug, False, code)
+                )
+                continue
+            if before.revision != tenant.expected_tenant_revision:
+                results.append(
+                    FleetMigrationResult(tenant.id, tenant.slug, False, "revision_mismatch")
+                )
+                continue
+            if before.revision == target_revision:
+                results.append(
+                    FleetMigrationResult(tenant.id, tenant.slug, True, "already_current")
                 )
                 continue
             try:
-                runner(tenant)
+                runner(tenant, target_revision)
             except Exception:
                 results.append(
                     FleetMigrationResult(tenant.id, tenant.slug, False, "migration_failed")
                 )
                 continue
-            if not verify_after:
-                results.append(FleetMigrationResult(tenant.id, tenant.slug, True, "migrated"))
-                continue
             after = self._probe(tenant)
-            revision_matches = after.revision == tenant.expected_tenant_revision
-            identity_valid = after.identity_matches is True or (
-                tenant.status == "provisioning" and after.identity_matches is None
-            )
-            if not after.connected or not revision_matches or not identity_valid:
+            if (
+                not after.connected
+                or after.revision != target_revision
+                or after.identity_matches is not True
+            ):
                 results.append(
                     FleetMigrationResult(tenant.id, tenant.slug, False, "verification_failed")
                 )
-            elif tenant.status == "provisioning":
-                results.append(
-                    FleetMigrationResult(
-                        tenant.id, tenant.slug, True, "migrated_pending_activation"
-                    )
+                continue
+            try:
+                advanced = self._advance_control_revision(
+                    tenant,
+                    previous_revision=tenant.expected_tenant_revision,
+                    target_revision=target_revision,
                 )
-            else:
-                results.append(FleetMigrationResult(tenant.id, tenant.slug, True, "migrated"))
+            except Exception:
+                results.append(
+                    FleetMigrationResult(tenant.id, tenant.slug, False, "control_update_failed")
+                )
+                continue
+            if not advanced:
+                results.append(
+                    FleetMigrationResult(tenant.id, tenant.slug, False, "control_revision_changed")
+                )
+                continue
+            results.append(FleetMigrationResult(tenant.id, tenant.slug, True, "migrated"))
         return results
 
 
@@ -246,4 +315,3 @@ def format_preflight(results: Sequence[FleetPreflightResult]) -> str:
             f"code={result.code}"
         )
     return "\n".join(lines)
-
