@@ -2654,6 +2654,10 @@ async function storageEntries(page) {
     ]);
     api.pipeline.stages.forEach(stage => { if (renamed.has(stage.id)) stage.name = renamed.get(stage.id); });
     api.pipeline.pipelineVersion += 1;
+    const billingDeal = api.state.deals.find(deal => deal.id === 'N-16312');
+    billingDeal.responsibleId = 'u-paula';
+    billingDeal.team = 'Vendas CMS';
+    api.state.notifications = api.state.notifications.filter(note => !(/Faturamento/.test(note.text) && /N-16312/.test(note.detail)));
     api.state.deals.forEach(deal => {
       const stage = api.pipeline.stages.find(candidate => candidate.id === deal.stageId);
       deal.stage = stage.name;
@@ -2668,26 +2672,43 @@ async function storageEntries(page) {
     await goTo(page, 'Negócios');
     const initialOption = page.locator('#page-deals [data-stage-segment="Entrada personalizada"]');
     assert.ok(await initialOption.count() > 0);
+    let deal = (await stateFrom(page)).deals.find(candidate => candidate.id === 'N-16312');
+    assert.deepEqual({ responsibleId: deal.responsibleId, team: deal.team }, { responsibleId: 'u-paula', team: 'Vendas CMS' });
+    assert.equal((await stateFrom(page)).notifications.some(note => /Faturamento/.test(note.text) && /N-16312/.test(note.detail)), false);
+    assert.deepEqual(await page.evaluate(dealId => {
+      const candidate = state.deals.find(deal => deal.id === dealId);
+      return { open: isOpen(candidate), won: isWon(candidate), lost: isLost(candidate) };
+    }, 'N-16312'), { open: true, won: false, lost: false });
     const billingTarget = page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' }).locator('[data-stage-segment="Pronto para financeiro"]');
     page.once('dialog', dialog => dialog.accept());
     await billingTarget.click();
-    let deal = (await stateFrom(page)).deals.find(candidate => candidate.id === 'N-16312');
+    deal = (await stateFrom(page)).deals.find(candidate => candidate.id === 'N-16312');
     assert.deepEqual({ stageId: deal.stageId, stage: deal.stage, responsibleId: deal.responsibleId }, {
       stageId: DEAL_STAGE_IDS[5], stage: 'Pronto para financeiro', responsibleId: 'u-billing'
     });
-    assert.equal((await stateFrom(page)).notifications.some(note => /Faturamento/.test(note.text) && /N-16312/.test(note.detail)), true);
+    assert.equal((await stateFrom(page)).notifications.filter(note => /Faturamento/.test(note.text) && /N-16312/.test(note.detail)).length, 1);
 
     page.once('dialog', dialog => dialog.accept());
     await page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' }).locator('[data-stage-segment="Venda concluída"]').click();
     deal = (await stateFrom(page)).deals.find(candidate => candidate.id === 'N-16312');
     assert.equal(deal.stageId, DEAL_STAGE_IDS[6]);
     assert.equal(Number.isNaN(Date.parse(deal.wonAt)), false);
+    assert.deepEqual(await page.evaluate(dealId => {
+      const candidate = state.deals.find(deal => deal.id === dealId);
+      return { open: isOpen(candidate), won: isWon(candidate), lost: isLost(candidate) };
+    }, 'N-16312'), { open: false, won: true, lost: false });
+    assert.equal(await page.locator('#dealNavCount').innerText(), '4');
 
     page.once('dialog', dialog => dialog.accept());
     await page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' }).locator('[data-stage-segment="Venda encerrada"]').click();
     deal = (await stateFrom(page)).deals.find(candidate => candidate.id === 'N-16312');
     assert.equal(deal.stageId, DEAL_STAGE_IDS[7]);
     assert.equal('wonAt' in deal, false);
+    assert.deepEqual(await page.evaluate(dealId => {
+      const candidate = state.deals.find(deal => deal.id === dealId);
+      return { open: isOpen(candidate), won: isWon(candidate), lost: isLost(candidate) };
+    }, 'N-16312'), { open: false, won: false, lost: true });
+    assert.equal(await page.locator('#dealNavCount').innerText(), '4');
 
     await page.getByRole('button', { name: 'Novo Negócio' }).click();
     const dialog = page.locator('#entityDialog');
@@ -2716,6 +2737,47 @@ async function storageEntries(page) {
     assert.equal(await page.evaluate(() => openEntityDialog('deal')), false);
     assert.match(await page.locator('#toastRegion').innerText(), /Funil indisponível/);
   }, { pipelineFailure: true });
+
+  await run('PIPE-UI-03 mantém a ordem canônica nos consumidores do funil', async page => {
+    const api = apiByPage.get(page);
+    api.pipeline.stages.forEach(stage => { stage.name = `Etapa ${String(stage.position + 1).padStart(2, '0')}`; });
+    api.pipeline.stages.reverse();
+    api.pipeline.pipelineVersion += 1;
+    api.state.deals.forEach(deal => {
+      deal.stage = api.pipeline.stages.find(stage => stage.id === deal.stageId).name;
+    });
+    const expected = [...api.pipeline.stages].sort((left, right) => left.position - right.position);
+    const expectedIds = expected.map(stage => stage.id);
+    const expectedNames = expected.map(stage => stage.name);
+    await reloadReady(page);
+
+    await goTo(page, 'Visão geral');
+    assert.deepEqual(await page.locator('[data-pipeline-stage]').evaluateAll(items => items.map(item => item.dataset.pipelineStage)), expectedIds);
+    assert.deepEqual(await page.locator('[data-pipeline-stage] > span:first-child').allTextContents(), expectedNames);
+
+    await goTo(page, 'Negócios');
+    const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Implantação Arkos Estética' });
+    assert.deepEqual(await row.locator('[data-stage-segment]').evaluateAll(items => items.map(item => item.dataset.stageId)), expectedIds);
+    assert.deepEqual(await row.locator('[data-stage-segment]').allTextContents(), expectedNames);
+    assert.deepEqual((await page.locator('[data-stage-filter="deals"] option').allTextContents()).slice(1), expectedNames);
+    assert.deepEqual((await page.locator('[data-stage-filter="deals"] option').evaluateAll(items => items.map(item => item.value))).slice(1), expectedIds);
+
+    await page.getByRole('button', { name: /Filtros/ }).click();
+    const filterOptions = page.locator('#filterDialog [data-filter-field="stage"] select[name="filter-value"] option');
+    assert.deepEqual(await filterOptions.allTextContents(), expectedNames);
+    assert.deepEqual(await filterOptions.evaluateAll(items => items.map(item => item.value)), expectedIds);
+    await page.locator('#filterDialog').getByRole('button', { name: 'Fechar' }).click();
+
+    await page.getByRole('button', { name: 'Novo Negócio' }).click();
+    const formOptions = page.locator('#entityDialog [name="stageId"] option');
+    assert.deepEqual(await formOptions.allTextContents(), expectedNames);
+    assert.deepEqual(await formOptions.evaluateAll(items => items.map(item => item.value)), expectedIds);
+    await page.locator('#entityDialog').getByRole('button', { name: 'Cancelar' }).click();
+
+    await page.getByRole('button', { name: 'Kanban', exact: true }).click();
+    assert.deepEqual(await page.locator('#page-deals .kanban-column').evaluateAll(items => items.map(item => item.dataset.kanbanStage)), expectedIds);
+    assert.deepEqual(await page.locator('#page-deals .kanban-column-head > span:first-child').allTextContents(), expectedNames);
+  });
 
   await run('PIPE-ADMIN-01 edita e salva o agregado versionado com ordenação acessível', async page => {
     const api = apiByPage.get(page);

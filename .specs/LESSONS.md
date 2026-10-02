@@ -152,6 +152,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: .specs/features/secure-multitenancy/validation.md:16 (windows-runtime)
 - last seen: 2026-09-18T19:56:17Z
 
+### L-024 - Assert triggered side effects from a clean pre-action baseline that does not already satisfy the expected outcome
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `ui-side-effects` · harmful: 0
+- features: customizable-deal-pipeline
+- evidence: M5 in .specs/features/customizable-deal-pipeline/validation.md (ui-side-effects)
+- last seen: 2026-10-02T18:42:31Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

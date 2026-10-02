@@ -4,7 +4,7 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 
@@ -385,7 +385,8 @@ def _seed_deal(
 def test_update_creates_renames_recolors_reorders_and_audits_once(
     pipeline_database_url: str,
 ) -> None:
-    service = DealPipelineService()
+    changed_at = datetime(2026, 9, 29, 17, 45, tzinfo=timezone.utc)
+    service = DealPipelineService(clock=lambda: changed_at)
     with _session(pipeline_database_url) as session:
         before = service.load(session, PRINCIPAL)
         request = _update_request(before, add_stage=True)
@@ -411,9 +412,17 @@ def test_update_creates_renames_recolors_reorders_and_audits_once(
         assert sum(stage.initial for stage in result.stages) == 1
         assert result.stages[-1].color == "#ABCDEF"
         assert result.stages[-1].id is not None
+        assert result.stages[-1].semantic_type == "open"
+        assert result.stages[-1].active is True
+        assert result.stages[-1].position == 9
+        persisted_new_stage = session.get(DealPipelineStage, result.stages[-1].id)
+        assert persisted_new_stage.semantic_type == "open"
+        assert persisted_new_stage.archived_at is None
         assert len(audits) == 1
+        assert audits[0].pipeline_id == before.id
         assert audits[0].pipeline_version == result.pipeline_version
         assert audits[0].actor_user_id == ACTOR_ID
+        assert audits[0].created_at.utcoffset() == timedelta(0)
         assert audits[0].before_state["pipelineVersion"] == before.pipeline_version
         assert audits[0].after_state["pipelineVersion"] == result.pipeline_version
         assert {action["type"] for action in audits[0].actions} >= {
@@ -538,6 +547,7 @@ def test_occupied_stage_transfers_active_and_deleted_deals_and_increments_worksp
         )
         deals = session.scalars(select(Deal).order_by(Deal.id)).all()
         histories = session.scalars(select(DealStageHistory).order_by(DealStageHistory.deal_id)).all()
+        archived_source = session.get(DealPipelineStage, source.id)
         event = service.history(session, PRINCIPAL).items[0]
 
         assert result.transfer_counts == {source.id: 2}
@@ -551,6 +561,13 @@ def test_occupied_stage_transfers_active_and_deleted_deals_and_increments_worksp
         assert len(histories) == 2
         assert {history.from_stage_id for history in histories} == {source.id}
         assert {history.to_stage_id for history in histories} == {target.id}
+        assert {history.from_stage for history in histories} == {source.name}
+        assert {history.to_stage for history in histories} == {target.name}
+        assert {history.changed_by_id for history in histories} == {ACTOR_ID}
+        assert all(history.changed_at == changed_at for history in histories)
+        assert all(stage.id != source.id for stage in result.stages)
+        assert archived_source.archived_at == changed_at
+        assert archived_source.system_key == source.system_key
         assert event.transfer_summary == [
             {
                 "sourceStageId": str(source.id),
@@ -559,6 +576,41 @@ def test_occupied_stage_transfers_active_and_deleted_deals_and_increments_worksp
             }
         ]
         assert "record" not in event.transfer_summary[0]
+
+
+def test_occupied_billing_stage_transfer_keeps_key_only_on_archived_source(
+    pipeline_database_url: str,
+) -> None:
+    changed_at = datetime(2026, 9, 29, 18, 45, tzinfo=timezone.utc)
+    service = DealPipelineService(clock=lambda: changed_at)
+    with _session(pipeline_database_url) as session:
+        before = service.load(session, PRINCIPAL)
+        source = next(stage for stage in before.stages if stage.system_key == "billing")
+        target = next(
+            stage
+            for stage in before.stages
+            if stage.semantic_type == "open" and stage.id != source.id
+        )
+        _seed_deal(session, session.get(DealPipelineStage, source.id), deal_id="billing")
+
+        result = service.update(
+            session,
+            PRINCIPAL,
+            _archive_request(before, source.id, target.id),
+        )
+        complete = service.load(session, PRINCIPAL, include_archived=True)
+        archived = next(stage for stage in complete.stages if stage.id == source.id)
+        active_target = next(stage for stage in result.stages if stage.id == target.id)
+        deal = session.get(Deal, "billing")
+
+        assert result.transfer_counts == {source.id: 1}
+        assert deal.stage_id == target.id
+        assert archived.active is False
+        assert archived.archived_at == changed_at
+        assert archived.system_key == "billing"
+        assert active_target.system_key == target.system_key
+        assert active_target.system_key != "billing"
+        assert all(stage.system_key != "billing" for stage in result.stages)
 
 
 @pytest.mark.parametrize(

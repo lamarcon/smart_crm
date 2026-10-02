@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from pathlib import Path
@@ -9,7 +10,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import Request
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -17,7 +18,13 @@ from sqlalchemy.pool import NullPool
 
 from app.auth import AuthSettings, ResolvedPrincipal, unauthenticated_error
 from app.main import create_app
-from app.models import DealPipeline, DealPipelineAuditEvent
+from app.models import (
+    Deal,
+    DealPipeline,
+    DealPipelineAuditEvent,
+    DealPipelineStage,
+    Workspace,
+)
 from app.policies import PrincipalScope
 from app.repositories.pipeline import PipelineScopeError
 from app.services.auth import SessionContext
@@ -154,6 +161,101 @@ def _update_body(response: dict) -> dict:
         ],
         "transfers": {},
     }
+
+
+def _database_snapshot(database_url: str) -> dict:
+    engine = create_engine(database_url, poolclass=NullPool)
+    try:
+        with Session(engine) as session:
+            session.execute(
+                text("SELECT set_config('smartcrm.workspace_id', :workspace_id, true)"),
+                {"workspace_id": WORKSPACE_ID},
+            )
+            return {
+                "pipelineVersion": session.scalar(select(DealPipeline.version)),
+                "workspaceVersion": session.scalar(select(Workspace.version)),
+                "auditCount": session.scalar(
+                    select(func.count()).select_from(DealPipelineAuditEvent)
+                ),
+                "stages": [
+                    tuple(row)
+                    for row in session.execute(
+                        select(
+                            DealPipelineStage.id,
+                            DealPipelineStage.name,
+                            DealPipelineStage.position,
+                            DealPipelineStage.archived_at,
+                        ).order_by(DealPipelineStage.position, DealPipelineStage.id)
+                    )
+                ],
+                "deals": [
+                    tuple(row)
+                    for row in session.execute(
+                        select(Deal.id, Deal.stage_id, Deal.deleted_at).order_by(Deal.id)
+                    )
+                ],
+            }
+    finally:
+        engine.dispose()
+
+
+def _seed_deal(database_url: str, stage: dict, *, deal_id: str = "api-deal") -> None:
+    engine = create_engine(database_url, poolclass=NullPool)
+    try:
+        with Session(engine) as session, session.begin():
+            session.execute(
+                text("SELECT set_config('smartcrm.workspace_id', :workspace_id, true)"),
+                {"workspace_id": WORKSPACE_ID},
+            )
+            pipeline_id = session.scalar(
+                select(DealPipelineStage.pipeline_id).where(
+                    DealPipelineStage.id == uuid.UUID(stage["id"])
+                )
+            )
+            record = {
+                "id": deal_id,
+                "title": deal_id,
+                "pipelineId": str(pipeline_id),
+                "stageId": stage["id"],
+                "stage": stage["name"],
+                "stageHistory": [],
+            }
+            session.execute(
+                text(
+                    "INSERT INTO deals "
+                    "(id, workspace_id, responsible_id, title, company_text, contact_text, "
+                    "amount, stage, pipeline_id, stage_id, payload) "
+                    "VALUES (:id, 'default', :actor, :id, '', '', 10, :stage, "
+                    ":pipeline_id, :stage_id, CAST(:payload AS jsonb))"
+                ),
+                {
+                    "id": deal_id,
+                    "actor": ACTOR_ID,
+                    "stage": stage["name"],
+                    "pipeline_id": pipeline_id,
+                    "stage_id": uuid.UUID(stage["id"]),
+                    "payload": json.dumps({"position": 0, "record": record}),
+                },
+            )
+    finally:
+        engine.dispose()
+
+
+def _archive_body(
+    response: dict,
+    *source_ids: str,
+    transfers: dict[str, str] | None = None,
+) -> dict:
+    body = _update_body(response)
+    archived = set(source_ids)
+    next_position = 0
+    for stage in body["stages"]:
+        stage["archived"] = stage["id"] in archived
+        if not stage["archived"]:
+            stage["position"] = next_position
+            next_position += 1
+    body["transfers"] = transfers or {}
+    return body
 
 
 def test_pipeline_routes_read_update_and_page_canonical_history(
@@ -312,11 +414,190 @@ def test_validation_conflict_and_forged_identifiers_fail_closed(
     engine.dispose()
 
 
+@pytest.mark.parametrize("bad_name", ["   ", "x" * 81])
+def test_invalid_name_boundaries_return_422_with_path_and_no_write(
+    pipeline_database_url: str,
+    tmp_path: Path,
+    bad_name: str,
+) -> None:
+    client = _client(tmp_path, pipeline_database_url)
+    loaded = client.get("/api/deal-pipeline").json()
+    body = _update_body(loaded)
+    body["stages"][0]["name"] = bad_name
+    before = _database_snapshot(pipeline_database_url)
+
+    response = client.put(
+        "/api/deal-pipeline", json=body, headers={"origin": ORIGIN}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert response.json()["error"]["path"] == "body.stages.0.name"
+    assert _database_snapshot(pipeline_database_url) == before
+
+
+def test_outer_whitespace_and_case_duplicate_returns_422_and_no_write(
+    pipeline_database_url: str,
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path, pipeline_database_url)
+    loaded = client.get("/api/deal-pipeline").json()
+    body = _update_body(loaded)
+    body["stages"][0]["name"] = "  Mesmo Nome  "
+    body["stages"][1]["name"] = "mesmo nome"
+    before = _database_snapshot(pipeline_database_url)
+
+    response = client.put(
+        "/api/deal-pipeline", json=body, headers={"origin": ORIGIN}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "pipeline_stage_name_duplicate"
+    assert response.json()["error"]["path"] == "stages[1].name"
+    assert _database_snapshot(pipeline_database_url) == before
+
+
+def test_fifty_first_active_stage_returns_422_and_no_write(
+    pipeline_database_url: str,
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path, pipeline_database_url)
+    loaded = client.get("/api/deal-pipeline").json()
+    body = _update_body(loaded)
+    for position in range(len(body["stages"]), 51):
+        body["stages"].append(
+            {
+                "name": f"Etapa {position}",
+                "semanticType": "open",
+                "color": "#123ABC",
+                "position": position,
+                "archived": False,
+            }
+        )
+    before = _database_snapshot(pipeline_database_url)
+
+    response = client.put(
+        "/api/deal-pipeline", json=body, headers={"origin": ORIGIN}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert response.json()["error"]["path"] == "body"
+    assert _database_snapshot(pipeline_database_url) == before
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_code", "expected_path_kind"),
+    [
+        ("missing", "pipeline_archive_target_required", "transfer"),
+        ("self", "validation_error", "body"),
+        ("archived", "pipeline_archive_target_invalid", "transfer"),
+        ("foreign", "pipeline_archive_target_invalid", "transfer"),
+    ],
+)
+def test_invalid_archive_targets_return_422_with_stable_code_and_no_write(
+    pipeline_database_url: str,
+    tmp_path: Path,
+    case: str,
+    expected_code: str,
+    expected_path_kind: str,
+) -> None:
+    client = _client(tmp_path, pipeline_database_url)
+    loaded = client.get("/api/deal-pipeline").json()
+    source = loaded["stages"][1]
+    target = loaded["stages"][2]
+    _seed_deal(pipeline_database_url, source)
+    if case == "missing":
+        body = _archive_body(loaded, source["id"])
+    elif case == "self":
+        body = _archive_body(
+            loaded,
+            source["id"],
+            transfers={source["id"]: source["id"]},
+        )
+    elif case == "archived":
+        body = _archive_body(
+            loaded,
+            source["id"],
+            target["id"],
+            transfers={source["id"]: target["id"]},
+        )
+    else:
+        body = _archive_body(
+            loaded,
+            source["id"],
+            transfers={source["id"]: str(uuid.uuid4())},
+        )
+    before = _database_snapshot(pipeline_database_url)
+
+    response = client.put(
+        "/api/deal-pipeline", json=body, headers={"origin": ORIGIN}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == expected_code
+    expected_path = (
+        "body"
+        if expected_path_kind == "body"
+        else f"transfers.{source['id']}"
+    )
+    assert response.json()["error"]["path"] == expected_path
+    assert _database_snapshot(pipeline_database_url) == before
+
+
+@pytest.mark.parametrize("semantic_type", ["open", "won", "lost"])
+def test_archiving_last_semantic_stage_returns_422_and_no_write(
+    pipeline_database_url: str,
+    tmp_path: Path,
+    semantic_type: str,
+) -> None:
+    client = _client(tmp_path, pipeline_database_url)
+    loaded = client.get("/api/deal-pipeline").json()
+    sources = [
+        stage["id"]
+        for stage in loaded["stages"]
+        if stage["semanticType"] == semantic_type
+    ]
+    body = _archive_body(loaded, *sources)
+    before = _database_snapshot(pipeline_database_url)
+
+    response = client.put(
+        "/api/deal-pipeline", json=body, headers={"origin": ORIGIN}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "pipeline_semantic_minimum"
+    assert response.json()["error"]["path"] == "stages"
+    assert _database_snapshot(pipeline_database_url) == before
+
+
+def test_archiving_current_default_without_replacement_returns_422_and_no_write(
+    pipeline_database_url: str,
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path, pipeline_database_url)
+    loaded = client.get("/api/deal-pipeline").json()
+    body = _archive_body(loaded, loaded["defaultStageId"])
+    before = _database_snapshot(pipeline_database_url)
+
+    response = client.put(
+        "/api/deal-pipeline", json=body, headers={"origin": ORIGIN}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "pipeline_default_stage_invalid"
+    assert response.json()["error"]["path"] == "defaultStageId"
+    assert _database_snapshot(pipeline_database_url) == before
+
+
 class _FailingPipelineService:
     def __init__(self, failure: Exception) -> None:
         self.failure = failure
 
     def load(self, *_args, **_kwargs):  # noqa: ANN002, ANN003, ANN201
+        raise self.failure
+
+    def update(self, *_args, **_kwargs):  # noqa: ANN002, ANN003, ANN201
         raise self.failure
 
 
@@ -349,3 +630,35 @@ def test_pipeline_dependency_failures_return_redacted_stable_503(
     assert response.headers["cache-control"] == "no-store"
     assert "secret" not in response.text
     assert "foreign" not in response.text
+
+
+def test_tenant_database_failure_during_put_returns_503_without_fallback_or_write(
+    pipeline_database_url: str,
+    tmp_path: Path,
+) -> None:
+    loaded = _client(tmp_path, pipeline_database_url).get("/api/deal-pipeline").json()
+    body = _update_body(loaded)
+    body["stages"][0]["name"] = "Mudança que não pode usar fallback"
+    before = _database_snapshot(pipeline_database_url)
+    failure = OperationalError(
+        "UPDATE postgresql://secret@other-tenant",
+        {},
+        RuntimeError("foreign fallback secret"),
+    )
+    client = _client(
+        tmp_path,
+        pipeline_database_url,
+        pipeline_service=_FailingPipelineService(failure),
+    )
+
+    response = client.put(
+        "/api/deal-pipeline", json=body, headers={"origin": ORIGIN}
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "database_unavailable"
+    assert response.headers["cache-control"] == "no-store"
+    assert "secret" not in response.text
+    assert "foreign" not in response.text
+    assert "other-tenant" not in response.text
+    assert _database_snapshot(pipeline_database_url) == before

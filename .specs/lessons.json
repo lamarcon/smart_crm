@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 24,
+  "next_id": 25,
   "lessons": [
     {
       "id": "L-001",
@@ -421,6 +421,24 @@
       ],
       "created": "2026-09-18T19:56:17Z",
       "last_seen": "2026-09-18T19:56:17Z"
+    },
+    {
+      "id": "L-024",
+      "key": "surviving_mutant::assert triggered side effects from a clean pre action baseline that does not already satisfy the expected outcome",
+      "text": "Assert triggered side effects from a clean pre-action baseline that does not already satisfy the expected outcome",
+      "signal": "surviving_mutant",
+      "scope": "ui-side-effects",
+      "status": "candidate",
+      "features": [
+        "customizable-deal-pipeline"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M5 in .specs/features/customizable-deal-pipeline/validation.md (ui-side-effects)"
+      ],
+      "created": "2026-10-02T18:42:31Z",
+      "last_seen": "2026-10-02T18:42:31Z"
     }
   ]
 }
