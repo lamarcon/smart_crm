@@ -378,8 +378,10 @@ T10 → T11 → T12
 
 ### T12: Publish local release evidence and operator plan
 
+**Status**: ✅ Complete — independent Verifier PASS and structural validation complete
+
 **What**: Update project documentation, traceability and a no-execution deployment checklist after all local gates pass.  
-**Where**: `.specs/features/customizable-deal-pipeline/validation.md`  
+**Where**: `.specs/features/customizable-deal-pipeline/validation.md`
 **Depends on**: T11  
 **Reuses**: Existing README verification commands and Windows side-by-side runbook structure.  
 **Requirement**: PIPE-01, PIPE-02, PIPE-03, PIPE-04, PIPE-05, PIPE-06, PIPE-07
@@ -391,12 +393,23 @@ T10 → T11 → T12
 
 **Done when**:
 
-- [ ] README describes the dynamic pipeline and current production status accurately.
-- [ ] Operator checklist separates backup, upload, preflight, tenant migration, cutover, UAT and rollback; it performs none of them.
-- [ ] Spec traceability cites exact test assertions for all requirements.
-- [ ] Build gate passes with backend/browser counts not lower than baseline and no skip/deletion.
-- [ ] Fresh independent Verifier runs evidence-or-zero plus discrimination sensor and writes PASS to `validation.md`.
-- [ ] `validate_state.py` passes; no push, deploy or remote change occurred.
+- [x] README describes the dynamic pipeline and current production status accurately.
+- [x] Operator checklist separates backup, upload, preflight, tenant migration, cutover, UAT and rollback; it performs none of them.
+- [x] Spec traceability cites exact test assertions for all requirements.
+- [x] Build gate passes with backend/browser counts not lower than baseline and no skip/deletion.
+- [x] Fresh independent Verifier runs evidence-or-zero plus discrimination sensor and writes PASS to `validation.md`.
+- [x] `validate_state.py` passes; no push, deploy or remote change occurred.
+
+**Final local evidence**:
+
+- `python -m compileall -q app`: PASS.
+- `docker compose config --quiet`: PASS.
+- `python -m pytest tests/backend -q`: 666 passed, 5 warnings, 0 skipped; no test was removed, weakened or skipped.
+- `pnpm test`: 106 passed, 0 failed, 0 skipped.
+- `python scripts/verify_demo.py`: 71 passed, 0 failed, using tenant head `c7f3a9d8e2b1`.
+- `validate_spec.py` and `validate_tasks.py`: 0 errors, 0 warnings.
+- Independent Verifier: 47/47 acceptance criteria, 6/6 edge cases and 6/6 behavior-level mutants passed; `validate_state.py` returned 0 errors.
+- No push, deploy or remote change was performed.
 
 **Tests**: structural + full regression — TLC validators, Build gate and independent Verifier  
 **Gate**: build  

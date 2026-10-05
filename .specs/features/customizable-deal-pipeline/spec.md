@@ -212,22 +212,36 @@ O Smart CRM possui nove etapas de Negócio fixadas no HTML e usa o nome visível
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| PIPE-01 | Consultar um funil canônico por empresa | Execute | In Progress — T1-T3,T6,T8 complete |
-| PIPE-02 | Personalizar etapas como Administrador | Execute | In Progress — T1,T4,T6,T9 complete |
-| PIPE-03 | Arquivar com transferência atômica | Execute | In Progress — T3,T5,T7,T10 complete |
-| PIPE-04 | Preservar regras e relatórios após renomear | Execute | In Progress — T2,T5,T7,T8 complete |
-| PIPE-05 | Registrar histórico administrativo | Execute | In Progress — T1,T3-T6,T10 complete |
-| PIPE-06 | Impedir sobrescrita concorrente | Execute | In Progress — T4-T7,T9-T10 complete |
-| PIPE-07 | Migrar e operar sem perda | Execute | In Progress — T2,T7,T11 complete |
+| PIPE-01 | Consultar um funil canônico por empresa | Execute | ✅ Verified — 5/5 ACs |
+| PIPE-02 | Personalizar etapas como Administrador | Execute | ✅ Verified — 9/9 ACs |
+| PIPE-03 | Arquivar com transferência atômica | Execute | ✅ Verified — 9/9 ACs |
+| PIPE-04 | Preservar regras e relatórios após renomear | Execute | ✅ Verified — 7/7 ACs |
+| PIPE-05 | Registrar histórico administrativo | Execute | ✅ Verified — 6/6 ACs |
+| PIPE-06 | Impedir sobrescrita concorrente | Execute | ✅ Verified — 4/4 ACs |
+| PIPE-07 | Migrar e operar sem perda | Execute | ✅ Verified — 7/7 ACs |
 
 **Coverage:** 7 requirements, 7 mapped to tasks, 0 unmapped.
+
+### Evidência por asserção verificada independentemente
+
+Esta tabela registra asserções exatas da implementação commitada. O Verifier independente refez a cobertura, executou o discrimination sensor e publicou o parecer completo em `validation.md`.
+
+| Requirement | Exact test assertion evidence | Outcome anchored in this spec |
+| ----------- | ----------------------------- | ----------------------------- |
+| PIPE-01 | `tests/backend/test_pipeline_api.py:166` — `assert loaded.status_code == 200`<br>`tests/backend/test_pipeline_api.py:170` — `assert [stage["position"] for stage in loaded.json()["stages"]] == list(range(9))`<br>`tests/ui-prototype.spec.cjs:2715` — `assert.equal(await page.getByRole('button', { name: 'Novo Negócio' }).count(), 0)` | Sessão autenticada recebe o funil canônico ordenado; indisponibilidade bloqueia ação dependente sem fallback fixo. |
+| PIPE-02 | `tests/backend/test_pipeline_service.py:407` — `assert result.stages[1].id == before.stages[0].id`<br>`tests/backend/test_pipeline_service.py:408` — `assert result.stages[1].semantic_type == before.stages[0].semantic_type`<br>`tests/backend/test_pipeline_api.py:225` — `assert response.status_code == 403` | Edição preserva identidade/semântica e operações administrativas são negadas a perfis não administradores. |
+| PIPE-03 | `tests/backend/test_pipeline_service.py:543` — `assert result.transfer_counts == {source.id: 2}`<br>`tests/backend/test_pipeline_service.py:548` — `assert deals[0].deleted_at is None and deals[1].deleted_at is not None`<br>`tests/backend/test_pipeline_service.py:729` — `assert source_after.archived_at is None`<br>`tests/backend/test_pipeline_service.py:730` — `assert deal.stage_id == source.id` | Transferência inclui registros ativos e excluídos; falha de auditoria reverte arquivamento e movimentação. |
+| PIPE-04 | `tests/ui-prototype.spec.cjs:2675` — `assert.deepEqual({ stageId: deal.stageId, stage: deal.stage, responsibleId: deal.responsibleId }, { stageId: DEAL_STAGE_IDS[5], stage: 'Pronto para financeiro', responsibleId: 'u-billing' })`<br>`tests/ui-prototype.spec.cjs:2684` — `assert.equal(Number.isNaN(Date.parse(deal.wonAt)), false)`<br>`tests/ui-prototype.spec.cjs:2690` — `assert.equal('wonAt' in deal, false)`<br>`tests/ui-prototype.spec.cjs:2708` — `assert.deepEqual(await stageFilter.evaluate(select => [...select.selectedOptions].map(option => option.value)), [DEAL_STAGE_IDS[6]])` | Renomeação mantém automação por chave, semântica ganho/perda e filtros por ID. |
+| PIPE-05 | `tests/backend/test_pipeline_api.py:194` — `assert history.json()["items"][0]["actorUserId"] == ACTOR_ID`<br>`tests/backend/test_pipeline_repository.py:314` — `assert [event.id for event in page] == [second.id]`<br>`tests/backend/test_pipeline_repository.py:318` — `assert "deals" not in first.before_state`<br>`tests/backend/test_pipeline_repository.py:336` — `assert "update_audit" not in source` | Histórico registra ator, pagina do mais recente e não inclui payload comercial nem operação de edição. |
+| PIPE-06 | `tests/backend/test_pipeline_service.py:451` — `assert captured.value.code == "pipeline_version_conflict"`<br>`tests/backend/test_pipeline_service.py:453` — `assert pipeline.version == before.pipeline_version`<br>`tests/backend/test_pipeline_service.py:476` — `assert sorted(outcomes) == ["conflict", "saved"]`<br>`tests/backend/test_pipeline_service.py:481` — `assert len(service.history(session, PRINCIPAL).items) == 1` | Versão obsoleta não grava; concorrência produz um vencedor e uma única auditoria. |
+| PIPE-07 | `tests/backend/test_tenant_migration_security.py:152` — `assert legacy_fingerprint(connection) == before`<br>`tests/backend/test_tenant_migration_security.py:196` — `assert [row.position for row in rows] == list(range(9))`<br>`tests/backend/test_tenant_migration_security.py:197` — `assert [row.system_key for row in rows] == ["initial", None, None, None, None, "billing", None, None, None]`<br>`tests/backend/test_fleet.py:449` — `assert (selected.expected_tenant_revision, selected.status, selected.profile_version) == (TENANT_HEAD, "active", 2)`<br>`tests/backend/test_fleet.py:452` — `assert (unselected.expected_tenant_revision, unselected.status, unselected.profile_version) == (PREVIOUS_TENANT_HEAD, "active", 1)`<br>`tests/backend/test_fleet.py:483` — `assert tenant.expected_tenant_revision == PREVIOUS_TENANT_HEAD` | Migração preserva dados, semeia o registro legado e avança somente o tenant verificado; falha mantém revisão central. |
 
 ---
 
 ## Success Criteria
 
-- [ ] Um Administrador configura o funil e consulta o histórico sem editar código ou banco manualmente.
-- [ ] Renomear qualquer etapa não altera seus Negócios, tipo semântico, automação ou histórico anterior.
-- [ ] Arquivar uma etapa ocupada transfere 100% dos Negócios ou 0%, nunca parcialmente.
-- [ ] Perfis não administrativos não conseguem alterar configuração nem consultar auditoria por UI ou chamada direta.
-- [ ] A migração preserva contagens e fingerprints comerciais e passa nos gates PostgreSQL 11, backend e navegador.
+- [x] Um Administrador configura o funil e consulta o histórico sem editar código ou banco manualmente.
+- [x] Renomear qualquer etapa não altera seus Negócios, tipo semântico, automação ou histórico anterior.
+- [x] Arquivar uma etapa ocupada transfere 100% dos Negócios ou 0%, nunca parcialmente.
+- [x] Perfis não administrativos não conseguem alterar configuração nem consultar auditoria por UI ou chamada direta.
+- [x] A migração preserva contagens e fingerprints comerciais e passa nos gates PostgreSQL 11, backend e navegador.

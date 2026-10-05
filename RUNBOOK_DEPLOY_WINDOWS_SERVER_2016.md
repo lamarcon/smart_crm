@@ -709,11 +709,16 @@ assinado pelo operador e pelo DBA. Cada linha representa exatamente um banco e c
 | `tenant_id` / `slug` | Vazios somente para `control_database`; explícitos para cada tenant |
 | `database_fingerprint` | Hash aprovado da identidade host/porta/nome, nunca a DSN |
 | `secret_ref` | secret_ref opaco existente no plano de controle; nunca o segredo |
-| `expected_revision` | `c01a5d8e4f20` para controle ou `a4c9d2e7f1b6` para tenant |
+| `expected_revision` | `c01a5d8e4f20` para controle ou `c7f3a9d8e2b1` para tenant |
 | `change_ticket` / `authorized_by` | Mudança, operador e DBA que autorizaram aquele banco |
 | `backup_sha256` | Hash da evidência de backup daquele banco |
 | `restore_rehearsal` | Deve ser exatamente `restore_rehearsal=passed` |
 | `uat_result` | Pendente até a validação isolada do banco/tenant |
+
+A linhagem tenant desta release avança da revisão multiempresa já publicada
+`a4c9d2e7f1b6` para o alvo do funil personalizável `c7f3a9d8e2b1`. O primeiro valor
+é a revisão anterior esperada, não um target alternativo; qualquer outro predecessor
+é drift e bloqueia o preflight.
 
 O conjunto deve conter um `control_database`, o banco `tenant_default` que já possui os
 dados atuais e somente os bancos `tenant_remote` nominalmente escolhidos.
@@ -756,7 +761,7 @@ usa credenciais de migração temporárias e processa uma linhagem por vez:
 3. confirmar exatamente `c01a5d8e4f20` em `alembic_control_version`;
 4. executar preflight redigido com seletores explícitos para os tenants do manifesto;
 5. para cada tenant, aplicar a linhagem `alembic.ini` somente ao banco daquela linha;
-6. confirmar exatamente `a4c9d2e7f1b6`, identidade, contagens e RLS antes de avançar;
+6. confirmar exatamente `c7f3a9d8e2b1`, identidade, contagens e RLS antes de avançar;
 7. registrar sucesso ou falha de cada tenant independentemente, sem ativação automática.
 
 Não passar slug, DSN ou nome do banco pelo navegador. O `FleetService` recebe seletores
@@ -845,6 +850,62 @@ A decisão final deve anexar manifesto assinado, hashes, ensaios de restore, rev
 preflight redigido, contagens, probes de identidade/RLS e UAT por tenant. O go é
 registrado por banco. Qualquer item ausente é no-go para aquele banco, sem ampliar a
 seleção, copiar dados ou reaproveitar a autorização de outro tenant.
+
+## 7.7 Checklist NO-EXECUTION da release do funil personalizável
+
+> **NO-EXECUTION:** esta seção é somente um plano para uma janela futura. Marcar ou revisar
+> os itens abaixo não executa backup, upload, migração, cutover, UAT ou rollback. Nenhum
+> item autoriza acesso ao servidor ou produção. A execução exige ticket, responsáveis,
+> janela e autorização explícita separados deste documento.
+
+### Backup
+
+- [ ] Identificar nominalmente o plano de controle e cada tenant selecionado, sem descoberta automática.
+- [ ] Registrar responsável, horário, tamanho e SHA-256 de cada backup em armazenamento externo imutável.
+- [ ] Confirmar catálogo legível e restauração ensaiada em banco novo e isolado.
+- [ ] Registrar contagens, fingerprints, revisão, RLS e identidade antes da mudança.
+
+### Upload
+
+- [ ] Validar localmente o ZIP offline e seu SHA-256 antes de qualquer transferência.
+- [ ] Planejar uma pasta de release nova e versionada; não sobrescrever a release ativa.
+- [ ] Confirmar que o pacote contém a migração tenant `c7f3a9d8e2b1`, `app/fleet.py` e o manifesto íntegro.
+- [ ] Preservar a release anterior, a tarefa atual e o arquivo de ambiente como rollback recuperável.
+
+### Preflight
+
+- [ ] Confirmar seleção explícita do tenant, backup aprovado, confirmação operacional e target `c7f3a9d8e2b1`.
+- [ ] Confirmar que a revisão anterior do banco coincide com a revisão esperada no plano de controle.
+- [ ] Confirmar `tenant_identity`, `workspace_id`, contrato de schema, RLS e credencial de runtime sem privilégios elevados.
+- [ ] Confirmar que `DW_CMS`, `DW_PRODUTOS`, listener PostgreSQL e regras HBA globais permanecem fora da mudança.
+
+### Migração tenant
+
+- [ ] Planejar migração de um tenant explícito por vez, sem alias `head`, fallback ou execução via aplicação web.
+- [ ] Planejar verificação pós-migração do head, identidade, contagens, vínculos e fingerprints.
+- [ ] Atualizar `expected_tenant_revision` somente depois de head e identidade verificados.
+- [ ] Registrar resultado redigido por tenant; nunca registrar DSN, senha, usuário ou conteúdo DPAPI.
+
+### Cutover
+
+- [ ] Confirmar credencial da mesma conta dedicada `SmartCRMService` usada pelo runtime e DPAPI.
+- [ ] Planejar troca atômica da tarefa para a nova pasta, sem alterar Apache, listener ou bancos não selecionados.
+- [ ] Manter a publicação bloqueada até health local, revisão e identidade retornarem o resultado aprovado.
+- [ ] Registrar decisão go/no-go e responsáveis antes de liberar tráfego.
+
+### UAT
+
+- [ ] Validar login, logout e isolamento do tenant sem fallback para outro banco.
+- [ ] Validar criação e movimentação de Negócio pela etapa inicial configurada e pelos tipos `open`, `won` e `lost`.
+- [ ] Renomear etapa em ambiente autorizado e confirmar Kanban, filtros, indicadores e `system_key=billing`.
+- [ ] Validar editor administrativo, conflito 409, arquivamento/transferência, auditoria e bloqueio a não administradores.
+
+### Rollback
+
+- [ ] Definir critérios objetivos de rollback antes do cutover e manter o banco original intacto.
+- [ ] Planejar restauração da tarefa/release anterior sem downgrade Alembic e sem redirecionar tenant.
+- [ ] Se restauração de dados for indispensável, usar banco novo e isolado e somente o backup do tenant afetado.
+- [ ] Repetir revisão, identidade, RLS e UAT antes de qualquer reativação.
 
 ## 8. Executar como serviço Windows com WinSW
 

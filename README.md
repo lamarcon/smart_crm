@@ -2,7 +2,7 @@
 
 CRM em desenvolvimento para substituir o uso comercial atual do Bitrix24. O repositório contém as especificações do MVP de produção e um protótipo local navegável para validação antecipada do layout e dos fluxos.
 
-**Status:** a implementação multiempresa está disponível e validada localmente, mas não foi implantada. Produção continua inalterada até uma autorização específica de deploy e cutover.
+**Status:** a aplicação multiempresa já está em operação na release atualmente publicada. O funil de Negócios personalizável, com revisão tenant `c7f3a9d8e2b1`, está implementado e validado somente no ambiente local deste repositório. Essa atualização ainda não foi enviada nem aplicada em produção; upload, migração e cutover exigem autorização própria.
 
 ## Modelo multiempresa: plano de controle e bancos dedicados
 
@@ -18,6 +18,16 @@ O banco de controle armazena somente diretório de tenants, referências opacas 
 | Navegador | cookie HttpOnly e preferências visuais namespaced | token de sessão, perfil confiável, snapshot comercial ou segredo de banco |
 
 O roteador abre cada PostgreSQL apenas a partir do `tenant_id` confiável da sessão e da referência guardada no plano de controle. Não existe banco default de fallback: indisponibilidade, revisão incompatível ou identidade divergente falham fechadas somente para o tenant afetado.
+
+## Funil de Negócios personalizável V1
+
+Cada workspace possui um único funil padrão de Negócios nesta versão. As etapas são carregadas do banco tenant e usam UUID imutável como identidade. Nome, cor, ordem e etapa inicial podem ser configurados pelo Administrador sem alterar vínculos existentes. Leads continuam com o processo fixo atual.
+
+Regras, indicadores e automações usam semântica interna (`open`, `won` e `lost`) e `system_key`, nunca o nome visível. A automação de Faturamento permanece vinculada a `system_key=billing`, mesmo depois de renomear a etapa. Se o funil canônico estiver indisponível, a interface bloqueia ações dependentes de etapa e não recorre às nove etapas antigas como fallback.
+
+Arquivar uma etapa vazia não exige destino. Arquivar uma etapa ocupada exige transferir, na mesma transação, todos os Negócios ativos e excluídos logicamente para outra etapa ativa. O histórico administrativo registra ator, instante, versão, ações, antes/depois e resumo da transferência. Somente Administradores podem editar o funil ou consultar essa auditoria.
+
+O código e os gates locais desta V1 estão concluídos até T11. A evidência final e o checklist autoral de T12 aguardam verificação independente antes do commit de release. Nenhum resultado local autoriza deploy ou migração de produção.
 
 ### Setup local com controle + tenant A + tenant B
 
@@ -64,13 +74,17 @@ python -m alembic -c alembic-control.ini current
 $env:SMART_CRM_DATABASE_URL = $tenantAUrl
 python -m alembic -c alembic.ini upgrade a4c9d2e7f1b6
 python -m alembic -c alembic.ini current
+python -m alembic -c alembic.ini upgrade c7f3a9d8e2b1
+python -m alembic -c alembic.ini current
 
 $env:SMART_CRM_DATABASE_URL = $tenantBUrl
 python -m alembic -c alembic.ini upgrade a4c9d2e7f1b6
 python -m alembic -c alembic.ini current
+python -m alembic -c alembic.ini upgrade c7f3a9d8e2b1
+python -m alembic -c alembic.ini current
 ```
 
-No controle, `current deve confirmar c01a5d8e4f20`. Em cada tenant, `current deve confirmar a4c9d2e7f1b6`. Pare se a revisão divergir; não use `stamp`, downgrade ou migração automática para contornar drift.
+No controle, current deve confirmar c01a5d8e4f20. Em cada tenant, o primeiro `current deve confirmar a4c9d2e7f1b6` é o checkpoint da release multiempresa já publicada; o `current` final deve confirmar `c7f3a9d8e2b1`, head local do funil personalizável. Pare se qualquer revisão divergir; não use `stamp`, downgrade ou migração automática para contornar drift.
 
 ### Provisionamento administrativo local
 
@@ -83,8 +97,8 @@ $env:SMART_CRM_TENANT_SECRET_STORE = $secretStore
 $env:SMART_CRM_CONTROL_DATABASE_URL = $controlUrl
 $env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK = "1"
 
-python -m app.admin_cli register-tenant cliente-a --display-name "Cliente A" --secret-ref local-cliente-a --expected-revision a4c9d2e7f1b6
-python -m app.admin_cli register-tenant cliente-b --display-name "Cliente B" --secret-ref local-cliente-b --expected-revision a4c9d2e7f1b6
+python -m app.admin_cli register-tenant cliente-a --display-name "Cliente A" --secret-ref local-cliente-a --expected-revision c7f3a9d8e2b1
+python -m app.admin_cli register-tenant cliente-b --display-name "Cliente B" --secret-ref local-cliente-b --expected-revision c7f3a9d8e2b1
 python -m app.admin_cli activate-default cliente-a --admin-email admin-a@example.test --admin-name "Admin A"
 python -m app.admin_cli resume-provisioning cliente-b --admin-email admin-b@example.test --admin-name "Admin B"
 ```
@@ -148,7 +162,7 @@ O protótipo é uma demonstração funcional com dados fictícios. Ele inclui:
 - busca em todos os campos pesquisáveis e filtros configuráveis por campo, operador, responsável, período e etapa;
 - filtros nomeados salvos por usuário e por módulo no banco;
 - alternância entre Lista e Kanban para Leads e Negócios;
-- Pipeline fixa com barra de etapas segmentada, confirmações para transições protegidas e ação de desfazer;
+- funil canônico de Negócios configurável por Administrador, com IDs estáveis, semântica interna, Kanban, barra segmentada, transferências protegidas e ação de desfazer;
 - conversão demonstrativa de Lead em Negócio;
 - orçamento com cálculo de total e seleção opcional de PDF;
 - automação demonstrativa de atribuição ao Faturamento;
