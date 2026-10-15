@@ -66,13 +66,29 @@
 - **Date**: 2026-09-28
 - **Status**: active
 
+### AD-009
+- **Decision**: Negócios terão uma linha do tempo operacional imutável de movimentações, automações e observações em painel amplo; Empresas terão painel de Negócios por semântica `open`/`won`/`lost` e histórico cadastral próprio, sem tarefas nesta versão.
+- **Reason**: O usuário precisa entender o andamento dentro do card como no Bitrix24 e avaliar o relacionamento comercial da Empresa como no RD Station, sem introduzir agora a complexidade de tarefas e agenda.
+- **Trade-off**: A V1 exige persistência append-only, APIs paginadas e um drawer responsivo maior; tarefas, ticket médio, tempo até a venda e duplicação da atividade dos Negócios na Empresa ficam adiados.
+- **Scope**: Eventos de Negócio, observações, automações, ficha de Empresa, indicadores de Negócios vinculados, autorização e UI responsiva.
+- **Date**: 2026-10-15
+- **Status**: active
+
+### AD-010
+- **Decision**: Históricos operacionais usarão uma tabela tenant append-only dedicada, fora do snapshot do workspace, com APIs por entidade, paginação keyset e automações que alteram estado executadas no servidor.
+- **Reason**: O snapshot atual é substituível pelo navegador e as notificações são mutáveis; nenhum dos dois pode ser a fonte confiável de uma linha do tempo auditável.
+- **Trade-off**: Movimentações passam a escrever tanto o histórico de etapa compatível quanto o fluxo de atividades; isso exige deduplicação determinística, testes de paridade e uma nova revisão tenant.
+- **Scope**: Eventos de Negócio/Empresa, observações, automações, APIs de histórico, indicadores derivados e futuras atividades auditáveis.
+- **Date**: 2026-10-15
+- **Status**: active
+
 ## Handoff
 
-- **Feature**: Funil de Negócios Personalizável V1 / `.specs/features/customizable-deal-pipeline`
-- **Phase / Task**: Execute autorizado; próximo lote é T1-T7 (fases 1-2)
-- **Completed**: decisões recomendadas aprovadas; código, migrações, frontend e testes inspecionados; abordagem relacional com IDs estáveis selecionada; 7 requisitos mapeados em 12 tarefas; `validate_spec.py --strict` e `validate_tasks.py --strict` passaram sem erros ou avisos
-- **In-progress** (file:line): preparação do commit de planejamento aprovado
-- **Next step**: criar commit local do plano e despachar o batch worker sequencial de T1-T7
+- **Feature**: Histórico Operacional de Negócios e Empresas V1 / `.specs/features/deal-company-activity-history`
+- **Phase / Task**: Execute autorizado; baseline anterior à T1 em andamento
+- **Completed**: especificação, arquitetura, tarefas, ferramentas e execução em lotes aprovadas; validadores de spec/tasks com 0 erros e 0 avisos
+- **In-progress** (file:line): `.specs/features/deal-company-activity-history/tasks.md`
+- **Next step**: recapturar baseline, registrar o plano aprovado e iniciar o lote da Fase 1 (T1–T4)
 - **Blockers**: none
-- **Uncommitted files**: novos documentos em `.specs/features/customizable-deal-pipeline/` e atualização de `.specs/STATE.md`; `.pytest-tmp/`, `.specs/features/crm-mvp/tasks.md`, `.venv/`, `smart_crm_demo.egg-info/` permanecem untracked preexistentes
+- **Uncommitted files**: novos documentos em `.specs/features/deal-company-activity-history/` e atualização de `.specs/STATE.md`; preservar demais alterações preexistentes do workspace
 - **Branch**: main
