@@ -79,7 +79,7 @@ T17 → T18
 
 #### T1: Define the append-only activity model
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Add `CrmActivityEvent` with typed subject FKs, actor snapshot, safe details, deterministic dedupe and immutable ordering fields.  
 **Where**: `app/models.py`  
@@ -95,11 +95,11 @@ T17 → T18
 
 **Done when**:
 
-- [ ] The table enforces exactly one Deal/Company subject, valid category/type fields and a unique workspace dedupe key.
-- [ ] Both subject indexes order by workspace, subject, occurrence time descending and ID descending.
-- [ ] Actor name remains a snapshot even if the user later changes or is deactivated.
-- [ ] No update/delete helper or soft-delete column is introduced for events.
-- [ ] Model tests prove every constraint/index/type and the quick gate passes without removing or skipping prior tests.
+- [x] The table enforces exactly one Deal/Company subject, valid category/type fields and a unique workspace dedupe key.
+- [x] Both subject indexes order by workspace, subject, occurrence time descending and ID descending.
+- [x] Actor name remains a snapshot even if the user later changes or is deactivated.
+- [x] No update/delete helper or soft-delete column is introduced for events.
+- [x] Model tests prove every constraint/index/type and the quick gate passes without removing or skipping prior tests.
 
 **Tests**: unit — extend `tests/backend/test_models.py`  
 **Gate**: quick  

@@ -1,8 +1,8 @@
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, PrimaryKeyConstraint, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKeyConstraint, PrimaryKeyConstraint, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql.sqltypes import DateTime, Numeric
 
-from app.models import Base
+from app.models import Base, CrmActivityEvent
 
 
 EXPECTED_TABLES = {
@@ -30,6 +30,7 @@ EXPECTED_TABLES = {
     "deal_pipelines",
     "deal_pipeline_stages",
     "deal_pipeline_audit_events",
+    "crm_activity_events",
 }
 
 
@@ -217,3 +218,81 @@ def test_deals_and_history_reference_stable_stage_ids_without_removing_names() -
     assert history.c.to_stage_id.nullable is False
     assert history.c.from_stage.nullable is True
     assert history.c.to_stage.nullable is False
+
+
+def test_activity_events_define_typed_append_only_payload() -> None:
+    table = Base.metadata.tables["crm_activity_events"]
+
+    assert isinstance(table.c.id.type, BigInteger)
+    assert table.c.workspace_id.nullable is False
+    assert table.c.deal_id.nullable is True
+    assert table.c.company_id.nullable is True
+    assert table.c.actor_user_id.nullable is True
+    assert table.c.actor_name.nullable is False
+    assert isinstance(table.c.details.type, JSONB)
+    assert table.c.details.nullable is False
+    assert isinstance(table.c.occurred_at.type, DateTime)
+    assert table.c.occurred_at.type.timezone is True
+    assert "deleted_at" not in table.c
+    assert "updated_at" not in table.c
+    assert not hasattr(CrmActivityEvent, "update")
+    assert not hasattr(CrmActivityEvent, "delete")
+
+
+def test_activity_events_enforce_subject_category_type_and_dedupe_constraints() -> None:
+    table = Base.metadata.tables["crm_activity_events"]
+    checks = {
+        constraint.name: str(constraint.sqltext)
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    unique_columns = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    foreign_targets = {
+        element.target_fullname
+        for constraint in table.foreign_key_constraints
+        for element in constraint.elements
+    }
+
+    subject_check = checks["ck_crm_activity_events_exactly_one_subject"]
+    assert "deal_id IS NOT NULL AND company_id IS NULL" in subject_check
+    assert "deal_id IS NULL AND company_id IS NOT NULL" in subject_check
+    assert "category IN ('movement', 'automation', 'observation', 'change')" in checks[
+        "ck_crm_activity_events_valid_category"
+    ]
+    assert "length(btrim(event_type)) > 0" in checks[
+        "ck_crm_activity_events_event_type_nonempty"
+    ]
+    assert ("workspace_id", "dedupe_key") in unique_columns
+    assert {
+        "workspaces.id",
+        "deals.id",
+        "companies.id",
+        "crm_users.id",
+    }.issubset(foreign_targets)
+
+
+def test_activity_events_have_descending_partial_subject_indexes() -> None:
+    table = Base.metadata.tables["crm_activity_events"]
+    indexes = {index.name: index for index in table.indexes}
+
+    deal_index = indexes["ix_crm_activity_events_deal_timeline"]
+    company_index = indexes["ix_crm_activity_events_company_timeline"]
+
+    assert [str(expression) for expression in deal_index.expressions] == [
+        "crm_activity_events.workspace_id",
+        "crm_activity_events.deal_id",
+        "crm_activity_events.occurred_at DESC",
+        "crm_activity_events.id DESC",
+    ]
+    assert str(deal_index.dialect_options["postgresql"]["where"]) == "deal_id IS NOT NULL"
+    assert [str(expression) for expression in company_index.expressions] == [
+        "crm_activity_events.workspace_id",
+        "crm_activity_events.company_id",
+        "crm_activity_events.occurred_at DESC",
+        "crm_activity_events.id DESC",
+    ]
+    assert str(company_index.dialect_options["postgresql"]["where"]) == "company_id IS NOT NULL"

@@ -215,15 +215,15 @@ O Smart CRM registra tecnicamente mudanças de etapa, mas o usuário não possui
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| HIST-01 | Consultar a linha do tempo do Negócio | Specify | Planned |
-| HIST-02 | Registrar movimentações e automações atomicamente | Specify | Planned |
-| HIST-03 | Publicar observações manuais imutáveis | Specify | Planned |
+| HIST-01 | Consultar a linha do tempo do Negócio | Execute | In progress (T1 complete) |
+| HIST-02 | Registrar movimentações e automações atomicamente | Execute | In progress (T1 complete) |
+| HIST-03 | Publicar observações manuais imutáveis | Execute | In progress (T1 complete) |
 | HIST-04 | Usar um painel amplo e responsivo no Negócio | Specify | Planned |
 | HIST-05 | Resumir os Negócios vinculados na Empresa | Specify | Planned |
-| HIST-06 | Manter histórico próprio da Empresa | Specify | Planned |
-| HIST-07 | Preservar isolamento e operação segura | Specify | Planned |
+| HIST-06 | Manter histórico próprio da Empresa | Execute | In progress (T1 complete) |
+| HIST-07 | Preservar isolamento e operação segura | Execute | In progress (T1 complete) |
 
-**Coverage:** 7 requirements, 0 mapped to tasks, 7 pending Design/Tasks.
+**Coverage:** 7 requirements mapped to approved tasks; T1 complete, T2-T18 pending.
 
 ---
 

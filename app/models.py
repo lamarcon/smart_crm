@@ -387,6 +387,62 @@ class DealStageHistory(Base):
     changed_by_id: Mapped[str | None] = mapped_column(ForeignKey("crm_users.id", ondelete="RESTRICT"))
 
 
+class CrmActivityEvent(Base):
+    __tablename__ = "crm_activity_events"
+    __table_args__ = (
+        CheckConstraint(
+            "(deal_id IS NOT NULL AND company_id IS NULL) OR "
+            "(deal_id IS NULL AND company_id IS NOT NULL)",
+            name="exactly_one_subject",
+        ),
+        CheckConstraint(
+            "category IN ('movement', 'automation', 'observation', 'change')",
+            name="valid_category",
+        ),
+        CheckConstraint("length(btrim(event_type)) > 0", name="event_type_nonempty"),
+        UniqueConstraint("workspace_id", "dedupe_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
+    deal_id: Mapped[str | None] = mapped_column(ForeignKey("deals.id", ondelete="RESTRICT"))
+    company_id: Mapped[str | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="RESTRICT")
+    )
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("crm_users.id", ondelete="SET NULL")
+    )
+    actor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+Index(
+    "ix_crm_activity_events_deal_timeline",
+    CrmActivityEvent.workspace_id,
+    CrmActivityEvent.deal_id,
+    CrmActivityEvent.occurred_at.desc(),
+    CrmActivityEvent.id.desc(),
+    postgresql_where=text("deal_id IS NOT NULL"),
+)
+Index(
+    "ix_crm_activity_events_company_timeline",
+    CrmActivityEvent.workspace_id,
+    CrmActivityEvent.company_id,
+    CrmActivityEvent.occurred_at.desc(),
+    CrmActivityEvent.id.desc(),
+    postgresql_where=text("company_id IS NOT NULL"),
+)
+
+
 class Quote(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "quotes"
     __table_args__ = (Index("ix_quotes_deal_active", "deal_id", "deleted_at"),)
