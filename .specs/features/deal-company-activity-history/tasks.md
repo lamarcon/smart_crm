@@ -107,7 +107,7 @@ T17 → T18
 
 #### T2: Define strict activity and Company Deal contracts
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Add response, filter, cursor, observation and Company Deal summary/list schemas with fixed money serialization.  
 **Where**: `app/schemas.py`  
@@ -123,11 +123,11 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Category filters accept only movement, automation and observation values.
-- [ ] Observation text trims to 1..4,000 characters and requires a UUID idempotency key.
-- [ ] Cursor and page size contracts cap each page at 50 and reject malformed cursors.
-- [ ] Monetary totals serialize as exact two-decimal strings and list items expose canonical stage semantics.
-- [ ] Schema tests cover every boundary/alias and the quick gate passes without weakening prior assertions.
+- [x] Category filters accept only movement, automation and observation values.
+- [x] Observation text trims to 1..4,000 characters and requires a UUID idempotency key.
+- [x] Cursor and page size contracts cap each page at 50 and reject malformed cursors.
+- [x] Monetary totals serialize as exact two-decimal strings and list items expose canonical stage semantics.
+- [x] Schema tests cover every boundary/alias and the quick gate passes without weakening prior assertions.
 
 **Tests**: unit — extend `tests/backend/test_schemas.py`  
 **Gate**: quick  

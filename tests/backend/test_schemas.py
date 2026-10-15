@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -9,12 +11,21 @@ from pydantic import ValidationError
 from app.schemas import (
     LOGIN_FAILURE_MESSAGE,
     AuthErrorResponse,
+    ActivityActorResponse,
+    ActivityEventResponse,
+    ActivityPage,
+    ActivityQuery,
+    CompanyActivityQuery,
+    CompanyDealMetricResponse,
+    CompanyDealRow,
+    CompanyDealSummaryResponse,
     DealPipelineAuditPage,
     DealPipelineHistoryQuery,
     DealPipelineStageResponse,
     DealPipelineUpdateRequest,
     LocateTenantRequest,
     LoginRequest,
+    ObservationCreateRequest,
     SessionResponse,
     WorkspaceReferenceError,
     WorkspaceState,
@@ -477,4 +488,140 @@ def test_pipeline_response_exposes_immutable_stage_metadata_with_camel_case() ->
     assert DealPipelineAuditPage(items=[]).model_dump(by_alias=True) == {
         "items": [],
         "nextBefore": None,
+    }
+
+
+@pytest.mark.parametrize("category", ["movement", "automation", "observation"])
+def test_activity_query_accepts_only_deal_filter_categories(category: str) -> None:
+    assert ActivityQuery(category=category).category == category
+
+
+@pytest.mark.parametrize("category", ["", "change", "unknown", "MOVEMENT"])
+def test_activity_query_rejects_non_deal_filter_categories(category: str) -> None:
+    with pytest.raises(ValidationError):
+        ActivityQuery(category=category)
+
+
+@pytest.mark.parametrize("category", ["change", "observation"])
+def test_company_activity_query_accepts_own_history_categories(category: str) -> None:
+    assert CompanyActivityQuery(category=category).category == category
+
+
+@pytest.mark.parametrize("text", ["x", " x ", "x" * 4_000])
+def test_observation_contract_trims_and_accepts_text_bounds(text: str) -> None:
+    key = uuid4()
+    request = ObservationCreateRequest(text=text, idempotencyKey=key)
+
+    assert request.text == text.strip()
+    assert request.idempotency_key == key
+    assert request.model_dump(by_alias=True) == {
+        "text": text.strip(),
+        "idempotencyKey": key,
+    }
+
+
+@pytest.mark.parametrize("text", ["", "   ", "x" * 4_001])
+def test_observation_contract_rejects_invalid_text_bounds(text: str) -> None:
+    with pytest.raises(ValidationError):
+        ObservationCreateRequest(text=text, idempotencyKey=uuid4())
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"text": "Nota", "idempotencyKey": "not-a-uuid"},
+        {"text": "Nota"},
+        {"text": "Nota", "idempotencyKey": uuid4(), "actorUserId": "forged"},
+    ],
+)
+def test_observation_contract_requires_uuid_and_forbids_authority_fields(payload: dict) -> None:
+    with pytest.raises(ValidationError):
+        ObservationCreateRequest.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"limit": 0},
+        {"limit": 51},
+        {"cursor": ""},
+        {"cursor": "contains=padding"},
+        {"cursor": "contains spaces"},
+        {"cursor": "a" * 2_049},
+    ],
+)
+def test_activity_query_rejects_page_bounds_and_malformed_cursors(values: dict) -> None:
+    with pytest.raises(ValidationError):
+        ActivityQuery.model_validate(values)
+
+
+def test_activity_page_uses_camel_case_and_caps_items_at_fifty() -> None:
+    occurred_at = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+    event = ActivityEventResponse(
+        id=1,
+        category="movement",
+        eventType="deal.stage_changed",
+        actor=ActivityActorResponse(id="u-1", name="Ana", kind="user"),
+        summary="Etapa alterada",
+        details={"fromStageId": None, "toStageId": str(uuid4())},
+        occurredAt=occurred_at,
+    )
+    page = ActivityPage(items=[event], nextCursor="v1_cursor-token")
+
+    assert page.model_dump(by_alias=True) == {
+        "items": [
+            {
+                "id": 1,
+                "category": "movement",
+                "eventType": "deal.stage_changed",
+                "actor": {"id": "u-1", "name": "Ana", "kind": "user"},
+                "summary": "Etapa alterada",
+                "details": {"fromStageId": None, "toStageId": event.details["toStageId"]},
+                "occurredAt": occurred_at,
+            }
+        ],
+        "nextCursor": "v1_cursor-token",
+    }
+    assert ActivityQuery(cursor="v1_cursor-token").limit == 50
+    with pytest.raises(ValidationError):
+        ActivityPage(items=[event] * 51)
+
+
+def test_company_deal_summary_serializes_exact_money_and_stage_semantics() -> None:
+    stage_id = uuid4()
+    row = CompanyDealRow(
+        id="deal-1",
+        title="Renovação",
+        stageId=stage_id,
+        stageName="Ganho",
+        semanticType="won",
+        responsibleId="u-1",
+        responsibleName="Ana",
+        amount=Decimal("1234.50"),
+    )
+    summary = CompanyDealSummaryResponse(
+        totalCount=1,
+        open=CompanyDealMetricResponse(count=0, amount=Decimal("0")),
+        won=CompanyDealMetricResponse(count=1, amount=Decimal("1234.50")),
+        lost=CompanyDealMetricResponse(count=0, amount=Decimal("0.00")),
+        items=[row],
+    )
+
+    assert summary.model_dump(by_alias=True) == {
+        "totalCount": 1,
+        "open": {"count": 0, "amount": "0.00"},
+        "won": {"count": 1, "amount": "1234.50"},
+        "lost": {"count": 0, "amount": "0.00"},
+        "items": [
+            {
+                "id": "deal-1",
+                "title": "Renovação",
+                "stageId": stage_id,
+                "stageName": "Ganho",
+                "semanticType": "won",
+                "responsibleId": "u-1",
+                "responsibleName": "Ana",
+                "amount": "1234.50",
+            }
+        ],
     }

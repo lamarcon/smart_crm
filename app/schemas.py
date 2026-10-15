@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 
 MODULES = ("leads", "contacts", "companies", "deals")
@@ -196,6 +197,87 @@ class DealPipelineAuditPage(PipelineContractModel):
 class DealPipelineHistoryQuery(PipelineContractModel):
     before: int | None = Field(default=None, ge=1)
     limit: int = Field(default=50, ge=1, le=50)
+
+
+class ActivityQuery(PipelineContractModel):
+    category: Literal["movement", "automation", "observation"] | None = None
+    cursor: str | None = Field(default=None, min_length=1, max_length=2048, pattern=r"^[A-Za-z0-9_-]+$")
+    limit: int = Field(default=50, ge=1, le=50)
+
+
+class CompanyActivityQuery(PipelineContractModel):
+    category: Literal["change", "observation"] | None = None
+    cursor: str | None = Field(default=None, min_length=1, max_length=2048, pattern=r"^[A-Za-z0-9_-]+$")
+    limit: int = Field(default=50, ge=1, le=50)
+
+
+class ObservationCreateRequest(PipelineContractModel):
+    text: str = Field(min_length=1, max_length=4_000)
+    idempotency_key: UUID = Field(alias="idempotencyKey")
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def normalize_text(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
+
+
+class ActivityActorResponse(PipelineContractModel):
+    id: str | None = Field(default=None, max_length=128)
+    name: str = Field(min_length=1, max_length=255)
+    kind: Literal["user", "system"]
+
+
+class ActivityEventResponse(PipelineContractModel):
+    id: int = Field(ge=1)
+    category: Literal["movement", "automation", "observation", "change"]
+    event_type: str = Field(alias="eventType", min_length=1, max_length=128)
+    actor: ActivityActorResponse
+    summary: str = Field(min_length=1)
+    details: dict[str, Any]
+    occurred_at: datetime = Field(alias="occurredAt")
+
+
+class ActivityPage(PipelineContractModel):
+    items: list[ActivityEventResponse] = Field(max_length=50)
+    next_cursor: str | None = Field(
+        default=None,
+        alias="nextCursor",
+        min_length=1,
+        max_length=2048,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+
+
+class CompanyDealMetricResponse(PipelineContractModel):
+    count: int = Field(ge=0)
+    amount: Decimal
+
+    @field_serializer("amount")
+    def serialize_amount(self, value: Decimal) -> str:
+        return format(value.quantize(Decimal("0.01")), "f")
+
+
+class CompanyDealRow(PipelineContractModel):
+    id: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=255)
+    stage_id: UUID = Field(alias="stageId")
+    stage_name: str = Field(alias="stageName", min_length=1, max_length=80)
+    semantic_type: Literal["open", "won", "lost"] = Field(alias="semanticType")
+    responsible_id: str | None = Field(default=None, alias="responsibleId", max_length=128)
+    responsible_name: str | None = Field(default=None, alias="responsibleName", max_length=255)
+    amount: Decimal
+
+    @field_serializer("amount")
+    def serialize_amount(self, value: Decimal) -> str:
+        return format(value.quantize(Decimal("0.01")), "f")
+
+
+class CompanyDealSummaryResponse(PipelineContractModel):
+    total_count: int = Field(alias="totalCount", ge=0)
+    open: CompanyDealMetricResponse
+    won: CompanyDealMetricResponse
+    lost: CompanyDealMetricResponse
+    items: list[CompanyDealRow]
 
 
 class WorkspaceState(ContractModel):
