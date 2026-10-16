@@ -195,7 +195,7 @@ T17 → T18
 
 #### T5: Implement activity read and observation services
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Orchestrate canonical entity lookup, record authorization, cursor handling and immutable observation creation.  
 **Where**: `app/services/activity.py`  
@@ -211,12 +211,12 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Read uses the entity's existing visibility rule and returns generic not-found for missing, hidden or foreign records.
-- [ ] Observation write uses mutation permission and derives tenant, workspace, actor and time only from server context.
-- [ ] Repeating a request UUID returns the original event without incrementing workspace version or duplicating data.
-- [ ] No edit/delete service exists; correction is represented by a new observation.
-- [ ] Tests cover every role, valid/empty/oversized/HTML text, retry, unavailable database and immutable reload.
-- [ ] Full gate passes without weakening existing authorization tests.
+- [x] Read uses the entity's existing visibility rule and returns generic not-found for missing, hidden or foreign records.
+- [x] Observation write uses mutation permission and derives tenant, workspace, actor and time only from server context.
+- [x] Repeating a request UUID returns the original event without incrementing workspace version or duplicating data.
+- [x] No edit/delete service exists; correction is represented by a new observation.
+- [x] Tests cover every role, valid/empty/oversized/HTML text, retry, unavailable database and immutable reload.
+- [x] Full gate passes without weakening existing authorization tests.
 
 **Tests**: unit + PostgreSQL integration — add `tests/backend/test_activity_service.py`  
 **Gate**: full  
