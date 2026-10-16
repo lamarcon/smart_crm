@@ -281,7 +281,7 @@ T17 → T18
 
 #### T8: Move billing automation into a server executor
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Implement one server-owned Deal automation executor that applies billing reassignment/notification and returns a safe execution result.  
 **Where**: `app/services/deal_automation.py`  
@@ -297,12 +297,12 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Billing behavior no longer depends on a visible stage name or a browser-only side effect.
-- [ ] One execution returns rule key/name, success/failure and a whitelisted action summary suitable for one activity event.
-- [ ] Missing billing target records failure without reassignment and without secrets, stack traces or raw payloads.
-- [ ] A deterministic execution key prevents duplicate notifications/events on retry.
-- [ ] Tests cover success, no-op, failure, multiple recipients and injected rollback.
-- [ ] Full gate passes before the client-side implementation is removed in T14.
+- [x] Billing behavior no longer depends on a visible stage name or a browser-only side effect.
+- [x] One execution returns rule key/name, success/failure and a whitelisted action summary suitable for one activity event.
+- [x] Missing billing target records failure without reassignment and without secrets, stack traces or raw payloads.
+- [x] A deterministic execution key prevents duplicate notifications/events on retry.
+- [x] Tests cover success, no-op, failure, multiple recipients and injected rollback.
+- [x] Full gate passes before the client-side implementation is removed in T14.
 
 **Tests**: unit + PostgreSQL integration — add `tests/backend/test_deal_automation.py`  
 **Gate**: full  
