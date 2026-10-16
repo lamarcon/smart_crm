@@ -252,7 +252,7 @@ T17 → T18
 
 #### T7: Implement the Company Deal read model
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Query visible active Deals for one Company and derive exact total/open/won/lost quantities and values plus the canonical list.  
 **Where**: `app/repositories/company_deals.py`  
@@ -268,12 +268,12 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Aggregation includes only active visible Deals linked to the requested active Company/workspace.
-- [ ] Total and semantic buckets return exact Decimal sums with null amount treated as zero only for aggregation.
-- [ ] List returns title, canonical stage label/semantic, responsible and amount in deterministic order.
-- [ ] Stage rename does not change buckets; moving Company/value/semantic does; soft-deleted/foreign Deals never contribute.
-- [ ] Empty, all-zero, all-semantic and role-restricted cases are covered in integration tests.
-- [ ] Full gate passes without browser-derived totals.
+- [x] Aggregation includes only active visible Deals linked to the requested active Company/workspace.
+- [x] Total and semantic buckets return exact Decimal sums with null amount treated as zero only for aggregation.
+- [x] List returns title, canonical stage label/semantic, responsible and amount in deterministic order.
+- [x] Stage rename does not change buckets; moving Company/value/semantic does; soft-deleted/foreign Deals never contribute.
+- [x] Empty, all-zero, all-semantic and role-restricted cases are covered in integration tests.
+- [x] Full gate passes without browser-derived totals.
 
 **Tests**: PostgreSQL integration — add `tests/backend/test_company_deals.py`  
 **Gate**: full  
