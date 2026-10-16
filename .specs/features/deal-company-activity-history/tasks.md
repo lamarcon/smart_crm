@@ -164,7 +164,7 @@ T17 → T18
 
 #### T4: Implement the tenant-scoped activity repository
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Add append, idempotent lookup and filtered keyset paging for Deal and Company activity streams.  
 **Where**: `app/repositories/activity.py`  
@@ -180,12 +180,12 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Append accepts only server-built typed event data and returns the prior row for the same dedupe key.
-- [ ] Deal and Company queries require workspace plus subject identity and order by `(occurred_at DESC, id DESC)`.
-- [ ] Category filters and opaque timestamp/ID cursors cannot skip or duplicate equal-timestamp rows.
-- [ ] The repository exposes no event update/delete path.
-- [ ] Integration tests cover dedupe, 51+ items, equal timestamps, foreign workspace, missing RLS and rollback.
-- [ ] Full gate passes without removing or skipping prior tests.
+- [x] Append accepts only server-built typed event data and returns the prior row for the same dedupe key.
+- [x] Deal and Company queries require workspace plus subject identity and order by `(occurred_at DESC, id DESC)`.
+- [x] Category filters and opaque timestamp/ID cursors cannot skip or duplicate equal-timestamp rows.
+- [x] The repository exposes no event update/delete path.
+- [x] Integration tests cover dedupe, 51+ items, equal timestamps, foreign workspace, missing RLS and rollback.
+- [x] Full gate passes without removing or skipping prior tests.
 
 **Tests**: PostgreSQL integration — add `tests/backend/test_activity_repository.py`  
 **Gate**: full  
