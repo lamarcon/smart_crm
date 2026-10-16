@@ -224,7 +224,7 @@ T17 → T18
 
 #### T6: Add a reusable SQL record-visibility predicate
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Express the existing Python Deal visibility rules as one SQL predicate for safe aggregate/list queries.  
 **Where**: `app/policies.py`  
@@ -240,11 +240,11 @@ T17 → T18
 
 **Done when**:
 
-- [ ] The SQL predicate implements the same Deal visibility as `can_read_record` for every supported role.
-- [ ] It always includes workspace scope and cannot be used without a bound principal.
-- [ ] Parity tests compare Python and SQL results for responsible, team, assistant, foreign-team and admin cases.
-- [ ] Forged IDs and missing scope reveal neither row existence nor aggregate values.
-- [ ] Quick and targeted PostgreSQL gates pass without changing unrelated permissions.
+- [x] The SQL predicate implements the same Deal visibility as `can_read_record` for every supported role.
+- [x] It always includes workspace scope and cannot be used without a bound principal.
+- [x] Parity tests compare Python and SQL results for responsible, team, assistant, foreign-team and admin cases.
+- [x] Forged IDs and missing scope reveal neither row existence nor aggregate values.
+- [x] Quick and targeted PostgreSQL gates pass without changing unrelated permissions.
 
 **Tests**: unit + PostgreSQL integration — extend `tests/backend/test_authorization.py`  
 **Gate**: quick  

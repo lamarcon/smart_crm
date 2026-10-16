@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from enum import Enum
 from uuid import UUID
 
+from sqlalchemy import and_, exists, false, or_, select
+from sqlalchemy.sql.elements import ColumnElement
+
 
 class Action(str, Enum):
     READ = "read"
@@ -86,4 +89,36 @@ def can_read_record(principal: PrincipalScope, module: str, record: RecordScope)
 def can_mutate_record(principal: PrincipalScope, module: str, record: RecordScope) -> bool:
     return can_perform_action(principal, Action.UPDATE) and _can_access_record(
         principal, module, record
+    )
+
+
+def deal_visibility_predicate(principal: PrincipalScope) -> ColumnElement[bool]:
+    """Return the SQL equivalent of the Deal read policy for one bound principal."""
+
+    if not isinstance(principal, PrincipalScope):
+        raise TypeError("principal scope is required")
+
+    # Local import keeps the policy dataclasses independent from ORM model import order.
+    from app.models import Deal, DealAssistant
+
+    workspace_scope = Deal.workspace_id == principal.workspace_id
+    if principal.role not in CURRENT_ROLES:
+        return and_(workspace_scope, false())
+    if principal.role == "Administrador":
+        return workspace_scope
+    if principal.role == "Gestor":
+        if not principal.team_id:
+            return and_(workspace_scope, false())
+        return and_(workspace_scope, Deal.team_id == principal.team_id)
+
+    assisted = exists(
+        select(1).where(
+            DealAssistant.workspace_id == Deal.workspace_id,
+            DealAssistant.deal_id == Deal.id,
+            DealAssistant.user_id == principal.user_id,
+        )
+    )
+    return and_(
+        workspace_scope,
+        or_(Deal.responsible_id == principal.user_id, assisted),
     )
