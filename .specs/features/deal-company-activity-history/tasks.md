@@ -135,7 +135,7 @@ T17 → T18
 
 #### T3: Add the tenant activity migration and historical backfill
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Create the next additive tenant Alembic revision with the activity table, RLS, indexes and deterministic Deal/Company backfill.  
 **Where**: `migrations/versions/<new_revision>_add_crm_activity_events.py`  
@@ -151,12 +151,12 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Upgrade creates the table, exactly-one-subject constraint, unique dedupe constraint, covering indexes and forced workspace RLS.
-- [ ] Every existing stage-history row becomes one movement event with historical timestamp/snapshots and deterministic legacy dedupe key.
-- [ ] Every existing Company receives one migration-labelled creation event without claiming a human actor.
-- [ ] Upgrade preserves all pre-existing fingerprints; repeat upgrade is idempotent; isolated downgrade removes only the new feature schema.
-- [ ] Missing scope and cross-workspace operations fail closed in migration/security tests.
-- [ ] Build gate passes without touching the control schema, shared DW databases or global PostgreSQL configuration.
+- [x] Upgrade creates the table, exactly-one-subject constraint, unique dedupe constraint, covering indexes and forced workspace RLS.
+- [x] Every existing stage-history row becomes one movement event with historical timestamp/snapshots and deterministic legacy dedupe key.
+- [x] Every existing Company receives one migration-labelled creation event without claiming a human actor.
+- [x] Upgrade preserves all pre-existing fingerprints; repeat upgrade is idempotent; isolated downgrade removes only the new feature schema.
+- [x] Missing scope and cross-workspace operations fail closed in migration/security tests.
+- [x] Build gate passes without touching the control schema, shared DW databases or global PostgreSQL configuration.
 
 **Tests**: PostgreSQL integration — extend `tests/backend/test_migrations.py` and `tests/backend/test_tenant_migration_security.py` in this same task  
 **Gate**: build  

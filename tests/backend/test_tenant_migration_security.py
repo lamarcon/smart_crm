@@ -18,7 +18,8 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 LEGACY_HEAD = "9f7a2c31d5e8"
-TENANT_HEAD = "c7f3a9d8e2b1"
+PIPELINE_HEAD = "c7f3a9d8e2b1"
+TENANT_HEAD = "e1c4a7b9d2f6"
 TENANT_TABLES = {
     "workspaces",
     "teams",
@@ -43,6 +44,7 @@ TENANT_TABLES = {
     "deal_pipelines",
     "deal_pipeline_stages",
     "deal_pipeline_audit_events",
+    "crm_activity_events",
 }
 
 
@@ -69,6 +71,72 @@ def legacy_database():
         with engine.begin() as cleanup:
             cleanup.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         engine.dispose()
+
+
+@pytest.fixture
+def pipeline_database():
+    engine = create_engine(TEST_DATABASE_URL)
+    schema = f"activity_migration_{uuid.uuid4().hex}"
+    with engine.begin() as setup:
+        setup.execute(text(f'CREATE SCHEMA "{schema}"'))
+    connection = engine.connect()
+    connection.execute(text(f'SET search_path TO "{schema}"'))
+    config = tenant_config(connection)
+    command.upgrade(config, PIPELINE_HEAD)
+    try:
+        yield connection, schema, config
+    finally:
+        connection.close()
+        with engine.begin() as cleanup:
+            cleanup.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        engine.dispose()
+
+
+def seed_activity_backfill_data(connection) -> None:  # noqa: ANN001
+    connection.execute(
+        text(
+            "INSERT INTO crm_users "
+            "(id, workspace_id, name, email, job_title, role, status, payload) "
+            "VALUES ('activity-user', 'default', 'Ana Histórica', 'history@example.test', '', "
+            "'Administrador', 'Ativo', '{}'::jsonb)"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO companies "
+            "(id, workspace_id, owner_id, name, city, segment, phone, payload, created_at) "
+            "VALUES ('activity-company', 'default', 'activity-user', 'Empresa Histórica', "
+            "'São Paulo', 'Tecnologia', '11999999999', '{\"marker\": \"company\"}'::jsonb, "
+            "'2026-01-01 03:00:00+00')"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO deals "
+            "(id, workspace_id, company_id, responsible_id, title, company_text, "
+            "contact_text, amount, stage, payload) "
+            "VALUES ('activity-deal', 'default', 'activity-company', 'activity-user', "
+            "'Negócio Histórico', 'Empresa Histórica', '', 10.00, 'Em Contato', "
+            "'{\"marker\": \"deal\"}'::jsonb)"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO deal_stage_history "
+            "(workspace_id, deal_id, position, from_stage, to_stage, changed_at, changed_by_id) "
+            "VALUES ('default', 'activity-deal', 0, NULL, 'Em Contato', "
+            "'2026-01-02 03:04:05+00', 'activity-user')"
+        )
+    )
+
+
+def table_fingerprint(connection, table_name: str) -> str:  # noqa: ANN001
+    return connection.scalar(
+        text(
+            f"SELECT md5(coalesce(string_agg(to_jsonb(row_data)::text, '|' "
+            f"ORDER BY to_jsonb(row_data)::text), '')) FROM {table_name} AS row_data"
+        )
+    )
 
 
 def seed_legacy_data(connection) -> None:  # noqa: ANN001
@@ -417,3 +485,193 @@ def test_downgrade_preserves_business_data_and_removes_tenant_security(legacy_da
         text("SELECT relrowsecurity FROM pg_class WHERE oid = 'leads'::regclass")
     )
     assert rls_enabled is False
+
+
+def test_activity_upgrade_backfills_history_and_company_without_changing_sources(
+    pipeline_database,
+) -> None:
+    connection, _schema, config = pipeline_database
+    seed_activity_backfill_data(connection)
+    before = {
+        table_name: table_fingerprint(connection, table_name)
+        for table_name in ("crm_users", "companies", "deals", "deal_stage_history")
+    }
+
+    command.upgrade(config, TENANT_HEAD)
+
+    assert {
+        table_name: table_fingerprint(connection, table_name)
+        for table_name in before
+    } == before
+    rows = connection.execute(
+        text(
+            "SELECT category, event_type, actor_user_id, actor_name, summary, details, "
+            "dedupe_key, occurred_at FROM crm_activity_events ORDER BY occurred_at, id"
+        )
+    ).all()
+    company_event, movement_event = rows
+    history = connection.execute(
+        text(
+            "SELECT id, from_stage_id, to_stage_id FROM deal_stage_history "
+            "WHERE deal_id = 'activity-deal'"
+        )
+    ).one()
+
+    assert company_event.category == "change"
+    assert company_event.event_type == "company.created"
+    assert company_event.actor_user_id is None
+    assert company_event.actor_name == "Sistema (migração)"
+    assert company_event.summary == "Empresa registrada"
+    assert company_event.details == {"name": "Empresa Histórica", "source": "migration"}
+    assert company_event.dedupe_key == "legacy-company-created:activity-company"
+    assert company_event.occurred_at.isoformat() == "2026-01-01T03:00:00+00:00"
+    assert movement_event.category == "movement"
+    assert movement_event.event_type == "deal.stage_changed"
+    assert movement_event.actor_user_id == "activity-user"
+    assert movement_event.actor_name == "Ana Histórica"
+    assert movement_event.summary == "Negócio criado na etapa Em Contato"
+    assert movement_event.details == {
+        "source": "user",
+        "toStageId": str(history.to_stage_id),
+        "toStageName": "Em Contato",
+        "fromStageId": None,
+        "fromStageName": None,
+    }
+    assert movement_event.dedupe_key == f"legacy-stage-history:{history.id}"
+    assert movement_event.occurred_at.isoformat() == "2026-01-02T03:04:05+00:00"
+
+
+def test_activity_schema_has_exact_constraints_indexes_and_forced_rls(pipeline_database) -> None:
+    connection, schema, config = pipeline_database
+    command.upgrade(config, TENANT_HEAD)
+
+    constraints = dict(
+        connection.execute(
+            text(
+                "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conrelid = 'crm_activity_events'::regclass"
+            )
+        ).all()
+    )
+    indexes = {
+        row.indexname: row.indexdef
+        for row in connection.execute(
+            text(
+                "SELECT indexname, indexdef FROM pg_indexes "
+                "WHERE schemaname = :schema AND tablename = 'crm_activity_events'"
+            ),
+            {"schema": schema},
+        )
+    }
+    rls = connection.execute(
+        text(
+            "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+            "WHERE oid = 'crm_activity_events'::regclass"
+        )
+    ).one()
+
+    assert "CHECK ((((deal_id IS NOT NULL) AND (company_id IS NULL)) OR " in constraints[
+        "ck_crm_activity_events_exactly_one_subject"
+    ]
+    assert "category" in constraints["ck_crm_activity_events_valid_category"]
+    assert constraints["uq_crm_activity_events_workspace_id_dedupe_key"].startswith(
+        "UNIQUE (workspace_id, dedupe_key)"
+    )
+    assert "workspace_id, deal_id, occurred_at DESC, id DESC" in indexes[
+        "ix_crm_activity_events_deal_timeline"
+    ]
+    assert "WHERE (deal_id IS NOT NULL)" in indexes["ix_crm_activity_events_deal_timeline"]
+    assert "workspace_id, company_id, occurred_at DESC, id DESC" in indexes[
+        "ix_crm_activity_events_company_timeline"
+    ]
+    assert "WHERE (company_id IS NOT NULL)" in indexes[
+        "ix_crm_activity_events_company_timeline"
+    ]
+    assert tuple(rls) == (True, True)
+
+
+def test_activity_rls_fails_closed_without_or_with_foreign_workspace(pipeline_database) -> None:
+    connection, schema, config = pipeline_database
+    seed_activity_backfill_data(connection)
+    command.upgrade(config, TENANT_HEAD)
+    connection.execute(text("INSERT INTO workspaces (id, version) VALUES ('other', 0)"))
+
+    with runtime_role(connection, schema):
+        assert connection.scalar(text("SELECT count(*) FROM crm_activity_events")) == 0
+        connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+        assert connection.scalar(text("SELECT count(*) FROM crm_activity_events")) == 2
+        with pytest.raises(DBAPIError) as exc_info:
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        "INSERT INTO crm_activity_events "
+                        "(id, workspace_id, company_id, category, event_type, actor_name, "
+                        "summary, details, dedupe_key, occurred_at) VALUES "
+                        "(999, 'other', 'activity-company', 'observation', 'company.observation', "
+                        "'Ana', 'Nota', '{}'::jsonb, 'cross-workspace', now())"
+                    )
+                )
+        assert exc_info.value.orig.sqlstate == "42501"
+        connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'other', true)"))
+        assert connection.scalar(text("SELECT count(*) FROM crm_activity_events")) == 0
+
+
+def test_activity_subject_and_dedupe_constraints_reject_invalid_rows(pipeline_database) -> None:
+    connection, _schema, config = pipeline_database
+    seed_activity_backfill_data(connection)
+    command.upgrade(config, TENANT_HEAD)
+
+    with pytest.raises(IntegrityError):
+        with connection.begin_nested():
+            connection.execute(
+                text(
+                    "INSERT INTO crm_activity_events "
+                    "(workspace_id, category, event_type, actor_name, summary, details, "
+                    "dedupe_key, occurred_at) VALUES "
+                    "('default', 'observation', 'invalid.subject', 'Ana', 'Nota', '{}'::jsonb, "
+                    "'invalid-subject', now())"
+                )
+            )
+    with pytest.raises(IntegrityError):
+        with connection.begin_nested():
+            connection.execute(
+                text(
+                    "INSERT INTO crm_activity_events "
+                    "(workspace_id, deal_id, company_id, category, event_type, actor_name, "
+                    "summary, details, dedupe_key, occurred_at) VALUES "
+                    "('default', 'activity-deal', 'activity-company', 'observation', "
+                    "'invalid.subject', 'Ana', 'Nota', '{}'::jsonb, 'two-subjects', now())"
+                )
+            )
+    with pytest.raises(IntegrityError):
+        with connection.begin_nested():
+            connection.execute(
+                text(
+                    "INSERT INTO crm_activity_events "
+                    "(workspace_id, company_id, category, event_type, actor_name, summary, "
+                    "details, dedupe_key, occurred_at) VALUES "
+                    "('default', 'activity-company', 'observation', 'company.observation', "
+                    "'Ana', 'Duplicada', '{}'::jsonb, "
+                    "'legacy-company-created:activity-company', now())"
+                )
+            )
+
+
+def test_activity_downgrade_removes_only_feature_schema(pipeline_database) -> None:
+    connection, schema, config = pipeline_database
+    seed_activity_backfill_data(connection)
+    before = {
+        table_name: table_fingerprint(connection, table_name)
+        for table_name in ("companies", "deals", "deal_stage_history")
+    }
+    command.upgrade(config, TENANT_HEAD)
+
+    command.downgrade(config, PIPELINE_HEAD)
+
+    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == PIPELINE_HEAD
+    assert "crm_activity_events" not in inspect(connection).get_table_names(schema=schema)
+    assert {
+        table_name: table_fingerprint(connection, table_name)
+        for table_name in before
+    } == before
+    assert "deal_pipelines" in inspect(connection).get_table_names(schema=schema)
