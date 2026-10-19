@@ -235,6 +235,8 @@
     .entity-drawer.open { visibility: visible; transform: translateX(0); }
     .entity-drawer form { min-height: 0; height: 100%; display: flex; flex-direction: column; }
     .drawer-head { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 21px; border-bottom: 1px solid var(--slate-200); }
+    .drawer-title-row { display: flex; align-items: center; gap: 12px; }
+    .drawer-back { width: 36px; height: 36px; border: 1px solid var(--slate-200); border-radius: 9px; color: var(--navy-700); background: white; font-size: 18px; }
     .drawer-head h3 { margin: 0; font-size: 18px; }
     .drawer-head p { margin: 4px 0 0; color: var(--slate-500); font-size: 12px; }
     .drawer-body { min-width: 0; flex: 1; overflow: auto; padding: 21px; }
@@ -272,6 +274,17 @@
     .deal-activity-event p { margin: 6px 0 0; color: var(--slate-600); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
     .deal-activity-meta { margin-top: 8px; color: var(--slate-400); font-size: 11px; }
     .activity-load-more { justify-self: center; }
+    .company-deal-panel { display: grid; gap: 16px; }
+    .company-deal-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .company-deal-metric { display: grid; gap: 5px; min-height: 98px; padding: 15px; border: 1px solid var(--slate-200); border-radius: 12px; background: white; box-shadow: var(--shadow-sm); }
+    .company-deal-metric span { color: var(--slate-500); font-size: 11px; font-weight: 750; text-transform: uppercase; }
+    .company-deal-metric strong { color: var(--navy-900); font-size: 22px; }
+    .company-deal-metric small { color: var(--slate-500); font-size: 12px; }
+    .company-deal-list { display: grid; gap: 9px; }
+    .company-deal-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(120px, .7fr) minmax(110px, .6fr); gap: 12px; align-items: center; padding: 13px 14px; border: 1px solid var(--slate-200); border-radius: 11px; background: white; }
+    .company-deal-row .entity-link { text-align: left; }
+    .company-deal-row small { display: block; margin-top: 4px; color: var(--slate-400); }
+    .company-deal-value { text-align: right; }
     .drawer-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 21px; border-top: 1px solid var(--slate-200); background: var(--slate-50); }
     .drawer-tabs { display: flex; gap: 4px; margin: -5px 0 20px; padding: 4px; border-radius: 10px; background: var(--slate-100); }
     .drawer-tabs button { flex: 1; min-height: 36px; border: 0; border-radius: 8px; color: var(--slate-500); background: transparent; font-weight: 750; }
@@ -424,6 +437,8 @@
       .entity-drawer[data-layout="wide"] { width: 100vw; }
       .entity-drawer[data-layout="wide"] .drawer-workspace { display: block; }
       .entity-drawer[data-layout="wide"] .drawer-secondary { min-height: 0; margin-top: 24px; padding: 24px 0 0; border-top: 1px solid var(--slate-200); border-left: 0; }
+      .company-deal-row { grid-template-columns: 1fr; }
+      .company-deal-value { text-align: left; }
     }
     @media (max-width: 560px) {
       .demo-banner { font-size: 11px; }
@@ -567,7 +582,7 @@
   <div class="drawer-overlay" id="entityDrawerOverlay"></div>
   <aside class="entity-drawer" id="entityDrawer" role="dialog" aria-modal="true" aria-labelledby="entityDrawerTitle" aria-hidden="true">
     <form id="drawerForm">
-      <div class="drawer-head"><div><h3 id="entityDrawerTitle">Editar registro</h3><p id="entityDrawerSubtitle">Altere os dados e salve para atualizar a lista.</p></div><button type="button" class="close-button" data-action="cancel-drawer" aria-label="Fechar painel">×</button></div>
+      <div class="drawer-head"><div class="drawer-title-row"><button type="button" class="drawer-back" id="drawerBackToCompany" data-action="back-to-company" aria-label="Voltar à empresa" hidden>←</button><div><h3 id="entityDrawerTitle">Editar registro</h3><p id="entityDrawerSubtitle">Altere os dados e salve para atualizar a lista.</p></div></div><button type="button" class="close-button" data-action="cancel-drawer" aria-label="Fechar painel">×</button></div>
       <div class="drawer-body">
         <div class="drawer-workspace" id="drawerWorkspace">
           <section class="drawer-primary" id="drawerPrimary" role="region" aria-label="Dados do cadastro">
@@ -600,7 +615,9 @@
             <section id="drawerCompanyWorkspace" hidden>
               <div class="drawer-region-head"><div><h4>Relacionamento da empresa</h4><p>Negócios vinculados e histórico próprio da empresa.</p></div></div>
               <div class="drawer-context-tabs" role="tablist" aria-label="Visões da empresa"><button id="drawerCompanyDealsTab" type="button" role="tab" data-action="company-workspace-tab" data-company-workspace-tab="deals" aria-controls="drawerCompanyDealsPanel" aria-selected="true">Negócios</button><button id="drawerCompanyHistoryTab" type="button" role="tab" data-action="company-workspace-tab" data-company-workspace-tab="history" aria-controls="drawerCompanyHistoryPanel" aria-selected="false">Histórico</button></div>
-              <section id="drawerCompanyDealsPanel" role="tabpanel" aria-labelledby="drawerCompanyDealsTab"><div class="drawer-shell-empty"><b>Negócios da empresa</b><p>Contadores e negócios visíveis serão exibidos aqui.</p></div></section>
+              <section id="drawerCompanyDealsPanel" role="tabpanel" aria-labelledby="drawerCompanyDealsTab">
+                <div class="company-deal-panel"><div class="activity-status" id="companyDealsStatus" role="status" aria-live="polite"></div><div class="company-deal-metrics" id="companyDealSummary" role="group" aria-label="Resumo dos negócios da empresa"></div><div class="company-deal-list" id="companyDealList"></div></div>
+              </section>
               <section id="drawerCompanyHistoryPanel" role="tabpanel" aria-labelledby="drawerCompanyHistoryTab" hidden><div class="drawer-shell-empty"><b>Histórico da empresa</b><p>Alterações e observações próprias serão exibidas aqui.</p></div></section>
             </section>
           </aside>
@@ -1247,6 +1264,10 @@
       activityController?.abort();
       activityGeneration += 1;
       Object.assign(dealActivityState, { dealId: null, category: null, items: [], nextCursor: null, status: 'idle', error: '', submitting: false, observationKey: null, observationText: '' });
+      companyDealController?.abort();
+      companyDealGeneration += 1;
+      Object.assign(companyDealState, { companyId: null, summary: null, status: 'idle', error: '' });
+      drawerParentContext = null;
       resetPipelineHistory();
       document.documentElement.dataset.pipelineReady = 'false';
       document.documentElement.dataset.workspaceReady = 'false';
@@ -1295,6 +1316,9 @@
         writeLocalState();
         render();
         flushQueuedToasts();
+        const drawer = document.getElementById('entityDrawer');
+        const drawerForm = document.getElementById('drawerForm');
+        if (drawer.classList.contains('open') && drawerForm.dataset.entity === 'company') loadCompanyDeals(drawerForm.dataset.id);
       } catch (failure) {
         queuedToasts = [];
         if (failure.status === 409) {
@@ -2537,6 +2561,7 @@
     let drawerInitialValue = '';
     let drawerActiveTab = 'info';
     let drawerReturnFocus = null;
+    let drawerParentContext = null;
     let companyWorkspaceTab = 'deals';
     let activityGeneration = 0;
     let activityController = null;
@@ -2545,6 +2570,9 @@
       status: 'idle', error: '', submitting: false,
       observationKey: null, observationText: ''
     };
+    let companyDealGeneration = 0;
+    let companyDealController = null;
+    const companyDealState = { companyId: null, summary: null, status: 'idle', error: '' };
 
     function activityKey() {
       if (crypto.randomUUID) return crypto.randomUUID();
@@ -2697,6 +2725,89 @@
       }
     }
 
+    function companySemanticLabel(value) {
+      return ({ open: 'Em andamento', won: 'Ganho', lost: 'Perdido' })[value] || value;
+    }
+
+    function renderCompanyDeals() {
+      const status = document.getElementById('companyDealsStatus');
+      const summary = document.getElementById('companyDealSummary');
+      const list = document.getElementById('companyDealList');
+      status.className = 'activity-status';
+      if (companyDealState.status === 'loading') {
+        status.textContent = 'Carregando negócios da empresa...';
+        summary.innerHTML = '';
+        list.innerHTML = '<div class="drawer-shell-empty"><b>Carregando resumo comercial</b><p>As informações da Empresa continuam disponíveis.</p></div>';
+        return;
+      }
+      if (companyDealState.status === 'error') {
+        status.classList.add('error');
+        status.innerHTML = `<span>Não foi possível carregar os Negócios. ${escapeHTML(companyDealState.error)}</span><button type="button" class="button small" data-action="retry-company-deals">Tentar novamente</button>`;
+        summary.innerHTML = '';
+        list.innerHTML = '';
+        return;
+      }
+      const payload = companyDealState.summary;
+      if (!payload) return;
+      status.textContent = `${payload.totalCount} Negócio(s) visível(is).`;
+      const totalAmount = ['open', 'won', 'lost'].reduce((sum, key) => sum + Number(payload[key].amount), 0);
+      const metrics = [
+        ['total', 'Total de negócios', payload.totalCount, money(totalAmount)],
+        ['open', 'Em andamento', payload.open.count, money(payload.open.amount)],
+        ['won', 'Ganhos', payload.won.count, money(payload.won.amount)],
+        ['lost', 'Perdidos', payload.lost.count, money(payload.lost.amount)]
+      ];
+      summary.innerHTML = metrics.map(([key, label, count, amount]) => `<article class="company-deal-metric" data-company-metric="${key}"><span>${label}</span><strong>${count}</strong><small>${amount}</small></article>`).join('');
+      list.innerHTML = payload.items.length ? payload.items.map(item => `
+        <article class="company-deal-row" data-company-deal="${escapeHTML(item.id)}">
+          <div><button type="button" class="entity-link" data-action="open-company-deal" data-id="${escapeHTML(item.id)}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.stageName)}</small></div>
+          <div><span class="tag ${item.semanticType === 'won' ? 'green' : item.semanticType === 'lost' ? 'red' : ''}">${escapeHTML(companySemanticLabel(item.semanticType))}</span><small>${escapeHTML(item.responsibleName || 'Sem responsável')}</small></div>
+          <strong class="company-deal-value">${money(item.amount)}</strong>
+        </article>`).join('') : '<div class="drawer-shell-empty"><b>Nenhum Negócio visível para esta empresa.</b><p>Os contadores permanecem zerados.</p></div>';
+    }
+
+    async function loadCompanyDeals(companyId) {
+      if (!companyId) return;
+      companyDealController?.abort();
+      companyDealController = new AbortController();
+      const generation = ++companyDealGeneration;
+      companyDealState.companyId = companyId;
+      companyDealState.status = 'loading';
+      companyDealState.error = '';
+      renderCompanyDeals();
+      try {
+        const payload = await responseJson(await apiFetch(`/api/companies/${encodeURIComponent(companyId)}/deals`, {
+          headers: { Accept: 'application/json' }, signal: companyDealController.signal
+        }));
+        const form = document.getElementById('drawerForm');
+        if (generation !== companyDealGeneration || form.dataset.entity !== 'company' || form.dataset.id !== companyId) return;
+        companyDealState.summary = payload;
+        companyDealState.status = 'ready';
+      } catch (failure) {
+        if (failure.name === 'AbortError' || generation !== companyDealGeneration) return;
+        companyDealState.status = 'error';
+        companyDealState.error = failure.message || 'Tente novamente.';
+      }
+      renderCompanyDeals();
+    }
+
+    function openCompanyDeal(dealId) {
+      const form = document.getElementById('drawerForm');
+      if (form.dataset.entity !== 'company') return;
+      drawerParentContext = { companyId: form.dataset.id, tab: companyWorkspaceTab, returnFocus: drawerReturnFocus };
+      openEntityDrawer('deal', dealId, { preserveReturnFocus: true });
+    }
+
+    function restoreCompanyDrawer() {
+      if (!drawerParentContext) return false;
+      const context = drawerParentContext;
+      drawerParentContext = null;
+      drawerReturnFocus = context.returnFocus;
+      openEntityDrawer('company', context.companyId, { preserveReturnFocus: true });
+      setCompanyWorkspaceTab(context.tab);
+      return true;
+    }
+
     function formSignature(form) {
       return JSON.stringify(Array.from(new FormData(form).entries()));
     }
@@ -2706,13 +2817,16 @@
       return (Array.isArray(record?.customFields) ? record.customFields : []).filter(field => !hidden.has(field.key));
     }
 
-    function openEntityDrawer(entity, id) {
+    function openEntityDrawer(entity, id, options = {}) {
       const collection = collectionFor(entity);
       const record = state[collection].find(item => item.id === id);
       if (!record) return;
       const drawer = document.getElementById('entityDrawer');
       const form = document.getElementById('drawerForm');
-      drawerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      if (!options.preserveReturnFocus) {
+        drawerParentContext = null;
+        drawerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      }
       const wide = entity === 'deal' || entity === 'company';
       drawer.dataset.layout = wide ? 'wide' : 'compact';
       drawer.dataset.entity = entity;
@@ -2720,6 +2834,7 @@
       form.dataset.id = id;
       document.getElementById('entityDrawerTitle').textContent = `Editar ${entityLabel(entity)}`;
       document.getElementById('entityDrawerSubtitle').textContent = `${id}`;
+      document.getElementById('drawerBackToCompany').hidden = !(entity === 'deal' && drawerParentContext);
       const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
       document.getElementById('drawerFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
       renderDrawerCompanySummary(entity, record);
@@ -2755,6 +2870,11 @@
       } else {
         activityController?.abort();
         activityGeneration += 1;
+      }
+      if (entity === 'company') loadCompanyDeals(id);
+      else {
+        companyDealController?.abort();
+        companyDealGeneration += 1;
       }
     }
 
@@ -2885,12 +3005,16 @@
       if (!drawer.classList.contains('open')) return true;
       const form = document.getElementById('drawerForm');
       if (!force && formSignature(form) !== drawerInitialValue && !confirm('Descartar as alterações não salvas?')) return false;
+      if (form.dataset.entity === 'deal' && drawerParentContext) return restoreCompanyDrawer();
       drawer.classList.remove('open');
       drawer.setAttribute('aria-hidden', 'true');
       document.getElementById('entityDrawerOverlay').classList.remove('open');
       document.body.classList.remove('drawer-open');
       activityController?.abort();
       activityGeneration += 1;
+      companyDealController?.abort();
+      companyDealGeneration += 1;
+      drawerParentContext = null;
       const returnFocus = drawerReturnFocus;
       drawerReturnFocus = null;
       if (returnFocus?.isConnected) returnFocus.focus();
@@ -3495,6 +3619,8 @@
       if (action === 'pipeline-history-newer') loadNewerPipelineHistory();
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
+      if (action === 'open-company-deal') openCompanyDeal(button.dataset.id);
+      if (action === 'back-to-company') restoreCompanyDrawer();
       if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
       if (action === 'company-workspace-tab') setCompanyWorkspaceTab(button.dataset.companyWorkspaceTab);
       if (action === 'add-custom-field') addDrawerCustomField();
@@ -3526,6 +3652,7 @@
       if (action === 'retry-activities') loadEntityActivities('deal', dealActivityState.dealId, { category: dealActivityState.category });
       if (action === 'load-more-activities') loadEntityActivities('deal', dealActivityState.dealId, { append: true });
       if (action === 'submit-deal-observation') submitDealObservation();
+      if (action === 'retry-company-deals') loadCompanyDeals(companyDealState.companyId);
       if (action === 'cancel-drawer') closeEntityDrawer();
       if (action === 'delete') deleteEntity(button.dataset.entity, button.dataset.id);
       if (action === 'convert') requestStageChange('lead', button.dataset.id, 'Lead convertido');

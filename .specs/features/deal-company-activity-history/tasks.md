@@ -483,7 +483,7 @@ T17 → T18
 
 #### T15: Add the Company linked-Deal dashboard
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Render Company summary cards and the visible linked-Deal list, with nested navigation into the Deal drawer.  
 **Where**: `app/static/index.html`  
@@ -499,11 +499,11 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Cards show total and exact quantity/value for em andamento, ganhos and perdidos from the API response.
-- [ ] Linked list shows title, canonical stage, semantic status, responsible and value, including a normal empty state.
-- [ ] Selecting a Deal opens its detailed drawer and closing/back navigation restores the originating Company context.
-- [ ] Rename, value/company/semantic move and soft-delete refresh show canonical server results rather than local recomputation.
-- [ ] Browser tests cover zero, mixed semantics, restricted visibility, nested navigation and a semantic-grouping mutant; full gate passes.
+- [x] Cards show total and exact quantity/value for em andamento, ganhos and perdidos from the API response.
+- [x] Linked list shows title, canonical stage, semantic status, responsible and value, including a normal empty state.
+- [x] Selecting a Deal opens its detailed drawer and closing/back navigation restores the originating Company context.
+- [x] Rename, value/company/semantic move and soft-delete refresh show canonical server results rather than local recomputation.
+- [x] Browser tests cover zero, mixed semantics, restricted visibility, nested navigation and a semantic-grouping mutant; full gate passes.
 
 **Tests**: browser e2e — extend `tests/ui-prototype.spec.cjs`  
 **Gate**: full  

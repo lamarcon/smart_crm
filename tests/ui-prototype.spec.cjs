@@ -129,6 +129,7 @@ async function openFresh(options = {}) {
     dealActivities: clone(options.dealActivities || {}), activityRequests: [],
     activityFailures: new Set(), activityGates: new Map(), observationWrites: [],
     observationFailuresRemaining: 0, observationByKey: new Map(), workspaceWrites: [],
+    companyDealRequests: [], companyDealFailures: new Set(), companyDealGates: new Map(),
     disableBillingAutomation: Boolean(options.disableBillingAutomation),
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
   };
@@ -185,6 +186,42 @@ async function openFresh(options = {}) {
       api.observationByKey.set(payload.idempotencyKey, event);
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(event) });
+  });
+  await context.route('**/api/companies/*/deals', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const match = url.pathname.match(/^\/api\/companies\/([^/]+)\/deals$/);
+    if (!match || request.method() !== 'GET') return route.continue();
+    const companyId = decodeURIComponent(match[1]);
+    api.companyDealRequests.push(request.url());
+    const gate = api.companyDealGates.get(companyId);
+    if (gate) await gate;
+    if (api.companyDealFailures.has(companyId)) {
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Resumo indisponível.' } }) });
+    }
+    const company = api.state.companies.find(candidate => candidate.id === companyId);
+    if (!company) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'record_not_found', message: 'Empresa não encontrada.' } }) });
+    const sessionUser = api.state.users.find(user => user.id === api.session.user_id);
+    const visible = api.state.deals.filter(deal => {
+      if (String(deal.company || '').trim().toLocaleLowerCase('pt-BR') !== String(company.name).trim().toLocaleLowerCase('pt-BR')) return false;
+      if (api.session.role === 'Administrador') return true;
+      if (api.session.role === 'Gestor') return deal.team === sessionUser?.team;
+      return deal.responsibleId === api.session.user_id || (deal.assistants || []).includes(api.session.user_id);
+    });
+    const items = visible.map(deal => {
+      const stage = api.pipeline.stages.find(candidate => candidate.id === deal.stageId);
+      return {
+        id: deal.id, title: deal.title, stageId: stage.id, stageName: stage.name,
+        semanticType: stage.semanticType, responsibleId: deal.responsibleId,
+        responsibleName: api.state.users.find(user => user.id === deal.responsibleId)?.name || null,
+        amount: Number(deal.amount || 0).toFixed(2)
+      };
+    });
+    const metric = semanticType => {
+      const subset = items.filter(item => item.semanticType === semanticType);
+      return { count: subset.length, amount: subset.reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2) };
+    };
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ totalCount: items.length, open: metric('open'), won: metric('won'), lost: metric('lost'), items }) });
   });
   await context.route('**/api/deal-pipeline/history**', route => {
     const request = route.request();
@@ -1603,6 +1640,86 @@ async function storageEntries(page) {
     assert.equal(await drawer.locator('[data-category="automation"]').count(), 1);
     assert.match(await drawer.locator('[data-category="automation"]').innerText(), /Responsável alterado para Equipe Faturamento/);
     assert.equal((await stateFrom(page)).notifications.filter(note => note.detail?.includes(dealId) && /Faturamento|Responsabilidade/.test(note.text)).length, 2);
+  });
+
+  await run('HIST-05 mostra totais canônicos e preserva semântica após renomear e remover', async page => {
+    const api = apiByPage.get(page);
+    const wonDeal = api.state.deals.find(deal => deal.id === 'N-16308');
+    const lostDeal = api.state.deals.find(deal => deal.id === 'N-16311');
+    wonDeal.company = 'Arkos Estética';
+    lostDeal.company = 'Arkos Estética';
+    lostDeal.stageId = DEAL_STAGE_IDS[7];
+    lostDeal.stage = DEAL_STAGES[7];
+    await reloadReady(page);
+    await goTo(page, 'Empresas');
+    await page.getByRole('button', { name: 'Arkos Estética', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    const summary = drawer.getByRole('group', { name: 'Resumo dos negócios da empresa' });
+    await summary.waitFor();
+    assert.match(await summary.locator('[data-company-metric="total"]').innerText(), /3/);
+    assert.match(await summary.locator('[data-company-metric="open"]').innerText(), /1.*R\$\s*48\.500,00/s);
+    assert.match(await summary.locator('[data-company-metric="won"]').innerText(), /1.*R\$\s*19\.400,00/s);
+    assert.match(await summary.locator('[data-company-metric="lost"]').innerText(), /1.*R\$\s*32\.700,00/s);
+    assert.deepEqual(await drawer.locator('[data-company-deal]').evaluateAll(rows => rows.map(row => row.dataset.companyDeal)), ['N-16312', 'N-16311', 'N-16308']);
+    assert.match(await drawer.locator('[data-company-deal="N-16308"]').innerText(), /Ganho/);
+    assert.match(await drawer.locator('[data-company-deal="N-16311"]').innerText(), /Perdido/);
+
+    api.pipeline.stages.find(stage => stage.id === DEAL_STAGE_IDS[6]).name = 'Venda celebrada';
+    wonDeal.stage = 'Venda celebrada';
+    await page.evaluate(() => loadCompanyDeals('E-802'));
+    await drawer.getByText('Venda celebrada').waitFor();
+    assert.match(await summary.locator('[data-company-metric="won"]').innerText(), /1.*R\$\s*19\.400,00/s);
+    api.state.deals = api.state.deals.filter(deal => deal.id !== 'N-16311');
+    await page.evaluate(() => loadCompanyDeals('E-802'));
+    await drawer.locator('[data-company-deal="N-16311"]').waitFor({ state: 'detached' });
+    assert.match(await summary.locator('[data-company-metric="total"]').innerText(), /2/);
+    assert.match(await summary.locator('[data-company-metric="lost"]').innerText(), /0.*R\$\s*0,00/s);
+  });
+
+  await run('HIST-05 trata erro retry e resumo vazio sem vazar Negócios restritos', async page => {
+    const api = apiByPage.get(page);
+    api.companyDealFailures.add('E-802');
+    await page.evaluate(() => openEntityDrawer('company', 'E-802'));
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('button', { name: 'Tentar novamente' }).waitFor();
+    assert.match(await drawer.locator('#companyDealsStatus').innerText(), /Não foi possível carregar/);
+    api.companyDealFailures.delete('E-802');
+    await drawer.getByRole('button', { name: 'Tentar novamente' }).click();
+    await drawer.getByText('Nenhum Negócio visível para esta empresa.').waitFor();
+    const summary = drawer.getByRole('group', { name: 'Resumo dos negócios da empresa' });
+    assert.match(await summary.locator('[data-company-metric="total"]').innerText(), /0/);
+    assert.equal(await drawer.locator('[data-company-deal]').count(), 0);
+  }, {
+    session: { user_id: 'u-vitor', user_name: 'Vitor Santos', role: 'Vendedor' },
+    preloadState: (() => {
+      const workspace = minimalWorkspace();
+      workspace.users.push({ id: 'u-vitor', name: 'Vitor Santos', role: 'Vendedor', team: 'Vendas CMS', status: 'Ativo' });
+      workspace.companies.push({
+        id: 'E-802', name: 'Arkos Estética', city: 'São Paulo / SP',
+        segment: 'Médico e Hospitalar', phone: '(11) 3456-7788', ownerId: 'u-paula'
+      });
+      return workspace;
+    })()
+  });
+
+  await run('HIST-05 navega Empresa Negócio Empresa e atualiza valor confirmado', async page => {
+    await goTo(page, 'Empresas');
+    await page.getByRole('button', { name: 'Arkos Estética', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.locator('[data-company-deal="N-16312"]').waitFor();
+    await drawer.locator('[data-company-deal="N-16312"]').getByRole('button', { name: 'Implantação Arkos Estética' }).click();
+    assert.equal(await drawer.getAttribute('data-entity'), 'deal');
+    assert.equal(await drawer.getByRole('button', { name: 'Voltar à empresa' }).isVisible(), true);
+    await drawer.getByLabel('Valor (R$)').fill('50000');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    await drawer.getByRole('tabpanel', { name: 'Negócios' }).waitFor();
+    assert.equal(await drawer.getAttribute('data-entity'), 'company');
+    await drawer.locator('[data-company-deal="N-16312"]').waitFor();
+    assert.match(await drawer.locator('[data-company-deal="N-16312"]').innerText(), /R\$\s*50\.000,00/);
+    await drawer.locator('[data-company-deal="N-16312"]').getByRole('button', { name: 'Implantação Arkos Estética' }).click();
+    await drawer.getByRole('button', { name: 'Voltar à empresa' }).click();
+    assert.equal(await drawer.getAttribute('data-entity'), 'company');
+    assert.equal(await drawer.getByRole('tab', { name: 'Negócios' }).getAttribute('aria-selected'), 'true');
   });
 
   await run('FILTER-03 busca livre alcança identificador e responsável', async page => {
