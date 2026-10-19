@@ -11,8 +11,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import DealPipeline, DealPipelineAuditEvent, DealPipelineStage, Workspace
+from app.models import CrmUser, DealPipeline, DealPipelineAuditEvent, DealPipelineStage, Workspace
 from app.policies import CURRENT_ROLES, PrincipalScope
+from app.repositories.activity import ActivityRepository
 from app.repositories.pipeline import DealPipelineAggregate, DealPipelineRepository
 from app.schemas import (
     DealPipelineAuditEventResponse,
@@ -21,6 +22,8 @@ from app.schemas import (
     DealPipelineStageResponse,
     DealPipelineUpdateRequest,
 )
+from app.services.activity import movement_events_for_transitions
+from app.services.deal_automation import DealAutomationExecutor, DealTransition
 
 
 _COLOR_PATTERN = re.compile(r"#[0-9A-Fa-f]{6}\Z")
@@ -105,12 +108,16 @@ class DealPipelineService:
     def __init__(
         self,
         repository_factory: Callable[[Session, str], DealPipelineRepository] = DealPipelineRepository,
+        activity_repository_factory: Callable[[Session, str], ActivityRepository] = ActivityRepository,
+        automation_executor: DealAutomationExecutor | None = None,
         uuid_factory: Callable[[], UUID] = uuid4,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.repository_factory = repository_factory
+        self.activity_repository_factory = activity_repository_factory
         self.uuid_factory = uuid_factory
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.automation_executor = automation_executor or DealAutomationExecutor(clock=self.clock)
 
     def _repository(
         self, session: Session, principal: PrincipalScope
@@ -185,14 +192,57 @@ class DealPipelineService:
                 principal.user_id,
                 changed_at,
             )
-            transfer_counts[source.id] = transferred
+            transfer_counts[source.id] = len(transferred)
             transfer_summary.append(
                 {
                     "sourceStageId": str(source.id),
                     "targetStageId": str(target.id),
-                    "count": transferred,
+                    "count": len(transferred),
                 }
             )
+            operation_key = (
+                f"pipeline-transfer:{pipeline.id}:{request.pipeline_version}:"
+                f"{source.id}:{target.id}"
+            )
+            transitions = tuple(
+                DealTransition(
+                    deal_id=result.deal_id,
+                    from_stage_id=result.from_stage_id,
+                    to_stage_id=result.to_stage_id,
+                    from_stage_name=result.from_stage_name,
+                    to_stage_name=result.to_stage_name,
+                    source="pipeline_transfer",
+                    occurred_at=changed_at,
+                )
+                for result in transferred
+            )
+            if transitions:
+                actor_name = session.scalar(
+                    select(CrmUser.name).where(
+                        CrmUser.workspace_id == principal.workspace_id,
+                        CrmUser.id == principal.user_id,
+                    )
+                )
+                activity_repository = self.activity_repository_factory(
+                    session, principal.workspace_id
+                )
+                activity_repository.append_many(
+                    movement_events_for_transitions(
+                        transitions,
+                        None,
+                        principal,
+                        operation_key,
+                        actor_name=actor_name,
+                    )
+                )
+                for transition, result in zip(transitions, transferred, strict=True):
+                    if not result.deleted:
+                        self.automation_executor.execute_for_transition(
+                            session,
+                            principal,
+                            transition,
+                            operation_key,
+                        )
 
         for item in archive_items:
             assert item.current is not None

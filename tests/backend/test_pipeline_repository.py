@@ -219,7 +219,11 @@ def test_transfer_updates_active_and_deleted_deals_payload_and_history(
             .order_by(DealStageHistory.deal_id)
         ).all()
 
-        assert transferred == 2
+        assert len(transferred) == 2
+        assert [result.deal_id for result in transferred] == ["active", "deleted"]
+        assert {result.from_stage_id for result in transferred} == {source.id}
+        assert {result.to_stage_id for result in transferred} == {target.id}
+        assert [result.deleted for result in transferred] == [False, True]
         assert {deal.stage_id for deal in deals} == {target.id}
         assert {deal.stage for deal in deals} == {"Ganho"}
         assert all(deal.won_at == changed_at for deal in deals)

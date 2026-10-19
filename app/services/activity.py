@@ -109,13 +109,19 @@ def collect_deal_transitions(
 
 def movement_events_for_transitions(
     transitions: Sequence[DealTransition],
-    before: WorkspaceState,
+    before: WorkspaceState | None,
     principal: PrincipalScope,
     operation_key: str,
+    *,
+    actor_name: str | None = None,
 ) -> tuple[NewActivityEvent, ...]:
     if not isinstance(operation_key, str) or not operation_key.strip():
         raise ValueError("activity operation key must be non-empty")
-    actor_name = _actor_name(before, principal)
+    resolved_actor_name = actor_name or (
+        _actor_name(before, principal) if before is not None else None
+    )
+    if not resolved_actor_name:
+        raise ActivityValidationError("movement actor name is unavailable")
     events: list[NewActivityEvent] = []
     for transition in transitions:
         if transition.occurred_at is None:
@@ -127,7 +133,7 @@ def movement_events_for_transitions(
                 category="movement",
                 event_type="deal.stage_changed",
                 actor_user_id=principal.user_id,
-                actor_name=actor_name,
+                actor_name=resolved_actor_name,
                 summary=(
                     f"Etapa alterada de {transition.from_stage_name} "
                     f"para {transition.to_stage_name}"

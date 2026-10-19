@@ -17,11 +17,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
 from app.models import (
+    CrmActivityEvent,
     Deal,
     DealPipeline,
     DealPipelineAuditEvent,
     DealPipelineStage,
     DealStageHistory,
+    Notification,
     Workspace,
 )
 from app.policies import PrincipalScope
@@ -41,7 +43,7 @@ TEST_DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
-TENANT_HEAD = "c7f3a9d8e2b1"
+TENANT_HEAD = "e1c4a7b9d2f6"
 WORKSPACE_ID = "default"
 ACTOR_ID = "pipeline-service-admin"
 PRINCIPAL = PrincipalScope(
@@ -549,6 +551,9 @@ def test_occupied_stage_transfers_active_and_deleted_deals_and_increments_worksp
         histories = session.scalars(select(DealStageHistory).order_by(DealStageHistory.deal_id)).all()
         archived_source = session.get(DealPipelineStage, source.id)
         event = service.history(session, PRINCIPAL).items[0]
+        activity_events = session.scalars(
+            select(CrmActivityEvent).order_by(CrmActivityEvent.deal_id)
+        ).all()
 
         assert result.transfer_counts == {source.id: 2}
         assert result.workspace_version == before.workspace_version + 1
@@ -576,6 +581,134 @@ def test_occupied_stage_transfers_active_and_deleted_deals_and_increments_worksp
             }
         ]
         assert "record" not in event.transfer_summary[0]
+        assert [activity.deal_id for activity in activity_events] == ["active", "deleted"]
+        assert {activity.category for activity in activity_events} == {"movement"}
+        assert {activity.actor_user_id for activity in activity_events} == {ACTOR_ID}
+        assert {activity.actor_name for activity in activity_events} == {"Pipeline Admin"}
+        assert {
+            (
+                activity.details["fromStageId"],
+                activity.details["fromStageName"],
+                activity.details["toStageId"],
+                activity.details["toStageName"],
+                activity.details["source"],
+            )
+            for activity in activity_events
+        } == {
+            (
+                str(source.id),
+                source.name,
+                str(target.id),
+                target.name,
+                "pipeline_transfer",
+            )
+        }
+
+        retry_request = _archive_request(before, source.id, target.id)
+        with pytest.raises(DealPipelineVersionConflict):
+            service.update(session, PRINCIPAL, retry_request)
+        assert session.scalar(select(func.count()).select_from(CrmActivityEvent)) == 2
+
+
+def test_transfer_to_billing_runs_shared_automation_once_in_same_transaction(
+    pipeline_database_url: str,
+) -> None:
+    changed_at = datetime(2026, 9, 29, 18, 40, tzinfo=timezone.utc)
+    service = DealPipelineService(clock=lambda: changed_at)
+    with _session(pipeline_database_url) as session:
+        session.execute(
+            text(
+                "INSERT INTO teams (id, workspace_id, name) "
+                "VALUES ('team-billing', 'default', 'Faturamento')"
+            )
+        )
+        session.execute(
+            text(
+                "INSERT INTO crm_users "
+                "(id, workspace_id, team_id, name, email, job_title, role, status, payload) "
+                "VALUES ('u-billing', 'default', 'team-billing', 'Equipe de Faturamento', "
+                "'billing@example.test', 'Faturamento', 'Faturamento', 'Ativo', '{}'::jsonb)"
+            )
+        )
+        before = service.load(session, PRINCIPAL)
+        source = next(stage for stage in before.stages if stage.name == "Orçamentos enviados")
+        target = next(stage for stage in before.stages if stage.system_key == "billing")
+        _seed_deal(session, session.get(DealPipelineStage, source.id), deal_id="billing-active")
+
+        result = service.update(
+            session,
+            PRINCIPAL,
+            _archive_request(before, source.id, target.id),
+        )
+        deal = session.get(Deal, "billing-active")
+        activities = session.scalars(
+            select(CrmActivityEvent).order_by(CrmActivityEvent.id)
+        ).all()
+        notifications = session.scalars(
+            select(Notification).order_by(Notification.user_id)
+        ).all()
+
+        assert result.workspace_version == before.workspace_version + 1
+        assert deal.stage_id == target.id
+        assert deal.responsible_id == "u-billing"
+        assert deal.team_id == "team-billing"
+        assert deal.payload["record"]["responsibleId"] == "u-billing"
+        assert [activity.category for activity in activities] == [
+            "movement",
+            "automation",
+        ]
+        assert activities[1].details["automationKey"] == "billing"
+        assert activities[1].details["result"] == "success"
+        assert {notification.user_id for notification in notifications} == {
+            ACTOR_ID,
+            "u-billing",
+        }
+        assert session.scalar(select(func.count()).select_from(DealPipelineAuditEvent)) == 1
+
+
+class _FailingAutomationExecutor:
+    def execute_for_transition(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+        raise RuntimeError("injected automation failure")
+
+
+def test_transfer_automation_failure_rolls_back_every_side_effect(
+    pipeline_database_url: str,
+) -> None:
+    changed_at = datetime(2026, 9, 29, 18, 42, tzinfo=timezone.utc)
+    with _session(pipeline_database_url) as session:
+        baseline = DealPipelineService().load(session, PRINCIPAL)
+        source = next(stage for stage in baseline.stages if stage.name == "Orçamentos enviados")
+        target = next(stage for stage in baseline.stages if stage.semantic_type == "won")
+        _seed_deal(session, session.get(DealPipelineStage, source.id), deal_id="rollback")
+
+    failing = DealPipelineService(
+        automation_executor=_FailingAutomationExecutor(),
+        clock=lambda: changed_at,
+    )
+    with pytest.raises(RuntimeError, match="injected automation failure"):
+        with _session(pipeline_database_url) as session:
+            failing.update(
+                session,
+                PRINCIPAL,
+                _archive_request(baseline, source.id, target.id),
+            )
+
+    with _session(pipeline_database_url) as session:
+        pipeline = session.scalar(select(DealPipeline))
+        source_after = session.get(DealPipelineStage, source.id)
+        deal = session.get(Deal, "rollback")
+        workspace = session.get(Workspace, WORKSPACE_ID)
+
+        assert pipeline.version == baseline.pipeline_version
+        assert workspace.version == baseline.workspace_version
+        assert source_after.archived_at is None
+        assert deal.stage_id == source.id
+        assert deal.stage == source.name
+        assert deal.payload["record"]["stageHistory"] == []
+        assert session.scalar(select(func.count()).select_from(DealStageHistory)) == 0
+        assert session.scalar(select(func.count()).select_from(CrmActivityEvent)) == 0
+        assert session.scalar(select(func.count()).select_from(Notification)) == 0
+        assert session.scalar(select(func.count()).select_from(DealPipelineAuditEvent)) == 0
 
 
 def test_occupied_billing_stage_transfer_keeps_key_only_on_archived_source(
@@ -784,4 +917,6 @@ def test_stale_workspace_and_audit_failure_roll_back_transfer_and_archive(
         assert deal.payload["record"]["stage"] == source.name
         assert deal.payload["record"]["stageHistory"] == []
         assert session.scalar(select(func.count()).select_from(DealStageHistory)) == 0
+        assert session.scalar(select(func.count()).select_from(CrmActivityEvent)) == 0
+        assert session.scalar(select(func.count()).select_from(Notification)) == 0
         assert session.scalar(select(func.count()).select_from(DealPipelineAuditEvent)) == 0

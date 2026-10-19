@@ -38,6 +38,18 @@ class DealPipelineAggregate:
     stages: tuple[DealPipelineStage, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class DealTransferResult:
+    """Canonical snapshot of one Deal moved by an administrative transfer."""
+
+    deal_id: str
+    from_stage_id: UUID
+    from_stage_name: str
+    to_stage_id: UUID
+    to_stage_name: str
+    deleted: bool
+
+
 _COMMERCIAL_AUDIT_KEYS = frozenset(
     {
         "amount",
@@ -190,7 +202,7 @@ class DealPipelineRepository:
         target: DealPipelineStage,
         actor_user_id: str,
         changed_at: datetime,
-    ) -> int:
+    ) -> tuple[DealTransferResult, ...]:
         canonical_target = self.load_stage(
             target.id,
             pipeline_id=target.pipeline_id,
@@ -217,7 +229,7 @@ class DealPipelineRepository:
             .with_for_update()
         ).all()
         if not deals:
-            return 0
+            return ()
 
         positions = dict(
             self.session.execute(
@@ -233,6 +245,7 @@ class DealPipelineRepository:
             ).all()
         )
         changed_at_text = _timestamp(changed_at)
+        results: list[DealTransferResult] = []
         for deal in deals:
             record = deepcopy((deal.payload or {}).get("record") or {})
             history = list(record.get("stageHistory") or [])
@@ -288,8 +301,18 @@ class DealPipelineRepository:
                     changed_by_id=actor_user_id,
                 )
             )
+            results.append(
+                DealTransferResult(
+                    deal_id=deal.id,
+                    from_stage_id=source.id,
+                    from_stage_name=source.name,
+                    to_stage_id=canonical_target.id,
+                    to_stage_name=canonical_target.name,
+                    deleted=deal.deleted_at is not None,
+                )
+            )
         self.session.flush()
-        return len(deals)
+        return tuple(results)
 
     def append_audit(
         self,

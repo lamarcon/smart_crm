@@ -339,7 +339,7 @@ T17 → T18
 
 #### T10: Emit activities during administrative stage transfers
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Integrate the shared transition/automation activity writer into bulk archive-and-transfer operations.  
 **Where**: `app/services/pipeline.py`  
@@ -355,11 +355,11 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Every transferred active or soft-deleted Deal receives one movement event with administrative actor and stage snapshots.
-- [ ] Eligible targets run the same server automation executor as ordinary save and emit at most one automation event per Deal.
-- [ ] Pipeline audit, Deal state/history, notifications, activity events and workspace version are one transaction.
-- [ ] Retry and injected failure prove deterministic dedupe and zero partial writes.
-- [ ] Existing archive/semantic/soft-delete behavior remains green and the build gate passes.
+- [x] Every transferred active or soft-deleted Deal receives one movement event with administrative actor and stage snapshots.
+- [x] Eligible targets run the same server automation executor as ordinary save and emit at most one automation event per Deal.
+- [x] Pipeline audit, Deal state/history, notifications, activity events and workspace version are one transaction.
+- [x] Retry and injected failure prove deterministic dedupe and zero partial writes.
+- [x] Existing archive/semantic/soft-delete behavior remains green and the build gate passes.
 
 **Tests**: PostgreSQL integration — extend `tests/backend/test_pipeline_service.py`  
 **Gate**: build  
