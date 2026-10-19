@@ -299,6 +299,7 @@ def test_preflight_sanitizes_untrusted_revision_text(fleet_setup) -> None:  # no
         (["cliente-ready"], False, True, TENANT_HEAD, "verified backup acknowledgement is required"),
         (["cliente-ready"], True, False, TENANT_HEAD, "operator confirmation is required"),
         (["cliente-ready"], True, True, "", "target revision is required"),
+        (["cliente-ready"], True, True, PREVIOUS_TENANT_HEAD, "target revision must be the packaged tenant head"),
         (["cliente-ready"], True, True, "head", "target revision must be the packaged tenant head"),
         (["cliente-ready"], True, True, "missing-revision", "target revision must be the packaged tenant head"),
     ],

@@ -285,7 +285,7 @@ def test_policy_emits_separate_exact_alembic_and_loopback_uvicorn_commands():
         "-m", "alembic", "-c", "alembic-control.ini", "current"
     ]
     assert json.loads(tenant_upgrade.stdout) == [
-        "-m", "alembic", "-c", "alembic.ini", "upgrade", "c7f3a9d8e2b1"
+        "-m", "alembic", "-c", "alembic.ini", "upgrade", "e1c4a7b9d2f6"
     ]
     assert json.loads(tenant_current.stdout) == [
         "-m", "alembic", "-c", "alembic.ini", "current"
@@ -313,7 +313,7 @@ def test_initializer_migrates_and_verifies_control_then_selected_tenant_before_p
     assert "$env:SMART_CRM_DATABASE_URL" in initialize
     assert "Assert-SmartCrmAlembicRevision" in initialize
     assert "c01a5d8e4f20" in initialize
-    assert "c7f3a9d8e2b1" in initialize
+    assert "e1c4a7b9d2f6" in initialize
     assert "alembic" not in start.lower()
 
 
@@ -328,7 +328,7 @@ def test_pipeline_release_preserves_side_by_side_identity_hba_and_rollback_contr
     assert "host smartcrm,smartcrm_control all 0.0.0.0/0 reject" in policy
     assert "restaure a tarefa anterior" in readme
     assert "Rollback de um tenant nunca redireciona para o banco de outro tenant." in readme
-    assert "c7f3a9d8e2b1" in readme
+    assert "e1c4a7b9d2f6" in readme
 
 
 def test_alembic_revision_gate_rejects_wrong_or_unheaded_revision():

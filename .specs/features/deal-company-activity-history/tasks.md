@@ -541,7 +541,7 @@ T17 → T18
 
 #### T17: Advance the supported tenant revision safely
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Update fleet verification and package contracts to recognize the new tenant head only after explicit migration verification.  
 **Where**: `app/fleet.py`  
@@ -557,12 +557,12 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Fleet migration targets the new tenant head only for explicitly selected tenants and confirms schema/identity before updating control metadata.
-- [ ] Failure leaves expected revision unchanged and reports a redacted per-tenant outcome.
-- [ ] Offline package includes the migration and changed runtime/static files with valid manifest integrity.
-- [ ] PostgreSQL 11, HBA isolation, `DW_CMS`, `DW_PRODUTOS`, service identity and side-by-side rollback boundaries remain unchanged.
-- [ ] Fleet/package/runbook tests include unselected tenant and failure injection; build gate passes.
-- [ ] No upload, push, production migration, task-scheduler or server change is performed.
+- [x] Fleet migration targets the new tenant head only for explicitly selected tenants and confirms schema/identity before updating control metadata.
+- [x] Failure leaves expected revision unchanged and reports a redacted per-tenant outcome.
+- [x] Offline package includes the migration and changed runtime/static files with valid manifest integrity.
+- [x] PostgreSQL 11, HBA isolation, `DW_CMS`, `DW_PRODUTOS`, service identity and side-by-side rollback boundaries remain unchanged.
+- [x] Fleet/package/runbook tests include unselected tenant and failure injection; build gate passes.
+- [x] No upload, push, production migration, task-scheduler or server change is performed.
 
 **Tests**: unit + contract + PostgreSQL integration — extend fleet/package/runbook backend tests in this same task  
 **Gate**: build  

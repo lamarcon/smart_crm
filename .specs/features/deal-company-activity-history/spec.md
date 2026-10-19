@@ -215,15 +215,15 @@ O Smart CRM registra tecnicamente mudanças de etapa, mas o usuário não possui
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| HIST-01 | Consultar a linha do tempo do Negócio | Execute | In progress (T1-T4 complete) |
-| HIST-02 | Registrar movimentações e automações atomicamente | Execute | In progress (T1,T4 complete) |
-| HIST-03 | Publicar observações manuais imutáveis | Execute | In progress (T1-T2,T4 complete) |
-| HIST-04 | Usar um painel amplo e responsivo no Negócio | Specify | Planned |
-| HIST-05 | Resumir os Negócios vinculados na Empresa | Execute | In progress (T2 complete) |
-| HIST-06 | Manter histórico próprio da Empresa | Execute | In progress (T1-T4 complete) |
-| HIST-07 | Preservar isolamento e operação segura | Execute | In progress (T1,T3-T4 complete) |
+| HIST-01 | Consultar a linha do tempo do Negócio | Execute | In progress (implementation complete; T18 validation pending) |
+| HIST-02 | Registrar movimentações e automações atomicamente | Execute | In progress (implementation complete; T18 validation pending) |
+| HIST-03 | Publicar observações manuais imutáveis | Execute | In progress (implementation complete; T18 validation pending) |
+| HIST-04 | Usar um painel amplo e responsivo no Negócio | Execute | In progress (implementation complete; T18 validation pending) |
+| HIST-05 | Resumir os Negócios vinculados na Empresa | Execute | In progress (implementation complete; T18 validation pending) |
+| HIST-06 | Manter histórico próprio da Empresa | Execute | In progress (implementation complete; T18 validation pending) |
+| HIST-07 | Preservar isolamento e operação segura | Execute | In progress (implementation complete; T18 validation pending) |
 
-**Coverage:** 7 requirements mapped to approved tasks; T1-T4 complete, T5-T18 pending.
+**Coverage:** 7 requirements mapped to approved tasks; T1-T17 complete, T18 pending.
 
 ---
 
