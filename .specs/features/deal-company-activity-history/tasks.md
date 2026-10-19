@@ -511,7 +511,7 @@ T17 → T18
 
 #### T16: Add the Company history experience
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Render Company creation/change/observation history with immutable composer, filters/states and cursor paging.  
 **Where**: `app/static/index.html`  
@@ -527,11 +527,11 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Company history displays creation, whitelisted before/after changes and observations with actor/time.
-- [ ] No-op saves and linked Deal movement/automation do not create Company history cards.
-- [ ] Observation rendering is escaped, immutable, idempotent and immediately visible after success.
-- [ ] Loading, empty, error/retry, paging, narrow layout and keyboard behavior match the Deal timeline.
-- [ ] Browser tests cover reload, correction note, late response, 51+ items and absence of Deal-event duplication; build gate passes.
+- [x] Company history displays creation, whitelisted before/after changes and observations with actor/time.
+- [x] No-op saves and linked Deal movement/automation do not create Company history cards.
+- [x] Observation rendering is escaped, immutable, idempotent and immediately visible after success.
+- [x] Loading, empty, error/retry, paging, narrow layout and keyboard behavior match the Deal timeline.
+- [x] Browser tests cover reload, correction note, late response, 51+ items and absence of Deal-event duplication; build gate passes.
 
 **Tests**: browser e2e — extend `tests/ui-prototype.spec.cjs`  
 **Gate**: build  

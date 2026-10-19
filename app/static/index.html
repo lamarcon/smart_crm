@@ -618,7 +618,24 @@
               <section id="drawerCompanyDealsPanel" role="tabpanel" aria-labelledby="drawerCompanyDealsTab">
                 <div class="company-deal-panel"><div class="activity-status" id="companyDealsStatus" role="status" aria-live="polite"></div><div class="company-deal-metrics" id="companyDealSummary" role="group" aria-label="Resumo dos negócios da empresa"></div><div class="company-deal-list" id="companyDealList"></div></div>
               </section>
-              <section id="drawerCompanyHistoryPanel" role="tabpanel" aria-labelledby="drawerCompanyHistoryTab" hidden><div class="drawer-shell-empty"><b>Histórico da empresa</b><p>Alterações e observações próprias serão exibidas aqui.</p></div></section>
+              <section id="drawerCompanyHistoryPanel" role="tabpanel" aria-labelledby="drawerCompanyHistoryTab" hidden>
+                <div class="deal-activity-panel">
+                  <div class="activity-composer">
+                    <label for="companyObservationText">Registrar comentário da empresa</label>
+                    <textarea id="companyObservationText" maxlength="4000" placeholder="Registre um contexto importante sobre a empresa"></textarea>
+                    <div class="activity-composer-actions"><p class="hint">Ctrl + Enter para publicar · a observação não poderá ser editada.</p><button type="button" class="button primary" data-action="submit-company-observation">Publicar observação</button></div>
+                    <p class="activity-error" id="companyObservationError" role="alert"></p>
+                  </div>
+                  <div class="activity-filters" role="group" aria-label="Filtrar histórico da empresa">
+                    <button type="button" data-action="company-activity-filter" data-company-activity-filter="all" aria-pressed="true">Tudo</button>
+                    <button type="button" data-action="company-activity-filter" data-company-activity-filter="change" aria-pressed="false">Alterações</button>
+                    <button type="button" data-action="company-activity-filter" data-company-activity-filter="observation" aria-pressed="false">Observações</button>
+                  </div>
+                  <div class="activity-status" id="companyActivityStatus" role="status" aria-live="polite"></div>
+                  <div class="deal-activity-feed" id="companyActivityTimeline" role="feed" aria-label="Linha do tempo da empresa"></div>
+                  <button type="button" class="button activity-load-more" id="companyActivityLoadMore" data-action="load-more-company-activities" hidden>Carregar mais</button>
+                </div>
+              </section>
             </section>
           </aside>
         </div>
@@ -1267,6 +1284,9 @@
       companyDealController?.abort();
       companyDealGeneration += 1;
       Object.assign(companyDealState, { companyId: null, summary: null, status: 'idle', error: '' });
+      companyActivityController?.abort();
+      companyActivityGeneration += 1;
+      Object.assign(companyActivityState, { companyId: null, category: null, items: [], nextCursor: null, status: 'idle', error: '', submitting: false, observationKey: null, observationText: '' });
       drawerParentContext = null;
       resetPipelineHistory();
       document.documentElement.dataset.pipelineReady = 'false';
@@ -2573,6 +2593,13 @@
     let companyDealGeneration = 0;
     let companyDealController = null;
     const companyDealState = { companyId: null, summary: null, status: 'idle', error: '' };
+    let companyActivityGeneration = 0;
+    let companyActivityController = null;
+    const companyActivityState = {
+      companyId: null, category: null, items: [], nextCursor: null,
+      status: 'idle', error: '', submitting: false,
+      observationKey: null, observationText: ''
+    };
 
     function activityKey() {
       if (crypto.randomUUID) return crypto.randomUUID();
@@ -2590,6 +2617,14 @@
       }).format(instant);
     }
 
+    function activityValue(value) {
+      if (value === null || value === undefined || value === '') return 'vazio';
+      if (typeof value === 'boolean') return value ? 'Sim' : 'Não';
+      if (Array.isArray(value)) return value.length ? value.map(activityValue).join(', ') : 'vazio';
+      if (typeof value === 'object') return JSON.stringify(value);
+      return String(value);
+    }
+
     function activityDetails(event) {
       if (event.category === 'movement') {
         const from = event.details?.fromStageName || 'Sem etapa anterior';
@@ -2602,12 +2637,25 @@
         const actions = Array.isArray(event.details?.actions) ? event.details.actions.map(action => action.summary).filter(Boolean) : [];
         return [event.details?.automationName || 'Automação', outcome, ...actions].join(' · ');
       }
+      if (event.category === 'change') {
+        const changes = Array.isArray(event.details?.changes) ? event.details.changes : [];
+        return changes.map(change => `${change.label || change.field}: ${activityValue(change.before)} → ${activityValue(change.after)}`).join('\n');
+      }
       if (event.category === 'observation') return event.details?.text || '';
       return '';
     }
 
     function activityIcon(category) {
-      return ({ movement: '↔', automation: '⚙', observation: '✎' })[category] || '•';
+      return ({ movement: '↔', automation: '⚙', change: '↻', observation: '✎' })[category] || '•';
+    }
+
+    function activityCards(items) {
+      return items.map(event => `
+        <article class="deal-activity-event" data-activity-event="${escapeHTML(event.id)}" data-category="${escapeHTML(event.category)}">
+          <span class="activity-icon" aria-hidden="true">${activityIcon(event.category)}</span>
+          <div><header><h5>${escapeHTML(event.summary)}</h5><time datetime="${escapeHTML(event.occurredAt)}">${escapeHTML(activityTime(event.occurredAt))}</time></header>
+          <p>${escapeHTML(activityDetails(event))}</p><div class="deal-activity-meta">${escapeHTML(event.actor?.name || 'Sistema')}</div></div>
+        </article>`).join('');
     }
 
     function renderActivityTimeline() {
@@ -2630,12 +2678,7 @@
       if (dealActivityState.status === 'loading') timeline.innerHTML = '<div class="drawer-shell-empty"><b>Carregando linha do tempo</b><p>Os dados do Negócio continuam disponíveis.</p></div>';
       else if (dealActivityState.status === 'error' && !dealActivityState.items.length) timeline.innerHTML = '';
       else if (!dealActivityState.items.length) timeline.innerHTML = '<div class="drawer-shell-empty"><b>Nenhuma atividade encontrada.</b><p>Movimentações, automações e observações aparecerão aqui.</p></div>';
-      else timeline.innerHTML = dealActivityState.items.map(event => `
-        <article class="deal-activity-event" data-activity-event="${escapeHTML(event.id)}" data-category="${escapeHTML(event.category)}">
-          <span class="activity-icon" aria-hidden="true">${activityIcon(event.category)}</span>
-          <div><header><h5>${escapeHTML(event.summary)}</h5><time datetime="${escapeHTML(event.occurredAt)}">${escapeHTML(activityTime(event.occurredAt))}</time></header>
-          <p>${escapeHTML(activityDetails(event))}</p><div class="deal-activity-meta">${escapeHTML(event.actor?.name || 'Sistema')}</div></div>
-        </article>`).join('');
+      else timeline.innerHTML = activityCards(dealActivityState.items);
       const loadMore = document.getElementById('dealActivityLoadMore');
       loadMore.hidden = !dealActivityState.nextCursor || dealActivityState.status === 'loading';
       loadMore.disabled = dealActivityState.status === 'loading-more';
@@ -2722,6 +2765,116 @@
       } finally {
         dealActivityState.submitting = false;
         renderActivityTimeline();
+      }
+    }
+
+    function renderCompanyActivityTimeline() {
+      const panel = document.getElementById('drawerCompanyHistoryPanel');
+      if (!panel || panel.hidden) return;
+      document.querySelectorAll('[data-company-activity-filter]').forEach(button => {
+        const value = button.dataset.companyActivityFilter === 'all' ? null : button.dataset.companyActivityFilter;
+        button.setAttribute('aria-pressed', String(value === companyActivityState.category));
+      });
+      const status = document.getElementById('companyActivityStatus');
+      status.className = 'activity-status';
+      if (companyActivityState.status === 'loading') status.textContent = 'Carregando atividades...';
+      else if (companyActivityState.status === 'loading-more') status.textContent = 'Carregando mais atividades...';
+      else if (companyActivityState.status === 'error') {
+        status.classList.add('error');
+        status.innerHTML = `<span>Não foi possível carregar o histórico. ${escapeHTML(companyActivityState.error)}</span><button type="button" class="button small" data-action="retry-company-activities">Tentar novamente</button>`;
+      } else status.textContent = companyActivityState.items.length ? `${companyActivityState.items.length} atividade(s) carregada(s).` : '';
+      const timeline = document.getElementById('companyActivityTimeline');
+      timeline.setAttribute('aria-busy', String(['loading', 'loading-more'].includes(companyActivityState.status)));
+      if (companyActivityState.status === 'loading') timeline.innerHTML = '<div class="drawer-shell-empty"><b>Carregando linha do tempo</b><p>Os dados da Empresa continuam disponíveis.</p></div>';
+      else if (companyActivityState.status === 'error' && !companyActivityState.items.length) timeline.innerHTML = '';
+      else if (!companyActivityState.items.length) timeline.innerHTML = '<div class="drawer-shell-empty"><b>Nenhuma atividade encontrada.</b><p>Alterações e observações próprias da Empresa aparecerão aqui.</p></div>';
+      else timeline.innerHTML = activityCards(companyActivityState.items);
+      const loadMore = document.getElementById('companyActivityLoadMore');
+      loadMore.hidden = !companyActivityState.nextCursor || companyActivityState.status === 'loading';
+      loadMore.disabled = companyActivityState.status === 'loading-more';
+      const submit = document.querySelector('[data-action="submit-company-observation"]');
+      submit.disabled = companyActivityState.submitting;
+      submit.textContent = companyActivityState.submitting ? 'Publicando...' : 'Publicar observação';
+    }
+
+    async function loadCompanyActivities(companyId, options = {}) {
+      if (!companyId) return;
+      const append = options.append === true;
+      const category = options.category === undefined ? companyActivityState.category : options.category;
+      const cursor = append ? companyActivityState.nextCursor : null;
+      companyActivityController?.abort();
+      companyActivityController = new AbortController();
+      const generation = ++companyActivityGeneration;
+      if (!append) {
+        companyActivityState.companyId = companyId;
+        companyActivityState.category = category || null;
+        companyActivityState.items = [];
+        companyActivityState.nextCursor = null;
+      }
+      companyActivityState.status = append ? 'loading-more' : 'loading';
+      companyActivityState.error = '';
+      renderCompanyActivityTimeline();
+      const query = new URLSearchParams({ limit: '50' });
+      if (category) query.set('category', category);
+      if (cursor) query.set('cursor', cursor);
+      try {
+        const payload = await responseJson(await apiFetch(`/api/companies/${encodeURIComponent(companyId)}/activities?${query}`, {
+          headers: { Accept: 'application/json' }, signal: companyActivityController.signal
+        }));
+        const form = document.getElementById('drawerForm');
+        if (generation !== companyActivityGeneration || form.dataset.entity !== 'company' || form.dataset.id !== companyId) return;
+        companyActivityState.items = append ? [...companyActivityState.items, ...payload.items] : payload.items;
+        companyActivityState.nextCursor = payload.nextCursor || null;
+        companyActivityState.status = 'ready';
+      } catch (failure) {
+        if (failure.name === 'AbortError' || generation !== companyActivityGeneration) return;
+        companyActivityState.status = 'error';
+        companyActivityState.error = failure.message || 'Tente novamente.';
+      }
+      renderCompanyActivityTimeline();
+    }
+
+    function setCompanyActivityFilter(category) {
+      if (!companyActivityState.companyId) return;
+      const normalized = ['change', 'observation'].includes(category) ? category : null;
+      loadCompanyActivities(companyActivityState.companyId, { category: normalized });
+    }
+
+    async function submitCompanyObservation() {
+      if (companyActivityState.submitting || !companyActivityState.companyId) return;
+      const input = document.getElementById('companyObservationText');
+      const error = document.getElementById('companyObservationError');
+      const text = input.value.trim();
+      if (!text || text.length > 4000) {
+        error.textContent = 'A observação deve conter entre 1 e 4.000 caracteres.';
+        return;
+      }
+      if (!companyActivityState.observationKey || companyActivityState.observationText !== text) {
+        companyActivityState.observationKey = activityKey();
+        companyActivityState.observationText = text;
+      }
+      const companyId = companyActivityState.companyId;
+      const key = companyActivityState.observationKey;
+      companyActivityState.submitting = true;
+      error.textContent = '';
+      renderCompanyActivityTimeline();
+      try {
+        const event = await responseJson(await apiFetch(`/api/companies/${encodeURIComponent(companyId)}/observations`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ text, idempotencyKey: key })
+        }));
+        const form = document.getElementById('drawerForm');
+        if (form.dataset.entity !== 'company' || form.dataset.id !== companyId) return;
+        companyActivityState.items = [event, ...companyActivityState.items.filter(item => item.id !== event.id)];
+        companyActivityState.status = 'ready';
+        companyActivityState.observationKey = null;
+        companyActivityState.observationText = '';
+        input.value = '';
+      } catch (failure) {
+        error.textContent = failure.message || 'Não foi possível publicar a observação.';
+      } finally {
+        companyActivityState.submitting = false;
+        renderCompanyActivityTimeline();
       }
     }
 
@@ -2876,6 +3029,16 @@
         companyDealController?.abort();
         companyDealGeneration += 1;
       }
+      if (entity === 'company') {
+        companyActivityController?.abort();
+        companyActivityGeneration += 1;
+        Object.assign(companyActivityState, { companyId: id, category: null, items: [], nextCursor: null, status: 'idle', error: '', submitting: false, observationKey: null, observationText: '' });
+        document.getElementById('companyObservationText').value = '';
+        document.getElementById('companyObservationError').textContent = '';
+      } else {
+        companyActivityController?.abort();
+        companyActivityGeneration += 1;
+      }
     }
 
     function renderDrawerCompanySummary(entity, record) {
@@ -2998,6 +3161,15 @@
       document.querySelectorAll('[data-company-workspace-tab]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.companyWorkspaceTab === companyWorkspaceTab)));
       document.getElementById('drawerCompanyDealsPanel').hidden = companyWorkspaceTab !== 'deals';
       document.getElementById('drawerCompanyHistoryPanel').hidden = companyWorkspaceTab !== 'history';
+      const form = document.getElementById('drawerForm');
+      if (companyWorkspaceTab === 'history' && form.dataset.entity === 'company') {
+        if (companyActivityState.companyId !== form.dataset.id || companyActivityState.status === 'idle') loadCompanyActivities(form.dataset.id, { category: null });
+        else renderCompanyActivityTimeline();
+      } else if (companyActivityState.status === 'loading' || companyActivityState.status === 'loading-more') {
+        companyActivityController?.abort();
+        companyActivityGeneration += 1;
+        companyActivityState.status = 'idle';
+      }
     }
 
     function closeEntityDrawer(force = false) {
@@ -3014,6 +3186,8 @@
       activityGeneration += 1;
       companyDealController?.abort();
       companyDealGeneration += 1;
+      companyActivityController?.abort();
+      companyActivityGeneration += 1;
       drawerParentContext = null;
       const returnFocus = drawerReturnFocus;
       drawerReturnFocus = null;
@@ -3653,6 +3827,10 @@
       if (action === 'load-more-activities') loadEntityActivities('deal', dealActivityState.dealId, { append: true });
       if (action === 'submit-deal-observation') submitDealObservation();
       if (action === 'retry-company-deals') loadCompanyDeals(companyDealState.companyId);
+      if (action === 'company-activity-filter') setCompanyActivityFilter(button.dataset.companyActivityFilter);
+      if (action === 'retry-company-activities') loadCompanyActivities(companyActivityState.companyId, { category: companyActivityState.category });
+      if (action === 'load-more-company-activities') loadCompanyActivities(companyActivityState.companyId, { append: true });
+      if (action === 'submit-company-observation') submitCompanyObservation();
       if (action === 'cancel-drawer') closeEntityDrawer();
       if (action === 'delete') deleteEntity(button.dataset.entity, button.dataset.id);
       if (action === 'convert') requestStageChange('lead', button.dataset.id, 'Lead convertido');
@@ -3720,6 +3898,11 @@
       if (event.target.id === 'dealObservationText' && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         submitDealObservation();
+        return;
+      }
+      if (event.target.id === 'companyObservationText' && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        submitCompanyObservation();
         return;
       }
       if (event.key === 'Escape' && document.getElementById('entityDrawer').classList.contains('open')) {

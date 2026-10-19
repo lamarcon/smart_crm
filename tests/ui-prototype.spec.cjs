@@ -129,6 +129,9 @@ async function openFresh(options = {}) {
     dealActivities: clone(options.dealActivities || {}), activityRequests: [],
     activityFailures: new Set(), activityGates: new Map(), observationWrites: [],
     observationFailuresRemaining: 0, observationByKey: new Map(), workspaceWrites: [],
+    companyActivities: clone(options.companyActivities || {}), companyActivityRequests: [],
+    companyActivityFailures: new Set(), companyActivityGates: new Map(), companyObservationWrites: [],
+    companyObservationFailuresRemaining: 0, companyObservationByKey: new Map(),
     companyDealRequests: [], companyDealFailures: new Set(), companyDealGates: new Map(),
     disableBillingAutomation: Boolean(options.disableBillingAutomation),
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
@@ -184,6 +187,55 @@ async function openFresh(options = {}) {
       };
       existing.unshift(event);
       api.observationByKey.set(payload.idempotencyKey, event);
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(event) });
+  });
+  await context.route('**/api/companies/*/activities**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const match = url.pathname.match(/^\/api\/companies\/([^/]+)\/activities$/);
+    if (!match || request.method() !== 'GET') return route.continue();
+    const companyId = decodeURIComponent(match[1]);
+    api.companyActivityRequests.push(request.url());
+    const gate = api.companyActivityGates.get(companyId);
+    if (gate) await gate;
+    if (api.companyActivityFailures.has(companyId)) {
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Histórico indisponível.' } }) });
+    }
+    const category = url.searchParams.get('category');
+    const limit = Number(url.searchParams.get('limit')) || 50;
+    const offset = Number((url.searchParams.get('cursor') || '').replace(/^cursor-/, '')) || 0;
+    const available = (api.companyActivities[companyId] || [])
+      .filter(item => !category || item.category === category)
+      .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.id - left.id);
+    const items = available.slice(offset, offset + limit);
+    const nextCursor = offset + limit < available.length ? `cursor-${offset + limit}` : null;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items, nextCursor }) });
+  });
+  await context.route('**/api/companies/*/observations', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const match = url.pathname.match(/^\/api\/companies\/([^/]+)\/observations$/);
+    if (!match || request.method() !== 'POST') return route.continue();
+    const companyId = decodeURIComponent(match[1]);
+    const payload = request.postDataJSON();
+    api.companyObservationWrites.push({ companyId, payload: clone(payload) });
+    if (api.companyObservationFailuresRemaining > 0) {
+      api.companyObservationFailuresRemaining -= 1;
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Não foi possível publicar a observação.' } }) });
+    }
+    let event = api.companyObservationByKey.get(payload.idempotencyKey);
+    if (!event) {
+      const existing = api.companyActivities[companyId] || (api.companyActivities[companyId] = []);
+      event = {
+        id: Math.max(0, ...Object.values(api.companyActivities).flat().map(item => item.id)) + 1,
+        category: 'observation', eventType: 'company.observation_added',
+        actor: { id: api.session.user_id, name: api.session.user_name, kind: 'user' },
+        summary: 'Observação adicionada.', details: { text: payload.text.trim() },
+        occurredAt: new Date(Date.UTC(2026, 9, 19, 19, existing.length, 0)).toISOString()
+      };
+      existing.unshift(event);
+      api.companyObservationByKey.set(payload.idempotencyKey, event);
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(event) });
   });
@@ -689,6 +741,25 @@ function dealActivitySeries(total = 52) {
       summary: `Evento ${id} ${category}`,
       details,
       occurredAt: new Date(Date.UTC(2026, 9, 19, 15, id, 0)).toISOString()
+    };
+  });
+}
+
+function companyActivitySeries(total = 52) {
+  return Array.from({ length: total }, (_, index) => {
+    const id = total - index;
+    const category = index % 2 === 0 ? 'change' : 'observation';
+    return {
+      id, category, eventType: category === 'change' ? 'company.updated' : 'company.observation_added',
+      actor: { id: 'u-admin', name: 'Alexandre Martins', kind: 'user' },
+      summary: category === 'change' ? `Empresa atualizada ${id}` : `Observação ${id}`,
+      details: category === 'change'
+        ? { changes: [
+          { field: 'name', label: 'Nome', before: `Arkos ${id - 1}`, after: `Arkos ${id}` },
+          { field: 'phone', label: 'Telefone', before: null, after: '(11) 3456-7788' }
+        ] }
+        : { text: `Contexto da empresa ${id}` },
+      occurredAt: new Date(Date.UTC(2026, 9, 19, 16, id, 0)).toISOString()
     };
   });
 }
@@ -1720,6 +1791,88 @@ async function storageEntries(page) {
     await drawer.getByRole('button', { name: 'Voltar à empresa' }).click();
     assert.equal(await drawer.getAttribute('data-entity'), 'company');
     assert.equal(await drawer.getByRole('tab', { name: 'Negócios' }).getAttribute('aria-selected'), 'true');
+  });
+
+  await run('HIST-06 pagina e filtra somente o histórico próprio da Empresa', async page => {
+    await goTo(page, 'Empresas');
+    await page.getByRole('button', { name: 'Arkos Estética', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Histórico' }).click();
+    const timeline = drawer.locator('#companyActivityTimeline');
+    await timeline.locator('[data-activity-event]').first().waitFor();
+    assert.equal(await timeline.locator('[data-activity-event]').count(), 50);
+    assert.match(await timeline.locator('[data-activity-event]').first().innerText(), /Nome:\s+Arkos 51\s+→\s+Arkos 52/);
+    assert.match(await timeline.locator('[data-activity-event]').first().innerText(), /Telefone:\s+vazio\s+→\s+\(11\) 3456-7788/);
+    assert.equal(await timeline.locator('[data-category="movement"], [data-category="automation"]').count(), 0);
+    await drawer.getByRole('button', { name: 'Alterações', exact: true }).click();
+    await timeline.locator('[data-category="change"]').first().waitFor();
+    assert.equal(await timeline.locator('[data-activity-event]').count(), 26);
+    assert.equal(await timeline.locator('[data-activity-event]:not([data-category="change"])').count(), 0);
+    assert.match(apiByPage.get(page).companyActivityRequests.at(-1), /category=change/);
+    await drawer.getByRole('button', { name: 'Tudo', exact: true }).click();
+    await drawer.getByRole('button', { name: 'Carregar mais' }).click();
+    await page.waitForFunction(() => document.querySelectorAll('#companyActivityTimeline [data-activity-event]').length === 52);
+    assert.match(apiByPage.get(page).companyActivityRequests.at(-1), /cursor=cursor-50/);
+  }, { companyActivities: { 'E-802': companyActivitySeries(52) } });
+
+  await run('HIST-06 ignora resposta atrasada ao trocar de Empresa', async page => {
+    const api = apiByPage.get(page);
+    api.companyActivities['E-802'] = [{ ...companyActivitySeries(1)[0], summary: 'Histórico antigo da Arkos' }];
+    api.companyActivities['E-801'] = [{ ...companyActivitySeries(1)[0], id: 2, summary: 'Histórico atual da ALS' }];
+    let releaseArkos;
+    api.companyActivityGates.set('E-802', new Promise(resolve => { releaseArkos = resolve; }));
+    await page.evaluate(() => openEntityDrawer('company', 'E-802'));
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Histórico' }).click();
+    await drawer.locator('#companyActivityStatus').filter({ hasText: 'Carregando' }).waitFor();
+    await page.evaluate(() => openEntityDrawer('company', 'E-801'));
+    await drawer.getByRole('tab', { name: 'Histórico' }).click();
+    await drawer.getByText('Histórico atual da ALS').waitFor();
+    releaseArkos();
+    await page.waitForTimeout(100);
+    assert.equal(await drawer.getByText('Histórico antigo da Arkos').count(), 0);
+    assert.match(await drawer.locator('#entityDrawerSubtitle').innerText(), /E-801/);
+  });
+
+  await run('HIST-03 publica observação idempotente e correção imutável no celular', async page => {
+    await page.evaluate(() => openEntityDrawer('company', 'E-802'));
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Histórico' }).click();
+    await drawer.getByText('Nenhuma atividade encontrada.').waitFor();
+    const input = drawer.getByLabel('Registrar comentário da empresa');
+    await input.fill('<img src=x onerror=alert(1)> contexto');
+    await input.press('Control+Enter');
+    await drawer.getByText('<img src=x onerror=alert(1)> contexto', { exact: true }).waitFor();
+    assert.equal(await drawer.locator('#companyActivityTimeline img').count(), 0);
+    const api = apiByPage.get(page);
+    api.companyObservationFailuresRemaining = 1;
+    await input.fill('Correção: contato deve ocorrer amanhã.');
+    await input.press('Control+Enter');
+    await drawer.locator('#companyObservationError').filter({ hasText: /Não foi possível/ }).waitFor();
+    await input.press('Control+Enter');
+    await drawer.getByText('Correção: contato deve ocorrer amanhã.', { exact: true }).waitFor();
+    assert.equal(api.companyObservationWrites.at(-2).payload.idempotencyKey, api.companyObservationWrites.at(-1).payload.idempotencyKey);
+    assert.equal(await drawer.locator('[data-activity-event] button').count(), 0);
+    assert.equal(await drawer.evaluate(element => element.scrollWidth <= element.clientWidth), true);
+    await reloadReady(page);
+    await page.evaluate(() => openEntityDrawer('company', 'E-802'));
+    await drawer.getByRole('tab', { name: 'Histórico' }).click();
+    await drawer.getByText('Correção: contato deve ocorrer amanhã.', { exact: true }).waitFor();
+    assert.equal(await drawer.locator('[data-category="observation"]').count(), 2);
+  }, { viewport: { width: 390, height: 844 } });
+
+  await run('HIST-06 mantém campos utilizáveis durante erro e retry vazio', async page => {
+    const api = apiByPage.get(page);
+    api.companyActivityFailures.add('E-802');
+    await page.evaluate(() => openEntityDrawer('company', 'E-802'));
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Histórico' }).click();
+    await drawer.getByRole('button', { name: 'Tentar novamente' }).waitFor();
+    assert.equal(await drawer.getByLabel('Razão / nome da Empresa *').isEnabled(), true);
+    api.companyActivityFailures.delete('E-802');
+    await drawer.getByRole('button', { name: 'Tentar novamente' }).click();
+    await drawer.getByText('Nenhuma atividade encontrada.').waitFor();
+    assert.equal(await drawer.getByLabel('Razão / nome da Empresa *').isEnabled(), true);
   });
 
   await run('FILTER-03 busca livre alcança identificador e responsável', async page => {
