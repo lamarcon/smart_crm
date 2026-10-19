@@ -395,7 +395,7 @@ T17 → T18
 
 #### T12: Expose Company activities and linked Deal APIs
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Add Company history GET, observation POST and linked-Deal summary/list GET routes.  
 **Where**: `app/main.py`  
@@ -411,11 +411,11 @@ T17 → T18
 
 **Done when**:
 
-- [ ] `GET /api/companies/{company_id}/activities` and `POST /api/companies/{company_id}/observations` match Deal timeline semantics.
-- [ ] `GET /api/companies/{company_id}/deals` returns exact summary plus only visible active Deal rows.
-- [ ] Hidden/missing/foreign Company and Deal data are indistinguishable through status, totals and timing-insensitive response shape.
-- [ ] Company history never copies linked Deal movement/automation events.
-- [ ] API tests cover empty/full summaries, all roles, semantic rename, soft delete, forgery and dependency failure; build gate passes.
+- [x] `GET /api/companies/{company_id}/activities` and `POST /api/companies/{company_id}/observations` match Deal timeline semantics.
+- [x] `GET /api/companies/{company_id}/deals` returns exact summary plus only visible active Deal rows.
+- [x] Hidden/missing/foreign Company and Deal data are indistinguishable through status, totals and timing-insensitive response shape.
+- [x] Company history never copies linked Deal movement/automation events.
+- [x] API tests cover empty/full summaries, all roles, semantic rename, soft delete, forgery and dependency failure; build gate passes.
 
 **Tests**: API + PostgreSQL integration — add `tests/backend/test_company_api.py`  
 **Gate**: build  

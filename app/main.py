@@ -29,6 +29,8 @@ from app.schemas import (
     ActivityPage,
     ActivityQuery,
     BootstrapRequest,
+    CompanyActivityQuery,
+    CompanyDealSummaryResponse,
     DealPipelineAuditPage,
     DealPipelineHistoryQuery,
     DealPipelineResponse,
@@ -53,6 +55,7 @@ from app.services.activity import (
     ActivityService,
     ActivityValidationError,
 )
+from app.services.company_deals import CompanyDealNotFoundError, CompanyDealService
 from app.services.pipeline import (
     DealPipelineAuthorizationError,
     DealPipelineService,
@@ -131,6 +134,7 @@ def create_app(
     workspace_service: WorkspaceService | None = None,
     pipeline_service: DealPipelineService | None = None,
     activity_service: ActivityService | None = None,
+    company_deal_service: CompanyDealService | None = None,
     static_dir: Path = STATIC_DIR,
     auth_service: AuthService | None = None,
     tenant_router: TenantDatabaseRouter | None = None,
@@ -144,6 +148,7 @@ def create_app(
     service = workspace_service or WorkspaceService()
     active_pipeline_service = pipeline_service or DealPipelineService()
     active_activity_service = activity_service or ActivityService()
+    active_company_deal_service = company_deal_service or CompanyDealService()
     active_auth_settings = auth_settings or AuthSettings(
         expected_origin="https://sc2030.brbots.com"
     )
@@ -238,7 +243,13 @@ def create_app(
 
         response = await call_next(request)
         if request.url.path.startswith(
-            ("/api/auth", "/api/workspace", "/api/deal-pipeline", "/api/deals")
+            (
+                "/api/auth",
+                "/api/workspace",
+                "/api/deal-pipeline",
+                "/api/deals",
+                "/api/companies",
+            )
         ):
             response.headers["Cache-Control"] = "no-store"
         return _add_security_headers(response)
@@ -375,6 +386,13 @@ def create_app(
         _error_value: ActivityNotFoundError,
     ) -> JSONResponse:
         return _error(404, "activity_not_found", "Registro não encontrado.")
+
+    @app.exception_handler(CompanyDealNotFoundError)
+    async def company_deal_not_found(
+        _request: Request,
+        _error_value: CompanyDealNotFoundError,
+    ) -> JSONResponse:
+        return _error(404, "company_not_found", "Registro não encontrado.")
 
     @app.exception_handler(ActivityValidationError)
     @app.exception_handler(ActivityCursorError)
@@ -725,6 +743,57 @@ def create_app(
             principal.context.principal,
             deal_id,
             payload,
+        )
+
+    @app.get(
+        "/api/companies/{company_id}/activities",
+        response_model=ActivityPage,
+    )
+    def company_activities(
+        company_id: str,
+        query: CompanyActivityQuery = Depends(),
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> ActivityPage:
+        require_action(principal, Action.READ)
+        return active_activity_service.company_timeline(
+            principal.tenant_session,
+            principal.context.principal,
+            company_id,
+            query,
+        )
+
+    @app.post(
+        "/api/companies/{company_id}/observations",
+        response_model=ActivityEventResponse,
+    )
+    def add_company_observation(
+        company_id: str,
+        payload: ObservationCreateRequest,
+        request: Request,
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> ActivityEventResponse:
+        require_expected_origin(request)
+        require_action(principal, Action.UPDATE)
+        return active_activity_service.add_company_observation(
+            principal.tenant_session,
+            principal.context.principal,
+            company_id,
+            payload,
+        )
+
+    @app.get(
+        "/api/companies/{company_id}/deals",
+        response_model=CompanyDealSummaryResponse,
+    )
+    def company_deals(
+        company_id: str,
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> CompanyDealSummaryResponse:
+        require_action(principal, Action.READ)
+        return active_company_deal_service.summary(
+            principal.tenant_session,
+            principal.context.principal,
+            company_id,
         )
 
     @app.get("/")
