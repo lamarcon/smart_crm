@@ -310,7 +310,7 @@ T17 → T18
 
 #### T9: Collect Deal and Company activities during workspace save
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Integrate canonical before/after collection, legacy stage-history dual-write, automation execution and Company change events into workspace save.  
 **Where**: `app/services/workspace.py`  
@@ -326,12 +326,12 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Each confirmed stage transition dual-writes one legacy history row and one movement event in the same transaction.
-- [ ] Billing state, notification and one automation event commit atomically after canonical stage validation.
-- [ ] Company creation/change emits only whitelisted own fields with before/after values; no-op creates no event.
-- [ ] Browser-submitted history, actor, tenant, timestamp or activity fields cannot be persisted.
-- [ ] Any reconcile/activity/automation failure rolls back workspace version, commercial rows, notifications and events together.
-- [ ] Workspace tests cover normal save, retry, undo semantics, Company diff/redaction and full rollback; build gate passes.
+- [x] Each confirmed stage transition dual-writes one legacy history row and one movement event in the same transaction.
+- [x] Billing state, notification and one automation event commit atomically after canonical stage validation.
+- [x] Company creation/change emits only whitelisted own fields with before/after values; no-op creates no event.
+- [x] Browser-submitted history, actor, tenant, timestamp or activity fields cannot be persisted.
+- [x] Any reconcile/activity/automation failure rolls back workspace version, commercial rows, notifications and events together.
+- [x] Workspace tests cover normal save, retry, undo semantics, Company diff/redaction and full rollback; build gate passes.
 
 **Tests**: PostgreSQL integration — extend `tests/backend/test_workspace_service.py`  
 **Gate**: build  

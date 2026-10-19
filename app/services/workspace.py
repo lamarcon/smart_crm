@@ -21,8 +21,15 @@ from app.policies import (
     can_read_record,
 )
 from app.repositories.workspace import WorkspaceRepository, team_id_for_name
+from app.repositories.activity import ActivityRepository
 from app.repositories.pipeline import DealPipelineAggregate, DealPipelineRepository
 from app.schemas import PersistedCounts, WorkspaceState, count_state, validate_references
+from app.services.activity import (
+    collect_company_changes,
+    collect_deal_transitions,
+    movement_events_for_transitions,
+)
+from app.services.deal_automation import DealAutomationExecutor
 
 
 class WorkspaceServiceError(RuntimeError):
@@ -282,6 +289,35 @@ def _preserve_server_stage_metadata(
     return WorkspaceState.model_validate(data)
 
 
+_UNTRUSTED_ACTIVITY_KEYS = frozenset(
+    {
+        "activity",
+        "activities",
+        "activityHistory",
+        "history",
+        "actor",
+        "actorId",
+        "actorName",
+        "occurredAt",
+        "timestamp",
+        "tenantId",
+        "workspaceId",
+        "eventType",
+        "details",
+        "dedupeKey",
+    }
+)
+
+
+def _strip_untrusted_activity_metadata(state: WorkspaceState) -> WorkspaceState:
+    data = state.model_dump(by_alias=True, exclude_none=True)
+    for module in ("companies", "deals"):
+        for record in data[module]:
+            for key in _UNTRUSTED_ACTIVITY_KEYS:
+                record.pop(key, None)
+    return WorkspaceState.model_validate(data)
+
+
 def _state_with_principal_identity(
     state: WorkspaceState,
     principal: PrincipalScope,
@@ -301,10 +337,18 @@ class WorkspaceService:
             [Session, str], DealPipelineRepository
         ] = DealPipelineRepository,
         clock: Callable[[], datetime] | None = None,
+        activity_repository_factory: Callable[
+            [Session, str], ActivityRepository
+        ] = ActivityRepository,
+        automation_executor: DealAutomationExecutor | None = None,
     ) -> None:
         self.repository_factory = repository_factory
         self.pipeline_repository_factory = pipeline_repository_factory
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.activity_repository_factory = activity_repository_factory
+        self.automation_executor = automation_executor or DealAutomationExecutor(
+            clock=self.clock
+        )
 
     def _repository(
         self,
@@ -378,15 +422,50 @@ class WorkspaceService:
         self._check_version(workspace, expected_version)
         canonical = repository.read_active()
         state = _preserve_server_stage_metadata(canonical, state)
+        state = _strip_untrusted_activity_metadata(state)
         merged = merge_authorized_state(canonical, state, principal)
+        occurred_at = self.clock()
         merged = self._canonicalize_deal_stages(
             merged,
             canonical,
             aggregate,
             principal,
             workspace.version,
+            occurred_at=occurred_at,
+        )
+        operation_key = f"workspace:{principal.workspace_id}:{workspace.version + 1}"
+        transitions = collect_deal_transitions(
+            canonical,
+            merged,
+            aggregate.stages,
+            principal,
+            occurred_at=occurred_at,
+        )
+        movement_events = movement_events_for_transitions(
+            transitions,
+            canonical,
+            principal,
+            operation_key,
+        )
+        company_events = collect_company_changes(
+            canonical,
+            merged,
+            principal,
+            operation_key,
+            occurred_at=occurred_at,
         )
         repository.reconcile(merged)
+        activity_repository = self.activity_repository_factory(
+            session, principal.workspace_id
+        )
+        activity_repository.append_many((*movement_events, *company_events))
+        for transition in transitions:
+            self.automation_executor.execute_for_transition(
+                session,
+                principal,
+                transition,
+                operation_key,
+            )
         workspace.version += 1
         session.flush()
         return self._result(repository, principal, workspace.version)
@@ -475,6 +554,7 @@ class WorkspaceService:
         workspace_version: int,
         *,
         allow_legacy_new: bool = False,
+        occurred_at: datetime | None = None,
     ) -> WorkspaceState:
         data = submitted.model_dump(by_alias=True, exclude_none=True)
         canonical_deals = {
@@ -484,7 +564,7 @@ class WorkspaceService:
         active_by_id = {stage.id: stage for stage in aggregate.stages}
         active_by_name = {stage.name: stage for stage in aggregate.stages}
         pipeline = aggregate.pipeline
-        now = self.clock()
+        now = occurred_at or self.clock()
         now_text = now.isoformat().replace("+00:00", "Z")
 
         def parse_uuid(value: object) -> UUID:

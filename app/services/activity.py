@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Callable, Literal
+from typing import Callable, Literal, Sequence
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Company, CrmActivityEvent, CrmUser, Deal, DealAssistant
+from app.models import Company, CrmActivityEvent, CrmUser, Deal, DealAssistant, DealPipelineStage
 from app.policies import PrincipalScope, RecordScope, can_mutate_record, can_read_record
 from app.repositories.activity import ActivityPageRows, ActivityRepository, NewActivityEvent
 from app.schemas import (
@@ -18,7 +19,9 @@ from app.schemas import (
     ActivityQuery,
     CompanyActivityQuery,
     ObservationCreateRequest,
+    WorkspaceState,
 )
+from app.services.deal_automation import DealTransition
 
 
 class ActivityServiceError(RuntimeError):
@@ -38,6 +41,199 @@ class ActivityValidationError(ActivityServiceError):
 
 
 SubjectKind = Literal["deal", "company"]
+
+_COMPANY_STANDARD_FIELDS: tuple[tuple[str, str], ...] = (
+    ("name", "Empresa"),
+    ("ownerId", "Proprietário"),
+    ("city", "Cidade"),
+    ("segment", "Segmento"),
+    ("phone", "Telefone"),
+)
+
+
+def _actor_name(state: WorkspaceState, principal: PrincipalScope) -> str:
+    return next(
+        (
+            str(user.get("name") or "Usuário")
+            for user in state.users
+            if user.get("id") == principal.user_id
+        ),
+        "Usuário",
+    )
+
+
+def collect_deal_transitions(
+    before: WorkspaceState,
+    after: WorkspaceState,
+    stage_registry: Sequence[DealPipelineStage],
+    principal: PrincipalScope,
+    *,
+    occurred_at: datetime,
+) -> tuple[DealTransition, ...]:
+    """Build trusted transitions from canonical snapshots and stage records."""
+
+    if occurred_at.tzinfo is None:
+        raise ValueError("transition timestamp must be timezone-aware")
+    before_by_id = {str(record.get("id")): record for record in before.deals}
+    stages = {stage.id: stage for stage in stage_registry}
+    transitions: list[DealTransition] = []
+    for record in after.deals:
+        deal_id = str(record.get("id"))
+        previous = before_by_id.get(deal_id)
+        if previous is None:
+            continue
+        try:
+            from_stage_id = UUID(str(previous.get("stageId")))
+            to_stage_id = UUID(str(record.get("stageId")))
+        except (TypeError, ValueError, AttributeError) as error:
+            raise ActivityValidationError("canonical stage identity is invalid") from error
+        if from_stage_id == to_stage_id:
+            continue
+        from_stage = stages.get(from_stage_id)
+        to_stage = stages.get(to_stage_id)
+        if from_stage is None or to_stage is None:
+            raise ActivityValidationError("canonical stage identity is unavailable")
+        transitions.append(
+            DealTransition(
+                deal_id=deal_id,
+                from_stage_id=from_stage.id,
+                to_stage_id=to_stage.id,
+                from_stage_name=from_stage.name,
+                to_stage_name=to_stage.name,
+                source="user",
+                occurred_at=occurred_at,
+            )
+        )
+    return tuple(transitions)
+
+
+def movement_events_for_transitions(
+    transitions: Sequence[DealTransition],
+    before: WorkspaceState,
+    principal: PrincipalScope,
+    operation_key: str,
+) -> tuple[NewActivityEvent, ...]:
+    if not isinstance(operation_key, str) or not operation_key.strip():
+        raise ValueError("activity operation key must be non-empty")
+    actor_name = _actor_name(before, principal)
+    events: list[NewActivityEvent] = []
+    for transition in transitions:
+        if transition.occurred_at is None:
+            raise ActivityValidationError("transition timestamp is unavailable")
+        events.append(
+            NewActivityEvent(
+                deal_id=transition.deal_id,
+                company_id=None,
+                category="movement",
+                event_type="deal.stage_changed",
+                actor_user_id=principal.user_id,
+                actor_name=actor_name,
+                summary=(
+                    f"Etapa alterada de {transition.from_stage_name} "
+                    f"para {transition.to_stage_name}"
+                ),
+                details={
+                    "fromStageId": (
+                        str(transition.from_stage_id)
+                        if transition.from_stage_id is not None
+                        else None
+                    ),
+                    "fromStageName": transition.from_stage_name,
+                    "toStageId": str(transition.to_stage_id),
+                    "toStageName": transition.to_stage_name,
+                    "source": transition.source,
+                },
+                dedupe_key=(
+                    f"movement:{operation_key.strip()}:{transition.deal_id}:"
+                    f"{transition.to_stage_id}"
+                ),
+                occurred_at=transition.occurred_at,
+            )
+        )
+    return tuple(events)
+
+
+def _custom_values(record: dict) -> dict[str, object]:
+    return {
+        str(item.get("key")): item.get("value")
+        for item in (record.get("customFields") or [])
+        if isinstance(item, dict) and item.get("key") is not None
+    }
+
+
+def collect_company_changes(
+    before: WorkspaceState,
+    after: WorkspaceState,
+    principal: PrincipalScope,
+    operation_key: str,
+    *,
+    occurred_at: datetime,
+) -> tuple[NewActivityEvent, ...]:
+    """Return one creation/change event per Company using whitelisted fields only."""
+
+    if not isinstance(operation_key, str) or not operation_key.strip():
+        raise ValueError("activity operation key must be non-empty")
+    if occurred_at.tzinfo is None:
+        raise ValueError("company activity timestamp must be timezone-aware")
+    actor_name = _actor_name(before, principal)
+    before_by_id = {str(record.get("id")): record for record in before.companies}
+    custom_labels = {
+        str(item.get("key")): str(item.get("label") or item.get("key"))
+        for item in after.custom_field_schemas.get("companies", [])
+        if item.get("key") is not None
+    }
+    events: list[NewActivityEvent] = []
+    for record in after.companies:
+        company_id = str(record.get("id"))
+        previous = before_by_id.get(company_id)
+        changes: list[dict[str, object]] = []
+        for field, label in _COMPANY_STANDARD_FIELDS:
+            old_value = previous.get(field) if previous is not None else None
+            new_value = record.get(field)
+            if previous is None or old_value != new_value:
+                changes.append(
+                    {
+                        "field": field,
+                        "label": label,
+                        "before": old_value,
+                        "after": new_value,
+                    }
+                )
+        old_custom = _custom_values(previous or {})
+        new_custom = _custom_values(record)
+        for key in sorted(set(old_custom) | set(new_custom)):
+            old_value = old_custom.get(key)
+            new_value = new_custom.get(key)
+            if previous is None or old_value != new_value:
+                changes.append(
+                    {
+                        "field": f"custom:{key}",
+                        "label": custom_labels.get(key, key),
+                        "before": old_value,
+                        "after": new_value,
+                    }
+                )
+        if not changes:
+            continue
+        created = previous is None
+        events.append(
+            NewActivityEvent(
+                deal_id=None,
+                company_id=company_id,
+                category="change",
+                event_type="company.created" if created else "company.updated",
+                actor_user_id=principal.user_id,
+                actor_name=actor_name,
+                summary="Empresa criada" if created else "Empresa atualizada",
+                details={"changes": changes},
+                dedupe_key=(
+                    f"company-{'created' if created else 'updated'}:"
+                    f"{operation_key.strip()}:{company_id}"
+                ),
+                occurred_at=occurred_at,
+            )
+        )
+    return tuple(events)
 
 
 class ActivityService:

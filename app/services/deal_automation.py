@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Callable, Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session
 
-from app.models import CrmActivityEvent, CrmUser, Deal, DealPipelineStage, Notification
+from app.models import (
+    CrmActivityEvent,
+    CrmUser,
+    Deal,
+    DealPipelineStage,
+    Notification,
+    Team,
+)
 from app.policies import PrincipalScope
 from app.repositories.activity import ActivityRepository, NewActivityEvent
 
@@ -32,6 +40,10 @@ class DealTransition:
     deal_id: str
     from_stage_id: UUID | None
     to_stage_id: UUID
+    from_stage_name: str | None = None
+    to_stage_name: str = ""
+    source: Literal["user", "pipeline_transfer"] = "user"
+    occurred_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +143,19 @@ class DealAutomationExecutor:
 
         deal.responsible_id = target.id
         deal.team_id = target.team_id
+        target_team_name = session.scalar(
+            select(Team.name).where(
+                Team.workspace_id == principal.workspace_id,
+                Team.id == target.team_id,
+            )
+        )
+        packed_payload = deepcopy(deal.payload) if isinstance(deal.payload, dict) else {}
+        packed_record = dict(packed_payload.get("record") or {})
+        packed_record["responsibleId"] = target.id
+        if target_team_name is not None:
+            packed_record["team"] = target_team_name
+        packed_payload["record"] = packed_record
+        deal.payload = packed_payload
         actions: list[AutomationAction] = [
             AutomationAction(
                 type="assignment",
@@ -229,26 +254,47 @@ class DealAutomationExecutor:
         notification_digest = sha256(
             f"{execution_key}\0{recipient.id}".encode("utf-8")
         ).hexdigest()
+        notification_id = f"automation-{notification_digest}"
         target_recipient = recipient.id == BILLING_ASSIGNEE_ID
+        notification_text = (
+            "Responsabilidade alterada automaticamente."
+            if target_recipient
+            else "Automação de Faturamento executada."
+        )
+        notification_detail = (
+            f"{deal_id} agora está com {target_name}"
+            if target_recipient
+            else f"{deal_id} foi atribuído à {target_name}"
+        )
+        position = int(
+            session.scalar(
+                select(func.count()).select_from(Notification).where(
+                    Notification.workspace_id == workspace_id,
+                    Notification.deleted_at.is_(None),
+                )
+            )
+            or 0
+        )
         session.execute(
             postgresql_insert(Notification)
             .values(
-                id=f"automation-{notification_digest}",
+                id=notification_id,
                 workspace_id=workspace_id,
                 user_id=recipient.id,
-                text=(
-                    "Responsabilidade alterada automaticamente."
-                    if target_recipient
-                    else "Automação de Faturamento executada."
-                ),
-                detail=(
-                    f"{deal_id} agora está com {target_name}"
-                    if target_recipient
-                    else f"{deal_id} foi atribuído à {target_name}"
-                ),
+                text=notification_text,
+                detail=notification_detail,
                 displayed_time="Agora",
                 is_read=False,
                 payload={
+                    "position": position,
+                    "record": {
+                        "id": notification_id,
+                        "userId": recipient.id,
+                        "text": notification_text,
+                        "detail": notification_detail,
+                        "time": "Agora",
+                        "read": False,
+                    },
                     "source": "deal_automation",
                     "automationKey": BILLING_AUTOMATION_KEY,
                     "dealId": deal_id,

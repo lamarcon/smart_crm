@@ -14,11 +14,20 @@ from alembic.config import Config
 from sqlalchemy import create_engine, func, select, text
 
 from app.database import Database, DatabaseSettings
-from app.models import DealPipelineStage, DealStageHistory
+from app.models import (
+    Company,
+    CrmActivityEvent,
+    Deal,
+    DealPipelineStage,
+    DealStageHistory,
+    Notification,
+)
 from app.policies import PrincipalScope
+from app.repositories.activity import ActivityRepository
 from app.repositories.workspace import WorkspaceRepository, team_id_for_name
 from app.schemas import DealPipelineUpdateRequest, WorkspaceReferenceError, WorkspaceState
 from app.services.pipeline import DealPipelineService
+from app.services.deal_automation import DealAutomationExecutor
 from app.services.workspace import (
     WorkspaceAlreadyInitialized,
     WorkspaceAuthorizationError,
@@ -464,6 +473,271 @@ def test_workspace_stage_move_builds_immutable_server_history_and_semantics(serv
     assert preserved.state.deals[0]["stageChangedById"] == TEST_PRINCIPAL.user_id
     with database.session_scope() as session:
         assert session.scalar(select(func.count()).select_from(DealStageHistory)) == 1
+
+
+def test_workspace_stage_move_dual_writes_activity_retries_and_undoes(service) -> None:
+    workspace, database = service
+    workspace.bootstrap(state())
+    loaded = workspace.load()
+    original = deepcopy(loaded.state.deals[0])
+    with database.session_scope() as session:
+        won = session.scalar(
+            select(DealPipelineStage).where(
+                DealPipelineStage.workspace_id == "default",
+                DealPipelineStage.semantic_type == "won",
+            )
+        )
+    moved_input = deepcopy(loaded.state)
+    moved_input.deals[0].update(
+        {
+            "stageId": str(won.id),
+            "stage": "forged",
+            "stageHistory": [{"to": "forged", "byId": "forged"}],
+            "activity": {"eventType": "forged"},
+            "actorName": "forged",
+            "occurredAt": "1999-01-01T00:00:00Z",
+            "workspaceId": "foreign",
+        }
+    )
+
+    moved = workspace.save(loaded.version, moved_input)
+    with pytest.raises(WorkspaceConflict):
+        workspace.save(loaded.version, moved_input)
+
+    with database.session_scope() as session:
+        histories = session.scalars(select(DealStageHistory)).all()
+        events = session.scalars(
+            select(CrmActivityEvent)
+            .where(CrmActivityEvent.deal_id == "N-1")
+            .order_by(CrmActivityEvent.id)
+        ).all()
+        persisted = session.get(Deal, "N-1")
+        assert len(histories) == 1
+        assert len(events) == 1
+        assert events[0].event_type == "deal.stage_changed"
+        assert events[0].actor_user_id == "u-1"
+        assert events[0].actor_name == "Ana"
+        assert events[0].details == {
+            "fromStageId": original["stageId"],
+            "fromStageName": "Em Contato",
+            "toStageId": str(won.id),
+            "toStageName": won.name,
+            "source": "user",
+        }
+        persisted_record = persisted.payload["record"]
+        assert not {
+            "activity",
+            "actorName",
+            "occurredAt",
+            "workspaceId",
+        }.intersection(persisted_record)
+
+    undo = deepcopy(moved.state)
+    undo.deals[0]["stageId"] = original["stageId"]
+    undone = workspace.save(moved.version, undo)
+    assert undone.state.deals[0]["stageId"] == original["stageId"]
+    with database.session_scope() as session:
+        histories = session.scalars(
+            select(DealStageHistory).order_by(DealStageHistory.position)
+        ).all()
+        events = session.scalars(
+            select(CrmActivityEvent)
+            .where(CrmActivityEvent.deal_id == "N-1")
+            .order_by(CrmActivityEvent.id)
+        ).all()
+        assert len(histories) == len(events) == 2
+        assert events[-1].details["fromStageId"] == str(won.id)
+        assert events[-1].details["toStageId"] == original["stageId"]
+
+
+def test_workspace_company_creation_change_redaction_and_no_op(service) -> None:
+    workspace, database = service
+    workspace.bootstrap(state())
+    loaded = workspace.load()
+    changed = deepcopy(loaded.state)
+    changed.companies[0].update(
+        {
+            "name": "Empresa Renomeada",
+            "city": "RJ",
+            "activityHistory": [{"secret": "do-not-store"}],
+            "actorId": "forged",
+            "tenantId": "foreign",
+            "eventType": "company.forged",
+        }
+    )
+    changed.companies.append(
+        {
+            "id": "E-2",
+            "name": "Empresa Nova",
+            "city": "POA",
+            "segment": "Tech",
+            "phone": "",
+            "ownerId": "u-1",
+            "details": {"password": "forged"},
+        }
+    )
+
+    saved = workspace.save(loaded.version, changed)
+    no_op = workspace.save(saved.version, saved.state)
+    assert no_op.version == saved.version + 1
+
+    with database.session_scope() as session:
+        events = session.scalars(
+            select(CrmActivityEvent)
+            .where(CrmActivityEvent.company_id.is_not(None))
+            .order_by(CrmActivityEvent.id)
+        ).all()
+        assert [(event.company_id, event.event_type) for event in events] == [
+            ("E-1", "company.updated"),
+            ("E-2", "company.created"),
+        ]
+        updated_changes = events[0].details["changes"]
+        assert [change["field"] for change in updated_changes] == ["name", "city"]
+        assert updated_changes[0]["before"] == "Empresa"
+        assert updated_changes[0]["after"] == "Empresa Renomeada"
+        assert events[0].actor_name == events[1].actor_name == "Ana"
+        assert all(
+            set(change) == {"field", "label", "before", "after"}
+            for event in events
+            for change in event.details["changes"]
+        )
+        first = session.get(Company, "E-1")
+        second = session.get(Company, "E-2")
+        assert not {
+            "activityHistory",
+            "actorId",
+            "tenantId",
+            "eventType",
+        }.intersection(first.payload["record"])
+        assert "details" not in second.payload["record"]
+
+
+def test_workspace_billing_transition_commits_server_effects_once(service) -> None:
+    workspace, database = service
+    initial = state_data()
+    initial["users"].append(
+        {
+            "id": "u-billing",
+            "name": "Equipe Faturamento",
+            "email": "billing@test",
+            "jobTitle": "Analista",
+            "role": "Faturamento",
+            "team": "Faturamento",
+            "status": "Ativo",
+            "invitedAt": None,
+        }
+    )
+    workspace.bootstrap(WorkspaceState.model_validate(initial))
+    loaded = workspace.load()
+    with database.session_scope() as session:
+        billing = session.scalar(
+            select(DealPipelineStage).where(
+                DealPipelineStage.workspace_id == "default",
+                DealPipelineStage.system_key == "billing",
+            )
+        )
+    loaded.state.deals[0]["stageId"] = str(billing.id)
+
+    saved = workspace.save(loaded.version, loaded.state)
+    with pytest.raises(WorkspaceConflict):
+        workspace.save(loaded.version, loaded.state)
+
+    canonical = saved.state.deals[0]
+    assert canonical["stageId"] == str(billing.id)
+    assert canonical["responsibleId"] == "u-billing"
+    assert canonical["team"] == "Faturamento"
+    assert sum(
+        item.get("text") == "Responsabilidade alterada automaticamente."
+        for item in saved.state.notifications
+    ) == 1
+    assert sum(
+        item.get("text") == "Automação de Faturamento executada."
+        for item in saved.state.notifications
+    ) == 1
+
+    with database.session_scope() as session:
+        assert session.scalar(select(func.count()).select_from(DealStageHistory)) == 1
+        events = session.scalars(
+            select(CrmActivityEvent)
+            .where(CrmActivityEvent.deal_id == "N-1")
+            .order_by(CrmActivityEvent.id)
+        ).all()
+        assert [event.category for event in events] == ["movement", "automation"]
+        assert events[-1].details["result"] == "success"
+        assert session.scalar(select(func.count()).select_from(Notification)) == 3
+
+
+def test_activity_failure_rolls_back_workspace_version_rows_and_events(service) -> None:
+    workspace, database = service
+    workspace.bootstrap(state())
+
+    class FailingActivityRepository(ActivityRepository):
+        def append_many(self, events):  # noqa: ANN001, ANN201
+            super().append_many(events)
+            raise RuntimeError("forced activity failure")
+
+    failing = BoundWorkspaceService(
+        WorkspaceService(activity_repository_factory=FailingActivityRepository),
+        database,
+    )
+    changed = workspace.load().state
+    changed.companies[0]["name"] = "Must roll back"
+    with pytest.raises(RuntimeError, match="forced activity failure"):
+        failing.save(1, changed)
+
+    loaded = workspace.load()
+    assert loaded.version == 1
+    assert loaded.state.companies[0]["name"] == "Empresa"
+    with database.session_scope() as session:
+        assert session.scalar(select(func.count()).select_from(CrmActivityEvent)) == 0
+
+
+def test_automation_failure_rolls_back_transition_history_and_notifications(service) -> None:
+    workspace, database = service
+    initial = state_data()
+    initial["users"].append(
+        {
+            "id": "u-billing",
+            "name": "Equipe Faturamento",
+            "email": "billing@test",
+            "jobTitle": "Analista",
+            "role": "Faturamento",
+            "team": "Faturamento",
+            "status": "Ativo",
+            "invitedAt": None,
+        }
+    )
+    workspace.bootstrap(WorkspaceState.model_validate(initial))
+
+    class FailingAutomationExecutor(DealAutomationExecutor):
+        def execute_for_transition(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            super().execute_for_transition(*args, **kwargs)
+            raise RuntimeError("forced automation failure")
+
+    failing = BoundWorkspaceService(
+        WorkspaceService(automation_executor=FailingAutomationExecutor()),
+        database,
+    )
+    loaded = workspace.load()
+    original_stage_id = loaded.state.deals[0]["stageId"]
+    with database.session_scope() as session:
+        billing = session.scalar(
+            select(DealPipelineStage).where(
+                DealPipelineStage.workspace_id == "default",
+                DealPipelineStage.system_key == "billing",
+            )
+        )
+    loaded.state.deals[0]["stageId"] = str(billing.id)
+    with pytest.raises(RuntimeError, match="forced automation failure"):
+        failing.save(loaded.version, loaded.state)
+
+    canonical = workspace.load()
+    assert canonical.version == loaded.version
+    assert canonical.state.deals[0]["stageId"] == original_stage_id
+    assert len(canonical.state.notifications) == 1
+    with database.session_scope() as session:
+        assert session.scalar(select(func.count()).select_from(DealStageHistory)) == 0
+        assert session.scalar(select(func.count()).select_from(CrmActivityEvent)) == 0
 
 
 def test_new_deal_requires_active_initial_stage_and_invalid_stage_rolls_back(service) -> None:
