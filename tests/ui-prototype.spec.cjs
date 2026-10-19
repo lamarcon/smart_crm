@@ -126,6 +126,10 @@ async function openFresh(options = {}) {
     pipeline, pipelineFailure: Boolean(options.pipelineFailure), pipelineConflict: false,
     pipelineValidationFailure: null, pipelineServerFailure: false, pipelineWrites: [],
     pipelineHistory: clone(options.pipelineHistory || []), pipelineHistoryRequests: [],
+    dealActivities: clone(options.dealActivities || {}), activityRequests: [],
+    activityFailures: new Set(), activityGates: new Map(), observationWrites: [],
+    observationFailuresRemaining: 0, observationByKey: new Map(), workspaceWrites: [],
+    disableBillingAutomation: Boolean(options.disableBillingAutomation),
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
@@ -133,6 +137,55 @@ async function openFresh(options = {}) {
     status: 200, contentType: 'application/json',
     body: JSON.stringify(api.session)
   }));
+  await context.route('**/api/deals/*/activities**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const match = url.pathname.match(/^\/api\/deals\/([^/]+)\/activities$/);
+    if (!match || request.method() !== 'GET') return route.continue();
+    const dealId = decodeURIComponent(match[1]);
+    api.activityRequests.push(request.url());
+    const gate = api.activityGates.get(dealId);
+    if (gate) await gate;
+    if (api.activityFailures.has(dealId)) {
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Histórico indisponível.' } }) });
+    }
+    const category = url.searchParams.get('category');
+    const limit = Number(url.searchParams.get('limit')) || 50;
+    const offset = Number((url.searchParams.get('cursor') || '').replace(/^cursor-/, '')) || 0;
+    const available = (api.dealActivities[dealId] || [])
+      .filter(item => !category || item.category === category)
+      .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.id - left.id);
+    const items = available.slice(offset, offset + limit);
+    const nextCursor = offset + limit < available.length ? `cursor-${offset + limit}` : null;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items, nextCursor }) });
+  });
+  await context.route('**/api/deals/*/observations', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const match = url.pathname.match(/^\/api\/deals\/([^/]+)\/observations$/);
+    if (!match || request.method() !== 'POST') return route.continue();
+    const dealId = decodeURIComponent(match[1]);
+    const payload = request.postDataJSON();
+    api.observationWrites.push({ dealId, payload: clone(payload) });
+    if (api.observationFailuresRemaining > 0) {
+      api.observationFailuresRemaining -= 1;
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Não foi possível publicar a observação.' } }) });
+    }
+    let event = api.observationByKey.get(payload.idempotencyKey);
+    if (!event) {
+      const existing = api.dealActivities[dealId] || (api.dealActivities[dealId] = []);
+      event = {
+        id: Math.max(0, ...Object.values(api.dealActivities).flat().map(item => item.id)) + 1,
+        category: 'observation', eventType: 'deal.observation_added',
+        actor: { id: api.session.user_id, name: api.session.user_name, kind: 'user' },
+        summary: 'Observação adicionada.', details: { text: payload.text.trim() },
+        occurredAt: new Date(Date.UTC(2026, 9, 19, 18, existing.length, 0)).toISOString()
+      };
+      existing.unshift(event);
+      api.observationByKey.set(payload.idempotencyKey, event);
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(event) });
+  });
   await context.route('**/api/deal-pipeline/history**', route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -256,7 +309,35 @@ async function openFresh(options = {}) {
       if (payload.version !== api.version) {
         return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'version_conflict', message: 'Versão do workspace desatualizada.', currentVersion: api.version } }) });
       }
+      api.workspaceWrites.push(clone(payload));
       const next = durableState(payload.state);
+      for (const nextDeal of next.deals) {
+        const previousDeal = api.state.deals.find(candidate => candidate.id === nextDeal.id);
+        const nextStage = api.pipeline.stages.find(stage => stage.id === nextDeal.stageId);
+        if (!previousDeal || previousDeal.stageId === nextDeal.stageId || nextStage?.systemKey !== 'billing' || api.disableBillingAutomation) continue;
+        nextDeal.responsibleId = 'u-billing';
+        nextDeal.team = 'Faturamento';
+        next.notifications = next.notifications.filter(note => !(note.detail?.includes(nextDeal.id) && /Faturamento|Responsabilidade/.test(note.text)));
+        const nextNotificationId = () => `NT-${Math.max(0, ...next.notifications.map(note => Number(String(note.id).split('-')[1]) || 0)) + 1}`;
+        next.notifications.unshift({ id: nextNotificationId(), userId: 'u-billing', text: 'Responsabilidade alterada automaticamente.', detail: `${nextDeal.id} agora está com Equipe Faturamento`, time: 'Agora', read: false });
+        next.notifications.unshift({ id: nextNotificationId(), userId: api.session.user_id, text: 'Automação de Faturamento executada.', detail: `${nextDeal.id} foi atribuído à Equipe Faturamento`, time: 'Agora', read: false });
+        const events = api.dealActivities[nextDeal.id] || (api.dealActivities[nextDeal.id] = []);
+        const nextActivityId = () => Math.max(0, ...Object.values(api.dealActivities).flat().map(item => item.id)) + 1;
+        events.unshift({
+          id: nextActivityId(), category: 'movement', eventType: 'deal.stage_changed',
+          actor: { id: api.session.user_id, name: api.session.user_name, kind: 'user' },
+          summary: `Etapa alterada de ${previousDeal.stage} para ${nextStage.name}.`,
+          details: { fromStageId: previousDeal.stageId, fromStageName: previousDeal.stage, toStageId: nextStage.id, toStageName: nextStage.name, source: 'user' },
+          occurredAt: '2026-10-19T18:00:00.000Z'
+        });
+        events.unshift({
+          id: nextActivityId(), category: 'automation', eventType: 'deal.automation_executed',
+          actor: { id: null, name: 'Sistema', kind: 'system' },
+          summary: 'Automação de Faturamento executada com sucesso.',
+          details: { automationKey: 'billing', automationName: 'Automação de Faturamento', result: 'success', actions: [{ type: 'responsible.changed', summary: 'Responsável alterado para Equipe Faturamento.' }, { type: 'notification.created', summary: 'Notificações emitidas.' }], failureCode: null },
+          occurredAt: '2026-10-19T18:00:01.000Z'
+        });
+      }
       for (const module of ['users', 'leads', 'contacts', 'companies', 'deals', 'notifications']) {
         const nextIds = new Set(next[module].map(record => record.id));
         for (const record of api.state[module].filter(record => !nextIds.has(record.id))) {
@@ -549,6 +630,28 @@ function pipelineAuditHistory(total = 55) {
       afterState: { defaultStageId: DEAL_STAGE_IDS[0], stageName: 'Ganho' },
       transferSummary: [{ sourceStageId: DEAL_STAGE_IDS[2], targetStageId: DEAL_STAGE_IDS[6], count: 2 }],
       createdAt: `2026-10-01T10:${String(id % 60).padStart(2, '0')}:00Z`
+    };
+  });
+}
+
+function dealActivitySeries(total = 52) {
+  const categories = ['movement', 'automation', 'observation'];
+  return Array.from({ length: total }, (_, index) => {
+    const id = total - index;
+    const category = categories[index % categories.length];
+    const details = category === 'movement'
+      ? { fromStageId: DEAL_STAGE_IDS[0], fromStageName: 'Em Contato', toStageId: DEAL_STAGE_IDS[1], toStageName: 'Orçamento Proposta Preço', source: 'user' }
+      : category === 'automation'
+        ? { automationKey: 'billing', automationName: 'Automação de Faturamento', result: 'success', actions: [{ type: 'responsible.changed', summary: 'Responsável alterado para Equipe Faturamento.' }], failureCode: null }
+        : { text: `Observação ${id}` };
+    return {
+      id, category, eventType: `deal.test_${category}`,
+      actor: category === 'automation'
+        ? { id: null, name: 'Sistema', kind: 'system' }
+        : { id: 'u-admin', name: 'Alexandre Martins', kind: 'user' },
+      summary: `Evento ${id} ${category}`,
+      details,
+      occurredAt: new Date(Date.UTC(2026, 9, 19, 15, id, 0)).toISOString()
     };
   });
 }
@@ -1388,6 +1491,118 @@ async function storageEntries(page) {
     assert.ok(secondaryBox.y >= primaryBox.y + primaryBox.height - 1);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     assert.equal(await drawer.getByRole('button', { name: 'Salvar registro' }).isVisible(), true);
+  });
+
+  await run('HIST-01 filtra e pagina 52 eventos do Negócio em ordem canônica', async page => {
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Implantação Arkos Estética', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    const timeline = drawer.getByRole('feed', { name: 'Linha do tempo do negócio' });
+    await timeline.locator('[data-activity-event]').first().waitFor();
+    assert.equal(await timeline.locator('[data-activity-event]').count(), 50);
+    assert.deepEqual(await timeline.locator('[data-activity-event]').evaluateAll(items => [items[0].dataset.activityEvent, items.at(-1).dataset.activityEvent]), ['52', '3']);
+    await drawer.getByRole('button', { name: 'Carregar mais' }).click();
+    await timeline.locator('[data-activity-event="1"]').waitFor();
+    assert.equal(await timeline.locator('[data-activity-event]').count(), 52);
+    await drawer.getByRole('button', { name: 'Automações', exact: true }).click();
+    await timeline.locator('[data-category="automation"]').first().waitFor();
+    assert.equal(await timeline.locator('[data-activity-event]').count(), 17);
+    assert.equal(await timeline.locator('[data-activity-event]:not([data-category="automation"])').count(), 0);
+    const api = apiByPage.get(page);
+    assert.match(api.activityRequests.at(-1), /category=automation/);
+    assert.equal(await drawer.getByRole('button', { name: 'Automações', exact: true }).getAttribute('aria-pressed'), 'true');
+  }, { dealActivities: { 'N-16312': dealActivitySeries(52) } });
+
+  await run('HIST-01 ignora resposta atrasada de outro Negócio', async page => {
+    const api = apiByPage.get(page);
+    const [first, second] = (await stateFrom(page)).deals.slice(0, 2);
+    api.dealActivities[first.id] = [{ ...dealActivitySeries(1)[0], summary: 'Evento exclusivo antigo' }];
+    api.dealActivities[second.id] = [{ ...dealActivitySeries(1)[0], id: 2, summary: 'Evento exclusivo atual' }];
+    let releaseFirst;
+    api.activityGates.set(first.id, new Promise(resolve => { releaseFirst = resolve; }));
+    await page.evaluate(({ id }) => openEntityDrawer('deal', id), { id: first.id });
+    const drawer = page.locator('#entityDrawer');
+    await drawer.locator('#dealActivityStatus').filter({ hasText: 'Carregando' }).waitFor();
+    await page.evaluate(({ id }) => openEntityDrawer('deal', id), { id: second.id });
+    await drawer.getByText('Evento exclusivo atual').waitFor();
+    releaseFirst();
+    await page.waitForTimeout(100);
+    assert.equal(await drawer.getByText('Evento exclusivo antigo').count(), 0);
+    assert.match(await drawer.locator('#entityDrawerSubtitle').innerText(), new RegExp(second.id));
+  });
+
+  await run('HIST-04 mantém os campos utilizáveis durante erro e retry vazio', async page => {
+    const api = apiByPage.get(page);
+    api.activityFailures.add('N-16312');
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Implantação Arkos Estética', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('button', { name: 'Tentar novamente' }).waitFor();
+    assert.match(await drawer.locator('#dealActivityStatus').innerText(), /Não foi possível carregar/);
+    assert.equal(await drawer.getByLabel('Título do Negócio *').isEnabled(), true);
+    api.activityFailures.delete('N-16312');
+    await drawer.getByRole('button', { name: 'Tentar novamente' }).click();
+    await drawer.getByText('Nenhuma atividade encontrada.').waitFor();
+    assert.equal(await drawer.getByLabel('Título do Negócio *').isEnabled(), true);
+  });
+
+  await run('HIST-03 publica observação idempotente escapada e persistente no celular', async page => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const api = apiByPage.get(page);
+    api.observationFailuresRemaining = 1;
+    await page.getByRole('button', { name: 'Abrir menu' }).click();
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Implantação Arkos Estética', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    const input = drawer.getByLabel('Novo comentário no histórico');
+    const publish = drawer.getByRole('button', { name: 'Publicar observação' });
+    const unsafeText = '<img src=x onerror="window.__activityXss=1"> Retornar ao cliente';
+    await input.fill(unsafeText);
+    await publish.click();
+    await drawer.getByText('Não foi possível publicar a observação.').waitFor();
+    await publish.click();
+    await drawer.locator('[data-category="observation"]').waitFor();
+    assert.equal(api.observationWrites.length, 2);
+    assert.equal(api.observationWrites[0].payload.idempotencyKey, api.observationWrites[1].payload.idempotencyKey);
+    assert.match(await drawer.locator('[data-category="observation"]').innerText(), /<img src=x onerror=/);
+    assert.equal(await drawer.locator('[data-category="observation"] img').count(), 0);
+    await input.fill('Enviado pelo teclado');
+    await input.press('Control+Enter');
+    await drawer.getByText('Enviado pelo teclado').waitFor();
+    await input.fill('Clique duplo sem duplicar');
+    await publish.dblclick();
+    await drawer.getByText('Clique duplo sem duplicar').waitFor();
+    assert.equal(api.observationWrites.filter(write => write.payload.text === 'Clique duplo sem duplicar').length, 1);
+    assert.equal(await drawer.locator('[data-category="observation"] button').count(), 0);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await reloadReady(page);
+    await page.getByRole('button', { name: 'Abrir menu' }).click();
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Implantação Arkos Estética', exact: true }).click();
+    await drawer.getByText('Clique duplo sem duplicar').waitFor();
+    assert.equal(await drawer.locator('[data-category="observation"]').count(), 3);
+  });
+
+  await run('HIST-02 usa somente a automação de Faturamento confirmada pelo servidor', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Negócios');
+    const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
+    const dealId = (await row.innerText()).match(/N-\d+/)[0];
+    const before = (await stateFrom(page)).deals.find(deal => deal.id === dealId);
+    page.once('dialog', dialog => dialog.accept());
+    await row.locator('[data-stage-segment="Faturando"]').click();
+    const confirmed = (await stateFrom(page)).deals.find(deal => deal.id === dealId);
+    const submitted = api.workspaceWrites.at(-1).state.deals.find(deal => deal.id === dealId);
+    assert.equal(submitted.responsibleId, before.responsibleId, 'o navegador não pode executar a automação de Faturamento');
+    assert.equal(api.workspaceWrites.at(-1).state.notifications.some(note => note.detail?.includes(dealId) && /Faturamento|Responsabilidade/.test(note.text)), false);
+    assert.deepEqual({ responsibleId: confirmed.responsibleId, team: confirmed.team }, { responsibleId: 'u-billing', team: 'Faturamento' });
+    await page.getByRole('button', { name: confirmed.title, exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.locator('[data-activity-event]').first().waitFor();
+    assert.equal(await drawer.locator('[data-category="movement"]').count(), 1);
+    assert.equal(await drawer.locator('[data-category="automation"]').count(), 1);
+    assert.match(await drawer.locator('[data-category="automation"]').innerText(), /Responsável alterado para Equipe Faturamento/);
+    assert.equal((await stateFrom(page)).notifications.filter(note => note.detail?.includes(dealId) && /Faturamento|Responsabilidade/.test(note.text)).length, 2);
   });
 
   await run('FILTER-03 busca livre alcança identificador e responsável', async page => {

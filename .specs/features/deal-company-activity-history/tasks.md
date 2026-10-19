@@ -454,7 +454,7 @@ T17 → T18
 
 #### T14: Add the Deal activity timeline experience
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Render Deal movement/automation/observation timeline with filters, loading states, paging and immutable observation composer.  
 **Where**: `app/static/index.html`  
@@ -470,12 +470,12 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Timeline loads only for the currently open Deal and ignores late responses from a prior record.
-- [ ] All/movement/automation/observation filters and cursor `Carregar mais` preserve newest-first order.
-- [ ] Loading, empty, error/retry and 51+ event states are distinct while Deal fields remain usable.
-- [ ] Observation double-click/retry creates one escaped plain-text item at the top and survives reload.
-- [ ] Stage movement into billing shows server-confirmed responsible, notification and exactly one automation event; browser-owned billing mutation is removed.
-- [ ] Browser tests include keyboard/mobile/failure paths and a mutant disabling server automation fails; build gate passes.
+- [x] Timeline loads only for the currently open Deal and ignores late responses from a prior record.
+- [x] All/movement/automation/observation filters and cursor `Carregar mais` preserve newest-first order.
+- [x] Loading, empty, error/retry and 51+ event states are distinct while Deal fields remain usable.
+- [x] Observation double-click/retry creates one escaped plain-text item at the top and survives reload.
+- [x] Stage movement into billing shows server-confirmed responsible, notification and exactly one automation event; browser-owned billing mutation is removed.
+- [x] Browser tests include keyboard/mobile/failure paths and a mutant disabling server automation fails; build gate passes.
 
 **Tests**: browser e2e — extend `tests/ui-prototype.spec.cjs`  
 **Gate**: build  

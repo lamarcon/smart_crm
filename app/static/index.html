@@ -251,6 +251,27 @@
     .drawer-shell-empty { min-height: 220px; display: grid; place-content: center; gap: 6px; padding: 28px; border: 1px dashed var(--slate-300); border-radius: 12px; color: var(--slate-500); background: var(--slate-50); text-align: center; }
     .drawer-shell-empty b { color: var(--navy-700); font-size: 14px; }
     .drawer-shell-empty p { max-width: 360px; margin: 0; font-size: 12px; line-height: 1.5; }
+    .deal-activity-panel { display: grid; gap: 16px; }
+    .activity-composer { display: grid; gap: 9px; padding: 16px; border: 1px solid var(--slate-200); border-radius: 12px; background: white; box-shadow: var(--shadow-sm); }
+    .activity-composer label { color: var(--navy-800); font-size: 12px; font-weight: 800; }
+    .activity-composer textarea { min-height: 88px; resize: vertical; }
+    .activity-composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .activity-composer-actions .hint { margin: 0; }
+    .activity-error { min-height: 18px; margin: 0; color: var(--red-600); font-size: 12px; }
+    .activity-filters { display: flex; flex-wrap: wrap; gap: 7px; }
+    .activity-filters button { min-height: 34px; padding: 0 12px; border: 1px solid var(--slate-200); border-radius: 999px; color: var(--slate-600); background: white; font-size: 12px; font-weight: 750; }
+    .activity-filters button[aria-pressed="true"] { border-color: var(--blue-500); color: var(--blue-700); background: var(--blue-100); }
+    .activity-status { min-height: 20px; color: var(--slate-500); font-size: 12px; }
+    .activity-status.error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--red-100); border-radius: 10px; color: var(--red-600); background: #fff7f6; }
+    .deal-activity-feed { display: grid; gap: 10px; }
+    .deal-activity-event { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px; padding: 14px; border: 1px solid var(--slate-200); border-radius: 12px; background: white; box-shadow: var(--shadow-sm); }
+    .deal-activity-event .activity-icon { margin-top: 1px; }
+    .deal-activity-event header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .deal-activity-event h5 { margin: 0; color: var(--navy-900); font-size: 13px; }
+    .deal-activity-event time { color: var(--slate-400); font-size: 11px; white-space: nowrap; }
+    .deal-activity-event p { margin: 6px 0 0; color: var(--slate-600); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .deal-activity-meta { margin-top: 8px; color: var(--slate-400); font-size: 11px; }
+    .activity-load-more { justify-self: center; }
     .drawer-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 21px; border-top: 1px solid var(--slate-200); background: var(--slate-50); }
     .drawer-tabs { display: flex; gap: 4px; margin: -5px 0 20px; padding: 4px; border-radius: 10px; background: var(--slate-100); }
     .drawer-tabs button { flex: 1; min-height: 36px; border: 0; border-radius: 8px; color: var(--slate-500); background: transparent; font-weight: 750; }
@@ -558,7 +579,23 @@
           <aside class="drawer-secondary" id="drawerSecondary" role="region" aria-label="Contexto do cadastro" hidden>
             <section id="drawerDealActivityShell" hidden>
               <div class="drawer-region-head"><div><h4>Atividade do negócio</h4><p>Movimentações, automações e observações em ordem cronológica.</p></div></div>
-              <div class="drawer-shell-empty"><b>Linha do tempo do negócio</b><p>O histórico será carregado aqui sem ocultar os dados do negócio.</p></div>
+              <div class="deal-activity-panel">
+                <div class="activity-composer">
+                  <label for="dealObservationText">Novo comentário no histórico</label>
+                  <textarea id="dealObservationText" maxlength="4000" placeholder="Registre um contexto comercial relevante"></textarea>
+                  <div class="activity-composer-actions"><p class="hint">Ctrl + Enter para publicar · a observação não poderá ser editada.</p><button type="button" class="button primary" data-action="submit-deal-observation">Publicar observação</button></div>
+                  <p class="activity-error" id="dealObservationError" role="alert"></p>
+                </div>
+                <div class="activity-filters" role="group" aria-label="Filtrar atividade do negócio">
+                  <button type="button" data-action="activity-filter" data-activity-filter="all" aria-pressed="true">Tudo</button>
+                  <button type="button" data-action="activity-filter" data-activity-filter="movement" aria-pressed="false">Movimentações</button>
+                  <button type="button" data-action="activity-filter" data-activity-filter="automation" aria-pressed="false">Automações</button>
+                  <button type="button" data-action="activity-filter" data-activity-filter="observation" aria-pressed="false">Observações</button>
+                </div>
+                <div class="activity-status" id="dealActivityStatus" role="status" aria-live="polite"></div>
+                <div class="deal-activity-feed" id="dealActivityTimeline" role="feed" aria-label="Linha do tempo do negócio"></div>
+                <button type="button" class="button activity-load-more" id="dealActivityLoadMore" data-action="load-more-activities" hidden>Carregar mais</button>
+              </div>
             </section>
             <section id="drawerCompanyWorkspace" hidden>
               <div class="drawer-region-head"><div><h4>Relacionamento da empresa</h4><p>Negócios vinculados e histórico próprio da empresa.</p></div></div>
@@ -1207,6 +1244,9 @@
       pipelineEditorSaving = false;
       pipelineEditorConflict = false;
       pipelineArchiveContext = null;
+      activityController?.abort();
+      activityGeneration += 1;
+      Object.assign(dealActivityState, { dealId: null, category: null, items: [], nextCursor: null, status: 'idle', error: '', submitting: false, observationKey: null, observationText: '' });
       resetPipelineHistory();
       document.documentElement.dataset.pipelineReady = 'false';
       document.documentElement.dataset.workspaceReady = 'false';
@@ -2498,6 +2538,164 @@
     let drawerActiveTab = 'info';
     let drawerReturnFocus = null;
     let companyWorkspaceTab = 'deals';
+    let activityGeneration = 0;
+    let activityController = null;
+    const dealActivityState = {
+      dealId: null, category: null, items: [], nextCursor: null,
+      status: 'idle', error: '', submitting: false,
+      observationKey: null, observationText: ''
+    };
+
+    function activityKey() {
+      if (crypto.randomUUID) return crypto.randomUUID();
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+        const value = Math.random() * 16 | 0;
+        return (char === 'x' ? value : (value & 3 | 8)).toString(16);
+      });
+    }
+
+    function activityTime(value) {
+      const instant = new Date(value);
+      if (Number.isNaN(instant.getTime())) return '';
+      return new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
+      }).format(instant);
+    }
+
+    function activityDetails(event) {
+      if (event.category === 'movement') {
+        const from = event.details?.fromStageName || 'Sem etapa anterior';
+        const to = event.details?.toStageName || 'Etapa não informada';
+        const source = event.details?.source === 'pipeline_transfer' ? 'Transferência administrativa' : 'Movimentação confirmada';
+        return `${source}: ${from} → ${to}`;
+      }
+      if (event.category === 'automation') {
+        const outcome = event.details?.result === 'failure' ? 'Falha' : 'Concluída';
+        const actions = Array.isArray(event.details?.actions) ? event.details.actions.map(action => action.summary).filter(Boolean) : [];
+        return [event.details?.automationName || 'Automação', outcome, ...actions].join(' · ');
+      }
+      if (event.category === 'observation') return event.details?.text || '';
+      return '';
+    }
+
+    function activityIcon(category) {
+      return ({ movement: '↔', automation: '⚙', observation: '✎' })[category] || '•';
+    }
+
+    function renderActivityTimeline() {
+      const shell = document.getElementById('drawerDealActivityShell');
+      if (!shell || shell.hidden) return;
+      document.querySelectorAll('[data-activity-filter]').forEach(button => {
+        const value = button.dataset.activityFilter === 'all' ? null : button.dataset.activityFilter;
+        button.setAttribute('aria-pressed', String(value === dealActivityState.category));
+      });
+      const status = document.getElementById('dealActivityStatus');
+      status.className = 'activity-status';
+      if (dealActivityState.status === 'loading') status.textContent = 'Carregando atividades...';
+      else if (dealActivityState.status === 'loading-more') status.textContent = 'Carregando mais atividades...';
+      else if (dealActivityState.status === 'error') {
+        status.classList.add('error');
+        status.innerHTML = `<span>Não foi possível carregar o histórico. ${escapeHTML(dealActivityState.error)}</span><button type="button" class="button small" data-action="retry-activities">Tentar novamente</button>`;
+      } else status.textContent = dealActivityState.items.length ? `${dealActivityState.items.length} atividade(s) carregada(s).` : '';
+      const timeline = document.getElementById('dealActivityTimeline');
+      timeline.setAttribute('aria-busy', String(['loading', 'loading-more'].includes(dealActivityState.status)));
+      if (dealActivityState.status === 'loading') timeline.innerHTML = '<div class="drawer-shell-empty"><b>Carregando linha do tempo</b><p>Os dados do Negócio continuam disponíveis.</p></div>';
+      else if (dealActivityState.status === 'error' && !dealActivityState.items.length) timeline.innerHTML = '';
+      else if (!dealActivityState.items.length) timeline.innerHTML = '<div class="drawer-shell-empty"><b>Nenhuma atividade encontrada.</b><p>Movimentações, automações e observações aparecerão aqui.</p></div>';
+      else timeline.innerHTML = dealActivityState.items.map(event => `
+        <article class="deal-activity-event" data-activity-event="${escapeHTML(event.id)}" data-category="${escapeHTML(event.category)}">
+          <span class="activity-icon" aria-hidden="true">${activityIcon(event.category)}</span>
+          <div><header><h5>${escapeHTML(event.summary)}</h5><time datetime="${escapeHTML(event.occurredAt)}">${escapeHTML(activityTime(event.occurredAt))}</time></header>
+          <p>${escapeHTML(activityDetails(event))}</p><div class="deal-activity-meta">${escapeHTML(event.actor?.name || 'Sistema')}</div></div>
+        </article>`).join('');
+      const loadMore = document.getElementById('dealActivityLoadMore');
+      loadMore.hidden = !dealActivityState.nextCursor || dealActivityState.status === 'loading';
+      loadMore.disabled = dealActivityState.status === 'loading-more';
+      const submit = document.querySelector('[data-action="submit-deal-observation"]');
+      submit.disabled = dealActivityState.submitting;
+      submit.textContent = dealActivityState.submitting ? 'Publicando...' : 'Publicar observação';
+    }
+
+    async function loadEntityActivities(entity, id, options = {}) {
+      if (entity !== 'deal') return;
+      const append = options.append === true;
+      const category = options.category === undefined ? dealActivityState.category : options.category;
+      const cursor = append ? dealActivityState.nextCursor : null;
+      activityController?.abort();
+      activityController = new AbortController();
+      const generation = ++activityGeneration;
+      if (!append) {
+        dealActivityState.dealId = id;
+        dealActivityState.category = category || null;
+        dealActivityState.items = [];
+        dealActivityState.nextCursor = null;
+      }
+      dealActivityState.status = append ? 'loading-more' : 'loading';
+      dealActivityState.error = '';
+      renderActivityTimeline();
+      const query = new URLSearchParams({ limit: '50' });
+      if (category) query.set('category', category);
+      if (cursor) query.set('cursor', cursor);
+      try {
+        const payload = await responseJson(await apiFetch(`/api/deals/${encodeURIComponent(id)}/activities?${query}`, {
+          headers: { Accept: 'application/json' }, signal: activityController.signal
+        }));
+        const form = document.getElementById('drawerForm');
+        if (generation !== activityGeneration || form.dataset.entity !== 'deal' || form.dataset.id !== id) return;
+        dealActivityState.items = append ? [...dealActivityState.items, ...payload.items] : payload.items;
+        dealActivityState.nextCursor = payload.nextCursor || null;
+        dealActivityState.status = 'ready';
+      } catch (failure) {
+        if (failure.name === 'AbortError' || generation !== activityGeneration) return;
+        dealActivityState.status = 'error';
+        dealActivityState.error = failure.message || 'Tente novamente.';
+      }
+      renderActivityTimeline();
+    }
+
+    function setDealActivityFilter(category) {
+      if (!dealActivityState.dealId) return;
+      const normalized = ['movement', 'automation', 'observation'].includes(category) ? category : null;
+      loadEntityActivities('deal', dealActivityState.dealId, { category: normalized });
+    }
+
+    async function submitDealObservation() {
+      if (dealActivityState.submitting || !dealActivityState.dealId) return;
+      const input = document.getElementById('dealObservationText');
+      const error = document.getElementById('dealObservationError');
+      const text = input.value.trim();
+      if (!text || text.length > 4000) {
+        error.textContent = 'A observação deve conter entre 1 e 4.000 caracteres.';
+        return;
+      }
+      if (!dealActivityState.observationKey || dealActivityState.observationText !== text) {
+        dealActivityState.observationKey = activityKey();
+        dealActivityState.observationText = text;
+      }
+      const dealId = dealActivityState.dealId;
+      const key = dealActivityState.observationKey;
+      dealActivityState.submitting = true;
+      error.textContent = '';
+      renderActivityTimeline();
+      try {
+        const event = await responseJson(await apiFetch(`/api/deals/${encodeURIComponent(dealId)}/observations`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ text, idempotencyKey: key })
+        }));
+        const form = document.getElementById('drawerForm');
+        if (form.dataset.entity !== 'deal' || form.dataset.id !== dealId) return;
+        dealActivityState.items = [event, ...dealActivityState.items.filter(item => item.id !== event.id)];
+        dealActivityState.status = 'ready';
+        dealActivityState.observationKey = null;
+        dealActivityState.observationText = '';
+        input.value = '';
+      } catch (failure) {
+        error.textContent = failure.message || 'Não foi possível publicar a observação.';
+      } finally {
+        dealActivityState.submitting = false;
+        renderActivityTimeline();
+      }
+    }
 
     function formSignature(form) {
       return JSON.stringify(Array.from(new FormData(form).entries()));
@@ -2548,6 +2746,16 @@
       document.getElementById('entityDrawerOverlay').classList.add('open');
       document.body.classList.add('drawer-open');
       drawer.querySelector('input, select')?.focus();
+      if (entity === 'deal') {
+        document.getElementById('dealObservationText').value = '';
+        document.getElementById('dealObservationError').textContent = '';
+        dealActivityState.observationKey = null;
+        dealActivityState.observationText = '';
+        loadEntityActivities('deal', id, { category: null });
+      } else {
+        activityController?.abort();
+        activityGeneration += 1;
+      }
     }
 
     function renderDrawerCompanySummary(entity, record) {
@@ -2681,6 +2889,8 @@
       drawer.setAttribute('aria-hidden', 'true');
       document.getElementById('entityDrawerOverlay').classList.remove('open');
       document.body.classList.remove('drawer-open');
+      activityController?.abort();
+      activityGeneration += 1;
       const returnFocus = drawerReturnFocus;
       drawerReturnFocus = null;
       if (returnFocus?.isConnected) returnFocus.focus();
@@ -2833,13 +3043,7 @@
       if (entity === 'deal' && target.semanticType !== 'won') delete record.wonAt;
       let message = `${entity === 'deal' ? 'Negócio' : 'Lead'} movido para ${targetStage}.`;
       if (entity === 'deal' && target.systemKey === 'billing') {
-        record.responsibleId = 'u-billing';
-        record.team = 'Faturamento';
-        notify('Responsabilidade alterada automaticamente.', `${record.id} agora está com Equipe Faturamento`, 'u-billing');
-        if (state.currentUserId !== 'u-billing') {
-          notify('Automação de Faturamento executada.', `${record.id} foi atribuído à Equipe Faturamento`);
-        }
-        message += ' Responsável alterado para Equipe Faturamento.';
+        message += ' A automação será confirmada pelo servidor.';
       } else {
         notify(`Etapa do ${entity === 'deal' ? 'Negócio' : 'Lead'} alterada.`, `${record.id} → ${targetStage}`, record.responsibleId);
       }
@@ -3318,6 +3522,10 @@
       if (action === 'load-saved-filter') loadSavedFilter(button.dataset.id);
       if (action === 'delete-saved-filter') deleteSavedFilter(button.dataset.id);
       if (action === 'reset-filters') resetFilterPanel();
+      if (action === 'activity-filter') setDealActivityFilter(button.dataset.activityFilter);
+      if (action === 'retry-activities') loadEntityActivities('deal', dealActivityState.dealId, { category: dealActivityState.category });
+      if (action === 'load-more-activities') loadEntityActivities('deal', dealActivityState.dealId, { append: true });
+      if (action === 'submit-deal-observation') submitDealObservation();
       if (action === 'cancel-drawer') closeEntityDrawer();
       if (action === 'delete') deleteEntity(button.dataset.entity, button.dataset.id);
       if (action === 'convert') requestStageChange('lead', button.dataset.id, 'Lead convertido');
@@ -3382,6 +3590,11 @@
       pipelineDraggedKey = null;
     });
     document.addEventListener('keydown', event => {
+      if (event.target.id === 'dealObservationText' && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        submitDealObservation();
+        return;
+      }
       if (event.key === 'Escape' && document.getElementById('entityDrawer').classList.contains('open')) {
         event.preventDefault();
         closeEntityDrawer();
