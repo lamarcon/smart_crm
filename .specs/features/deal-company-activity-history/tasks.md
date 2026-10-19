@@ -425,7 +425,7 @@ T17 → T18
 
 #### T13: Add the wide responsive entity drawer shell
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Expand only Deal and Company drawers into a large accessible workspace while preserving Lead/Contact behavior.  
 **Where**: `app/static/index.html`  
@@ -441,12 +441,12 @@ T17 → T18
 
 **Done when**:
 
-- [ ] Desktop Deal/Company width is `min(1600px, calc(100vw - 32px))` and uses the approved high-density layout.
-- [ ] Deal uses data-left/activity-right columns; Company exposes Informações, Negócios and Histórico areas.
-- [ ] Narrow view stacks or tabs content without page-level horizontal scrolling.
-- [ ] Existing fields, custom fields, quotes, close button, Escape and focus restoration remain functional.
-- [ ] Browser tests cover desktop/mobile, keyboard, Lead/Contact unchanged and no inaccessible hidden content.
-- [ ] Full gate passes without an unrelated frontend refactor.
+- [x] Desktop Deal/Company width is `min(1600px, calc(100vw - 32px))` and uses the approved high-density layout.
+- [x] Deal uses data-left/activity-right columns; Company exposes Informações, Negócios and Histórico areas.
+- [x] Narrow view stacks or tabs content without page-level horizontal scrolling.
+- [x] Existing fields, custom fields, quotes, close button, Escape and focus restoration remain functional.
+- [x] Browser tests cover desktop/mobile, keyboard, Lead/Contact unchanged and no inaccessible hidden content.
+- [x] Full gate passes without an unrelated frontend refactor.
 
 **Tests**: browser e2e — extend `tests/ui-prototype.spec.cjs`  
 **Gate**: full  

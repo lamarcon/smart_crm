@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 
 const BASE_URL = process.env.SMART_CRM_TEST_URL || 'http://localhost:8080/';
+const TEST_FILTER = process.env.SMART_CRM_TEST_FILTER || '';
 const TENANT_URL = new URL('cliente-a', BASE_URL).toString();
 const AUTH_SESSION = {
   tenant_id: '00000000-0000-0000-0000-000000000001', tenant_slug: 'cliente-a',
@@ -375,6 +376,7 @@ function resetMockWorkspace(page) {
 }
 
 async function run(name, test, options = {}) {
+  if (TEST_FILTER && !name.includes(TEST_FILTER)) return;
   const { context, page } = await openFresh(options);
   try {
     await test(page);
@@ -459,6 +461,7 @@ async function openAuthPage(pathname, options = {}) {
 }
 
 async function runAuth(name, pathname, test, options = {}) {
+  if (TEST_FILTER && !name.includes(TEST_FILTER)) return;
   const opened = await openAuthPage(pathname, options);
   try {
     await test(opened);
@@ -1274,13 +1277,71 @@ async function storageEntries(page) {
       await page.waitForTimeout(250);
       const box = await drawer.boundingBox();
       const viewportWidth = await page.evaluate(() => window.innerWidth);
-      assert.ok(box.x > viewportWidth / 2 && Math.abs(box.x + box.width - viewportWidth) <= 20);
+      if (['Empresas', 'Negócios'].includes(view)) {
+        assert.equal(Math.round(box.width), Math.min(1600, viewportWidth - 32));
+        assert.equal(await drawer.getAttribute('data-layout'), 'wide');
+      } else {
+        assert.ok(box.x > viewportWidth / 2 && Math.abs(box.width - 560) <= 1);
+        assert.equal(await drawer.getAttribute('data-layout'), 'compact');
+      }
+      assert.ok(Math.abs(box.x + box.width - viewportWidth) <= 1);
       assert.equal(await page.locator(`#page-${{ Leads: 'leads', Contatos: 'contacts', Empresas: 'companies', Negócios: 'deals' }[view]}`).isVisible(), true);
       assert.equal(await page.getByTitle('Editar').count(), 0);
       await drawer.getByRole('button', { name: 'Cancelar' }).click();
       assert.doesNotMatch(await drawer.getAttribute('class'), /open/);
     }
     assert.deepEqual(await stateFrom(page), before);
+  });
+
+  await run('HIST-04 cria shell amplo acessível para Negócio e Empresa sem alterar outros drawers', async page => {
+    await page.setViewportSize({ width: 1800, height: 1000 });
+    await goTo(page, 'Negócios');
+    const dealTrigger = page.getByRole('button', { name: 'Implantação Arkos Estética', exact: true });
+    await dealTrigger.click();
+    const drawer = page.locator('#entityDrawer');
+    await page.waitForTimeout(250);
+    const dealBox = await drawer.boundingBox();
+    assert.equal(Math.round(dealBox.width), 1600);
+    assert.equal(Math.round(dealBox.x), 200);
+    assert.equal(await drawer.getAttribute('data-entity'), 'deal');
+    const dealData = drawer.getByRole('region', { name: 'Dados do negócio' });
+    const dealActivity = drawer.getByRole('region', { name: 'Atividade do negócio' });
+    assert.equal(await dealData.isVisible(), true);
+    assert.equal(await dealActivity.isVisible(), true);
+    const dealDataBox = await dealData.boundingBox();
+    const dealActivityBox = await dealActivity.boundingBox();
+    assert.ok(dealDataBox.x < dealActivityBox.x);
+    assert.equal(await drawer.getByRole('tab', { name: 'Orçamentos' }).isVisible(), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await dealTrigger.evaluate(element => document.activeElement === element), true);
+
+    await goTo(page, 'Empresas');
+    const companyTrigger = page.getByRole('button', { name: 'Arkos Estética', exact: true });
+    await companyTrigger.click();
+    await page.waitForTimeout(250);
+    assert.equal(await drawer.getAttribute('data-entity'), 'company');
+    assert.equal(await drawer.getByRole('region', { name: 'Informações da empresa' }).isVisible(), true);
+    const companyWorkspace = drawer.getByRole('region', { name: 'Relacionamento da empresa' });
+    assert.equal(await companyWorkspace.isVisible(), true);
+    const companyTabs = companyWorkspace.getByRole('tab');
+    assert.deepEqual(await companyTabs.allTextContents(), ['Negócios', 'Histórico']);
+    assert.equal(await companyWorkspace.getByRole('tabpanel', { name: 'Negócios' }).isVisible(), true);
+    assert.equal(await companyWorkspace.getByRole('tabpanel', { name: 'Histórico' }).isVisible(), false);
+    await companyWorkspace.getByRole('tab', { name: 'Histórico' }).click();
+    assert.equal(await companyWorkspace.getByRole('tabpanel', { name: 'Negócios' }).isVisible(), false);
+    assert.equal(await companyWorkspace.getByRole('tabpanel', { name: 'Histórico' }).isVisible(), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await companyTrigger.evaluate(element => document.activeElement === element), true);
+
+    for (const [view, name] of [['Leads', 'Larissa Spinola'], ['Contatos', 'Ana Berclay']]) {
+      await goTo(page, view);
+      await page.getByRole('button', { name, exact: true }).click();
+      const compactBox = await drawer.boundingBox();
+      assert.equal(Math.round(compactBox.width), 560);
+      assert.equal(await drawer.getAttribute('data-layout'), 'compact');
+      assert.equal(await drawer.locator('#drawerSecondary').isHidden(), true);
+      await page.keyboard.press('Escape');
+    }
   });
 
   await run('DRAWER-04 e DRAWER-05 protegem cancelamento e alterações pendentes', async page => {
@@ -1310,6 +1371,23 @@ async function storageEntries(page) {
     assert.equal(Math.round(box.width), 390);
     assert.equal(await drawer.getByRole('button', { name: 'Salvar registro' }).isVisible(), true);
     assert.equal(await drawer.getByRole('button', { name: 'Cancelar' }).isVisible(), true);
+  });
+
+  await run('HIST-04 empilha o workspace amplo no celular sem rolagem horizontal', async page => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: 'Abrir menu' }).click();
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Implantação Arkos Estética', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    const box = await drawer.boundingBox();
+    assert.equal(Math.round(box.width), 390);
+    const primary = drawer.getByRole('region', { name: 'Dados do negócio' });
+    const secondary = drawer.getByRole('region', { name: 'Atividade do negócio' });
+    const primaryBox = await primary.boundingBox();
+    const secondaryBox = await secondary.boundingBox();
+    assert.ok(secondaryBox.y >= primaryBox.y + primaryBox.height - 1);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    assert.equal(await drawer.getByRole('button', { name: 'Salvar registro' }).isVisible(), true);
   });
 
   await run('FILTER-03 busca livre alcança identificador e responsável', async page => {

@@ -230,13 +230,27 @@
     .deleted-record span { color: var(--slate-500); font-size: 11px; }
     .drawer-overlay { position: fixed; inset: 0; z-index: 80; visibility: hidden; opacity: 0; background: rgba(10,16,32,.32); transition: .2s ease; }
     .drawer-overlay.open { visibility: visible; opacity: 1; }
-    .entity-drawer { position: fixed; z-index: 81; inset: 0 0 0 auto; width: min(560px, 100vw); display: flex; flex-direction: column; visibility: hidden; transform: translateX(100%); background: white; box-shadow: -24px 0 60px rgba(16,24,40,.2); transition: .22s ease; }
+    .entity-drawer { position: fixed; z-index: 81; inset: 0 0 0 auto; width: min(560px, 100vw); max-width: 100vw; display: flex; flex-direction: column; visibility: hidden; transform: translateX(100%); background: white; box-shadow: -24px 0 60px rgba(16,24,40,.2); transition: transform .22s ease, visibility .22s ease; }
+    .entity-drawer[data-layout="wide"] { width: min(1600px, calc(100vw - 32px)); }
     .entity-drawer.open { visibility: visible; transform: translateX(0); }
     .entity-drawer form { min-height: 0; height: 100%; display: flex; flex-direction: column; }
     .drawer-head { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 21px; border-bottom: 1px solid var(--slate-200); }
     .drawer-head h3 { margin: 0; font-size: 18px; }
     .drawer-head p { margin: 4px 0 0; color: var(--slate-500); font-size: 12px; }
-    .drawer-body { flex: 1; overflow: auto; padding: 21px; }
+    .drawer-body { min-width: 0; flex: 1; overflow: auto; padding: 21px; }
+    .drawer-workspace { min-width: 0; }
+    .drawer-primary, .drawer-secondary { min-width: 0; }
+    .entity-drawer[data-layout="wide"] .drawer-workspace { display: grid; grid-template-columns: minmax(360px, .9fr) minmax(480px, 1.35fr); gap: 24px; align-items: start; }
+    .entity-drawer[data-layout="wide"] .drawer-secondary { min-height: calc(100vh - 160px); padding-left: 24px; border-left: 1px solid var(--slate-200); }
+    .drawer-region-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .drawer-region-head h4 { margin: 0; color: var(--navy-900); font-size: 16px; }
+    .drawer-region-head p { margin: 4px 0 0; color: var(--slate-500); font-size: 12px; }
+    .drawer-context-tabs { display: flex; gap: 4px; margin-bottom: 18px; padding: 4px; border-radius: 10px; background: var(--slate-100); }
+    .drawer-context-tabs button { flex: 1; min-height: 38px; border: 0; border-radius: 8px; color: var(--slate-500); background: transparent; font-weight: 750; }
+    .drawer-context-tabs button[aria-selected="true"] { color: var(--navy-900); background: white; box-shadow: var(--shadow-sm); }
+    .drawer-shell-empty { min-height: 220px; display: grid; place-content: center; gap: 6px; padding: 28px; border: 1px dashed var(--slate-300); border-radius: 12px; color: var(--slate-500); background: var(--slate-50); text-align: center; }
+    .drawer-shell-empty b { color: var(--navy-700); font-size: 14px; }
+    .drawer-shell-empty p { max-width: 360px; margin: 0; font-size: 12px; line-height: 1.5; }
     .drawer-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 21px; border-top: 1px solid var(--slate-200); background: var(--slate-50); }
     .drawer-tabs { display: flex; gap: 4px; margin: -5px 0 20px; padding: 4px; border-radius: 10px; background: var(--slate-100); }
     .drawer-tabs button { flex: 1; min-height: 36px; border: 0; border-radius: 8px; color: var(--slate-500); background: transparent; font-weight: 750; }
@@ -386,6 +400,9 @@
       .pipeline-stage-row .stage-actions { grid-column: 3 / -1; padding-top: 0; }
       .pipeline-stage-row .stage-error { grid-column: 2 / -1; }
       .bootstrap-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .entity-drawer[data-layout="wide"] { width: 100vw; }
+      .entity-drawer[data-layout="wide"] .drawer-workspace { display: block; }
+      .entity-drawer[data-layout="wide"] .drawer-secondary { min-height: 0; margin-top: 24px; padding: 24px 0 0; border-top: 1px solid var(--slate-200); border-left: 0; }
     }
     @media (max-width: 560px) {
       .demo-banner { font-size: 11px; }
@@ -531,10 +548,26 @@
     <form id="drawerForm">
       <div class="drawer-head"><div><h3 id="entityDrawerTitle">Editar registro</h3><p id="entityDrawerSubtitle">Altere os dados e salve para atualizar a lista.</p></div><button type="button" class="close-button" data-action="cancel-drawer" aria-label="Fechar painel">×</button></div>
       <div class="drawer-body">
-        <div class="drawer-tabs" id="drawerTabs" role="tablist" aria-label="Seções do cadastro" hidden><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="info" aria-selected="true">Informações</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="custom" aria-selected="false">Campos adicionais</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="quotes" aria-selected="false">Orçamentos</button></div>
-        <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div><section class="drawer-company-summary" id="drawerCompanySummary" aria-label="Empresa vinculada" hidden></section></section>
-        <section id="drawerCustomPanel" role="tabpanel" hidden><div class="form-grid" id="drawerCustomFields"></div><div class="drawer-custom-add"><div class="field"><label for="drawerAddCustomField">Campo adicional para adicionar</label><select id="drawerAddCustomField"></select></div><button type="button" class="button small" data-action="add-custom-field">Adicionar campo</button></div></section>
-        <section id="drawerQuotesPanel" role="tabpanel" hidden></section>
+        <div class="drawer-workspace" id="drawerWorkspace">
+          <section class="drawer-primary" id="drawerPrimary" role="region" aria-label="Dados do cadastro">
+            <div class="drawer-tabs" id="drawerTabs" role="tablist" aria-label="Seções do cadastro" hidden><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="info" aria-selected="true">Informações</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="custom" aria-selected="false">Campos adicionais</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="quotes" aria-selected="false">Orçamentos</button></div>
+            <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div><section class="drawer-company-summary" id="drawerCompanySummary" aria-label="Empresa vinculada" hidden></section></section>
+            <section id="drawerCustomPanel" role="tabpanel" hidden><div class="form-grid" id="drawerCustomFields"></div><div class="drawer-custom-add"><div class="field"><label for="drawerAddCustomField">Campo adicional para adicionar</label><select id="drawerAddCustomField"></select></div><button type="button" class="button small" data-action="add-custom-field">Adicionar campo</button></div></section>
+            <section id="drawerQuotesPanel" role="tabpanel" hidden></section>
+          </section>
+          <aside class="drawer-secondary" id="drawerSecondary" role="region" aria-label="Contexto do cadastro" hidden>
+            <section id="drawerDealActivityShell" hidden>
+              <div class="drawer-region-head"><div><h4>Atividade do negócio</h4><p>Movimentações, automações e observações em ordem cronológica.</p></div></div>
+              <div class="drawer-shell-empty"><b>Linha do tempo do negócio</b><p>O histórico será carregado aqui sem ocultar os dados do negócio.</p></div>
+            </section>
+            <section id="drawerCompanyWorkspace" hidden>
+              <div class="drawer-region-head"><div><h4>Relacionamento da empresa</h4><p>Negócios vinculados e histórico próprio da empresa.</p></div></div>
+              <div class="drawer-context-tabs" role="tablist" aria-label="Visões da empresa"><button id="drawerCompanyDealsTab" type="button" role="tab" data-action="company-workspace-tab" data-company-workspace-tab="deals" aria-controls="drawerCompanyDealsPanel" aria-selected="true">Negócios</button><button id="drawerCompanyHistoryTab" type="button" role="tab" data-action="company-workspace-tab" data-company-workspace-tab="history" aria-controls="drawerCompanyHistoryPanel" aria-selected="false">Histórico</button></div>
+              <section id="drawerCompanyDealsPanel" role="tabpanel" aria-labelledby="drawerCompanyDealsTab"><div class="drawer-shell-empty"><b>Negócios da empresa</b><p>Contadores e negócios visíveis serão exibidos aqui.</p></div></section>
+              <section id="drawerCompanyHistoryPanel" role="tabpanel" aria-labelledby="drawerCompanyHistoryTab" hidden><div class="drawer-shell-empty"><b>Histórico da empresa</b><p>Alterações e observações próprias serão exibidas aqui.</p></div></section>
+            </section>
+          </aside>
+        </div>
       </div>
       <div class="drawer-foot" id="drawerFoot"><button type="button" class="button" data-action="cancel-drawer">Cancelar</button><button type="submit" class="button primary">Salvar registro</button></div>
     </form>
@@ -2463,6 +2496,8 @@
 
     let drawerInitialValue = '';
     let drawerActiveTab = 'info';
+    let drawerReturnFocus = null;
+    let companyWorkspaceTab = 'deals';
 
     function formSignature(form) {
       return JSON.stringify(Array.from(new FormData(form).entries()));
@@ -2479,6 +2514,10 @@
       if (!record) return;
       const drawer = document.getElementById('entityDrawer');
       const form = document.getElementById('drawerForm');
+      drawerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const wide = entity === 'deal' || entity === 'company';
+      drawer.dataset.layout = wide ? 'wide' : 'compact';
+      drawer.dataset.entity = entity;
       form.dataset.entity = entity;
       form.dataset.id = id;
       document.getElementById('entityDrawerTitle').textContent = `Editar ${entityLabel(entity)}`;
@@ -2494,6 +2533,14 @@
       quotesTab.hidden = entity !== 'deal';
       document.getElementById('drawerTabs').hidden = false;
       if (entity === 'deal') renderDrawerQuotes(record);
+      const primary = document.getElementById('drawerPrimary');
+      primary.setAttribute('aria-label', entity === 'deal' ? 'Dados do negócio' : entity === 'company' ? 'Informações da empresa' : 'Dados do cadastro');
+      const secondary = document.getElementById('drawerSecondary');
+      secondary.hidden = !wide;
+      secondary.setAttribute('aria-label', entity === 'deal' ? 'Atividade do negócio' : entity === 'company' ? 'Relacionamento da empresa' : 'Contexto do cadastro');
+      document.getElementById('drawerDealActivityShell').hidden = entity !== 'deal';
+      document.getElementById('drawerCompanyWorkspace').hidden = entity !== 'company';
+      if (entity === 'company') setCompanyWorkspaceTab('deals');
       setDrawerTab('info');
       drawerInitialValue = formSignature(form);
       drawer.classList.add('open');
@@ -2618,6 +2665,13 @@
       document.getElementById('drawerFoot').hidden = quotesActive;
     }
 
+    function setCompanyWorkspaceTab(tab) {
+      companyWorkspaceTab = tab === 'history' ? 'history' : 'deals';
+      document.querySelectorAll('[data-company-workspace-tab]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.companyWorkspaceTab === companyWorkspaceTab)));
+      document.getElementById('drawerCompanyDealsPanel').hidden = companyWorkspaceTab !== 'deals';
+      document.getElementById('drawerCompanyHistoryPanel').hidden = companyWorkspaceTab !== 'history';
+    }
+
     function closeEntityDrawer(force = false) {
       const drawer = document.getElementById('entityDrawer');
       if (!drawer.classList.contains('open')) return true;
@@ -2627,6 +2681,9 @@
       drawer.setAttribute('aria-hidden', 'true');
       document.getElementById('entityDrawerOverlay').classList.remove('open');
       document.body.classList.remove('drawer-open');
+      const returnFocus = drawerReturnFocus;
+      drawerReturnFocus = null;
+      if (returnFocus?.isConnected) returnFocus.focus();
       return true;
     }
 
@@ -3235,6 +3292,7 @@
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
       if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
+      if (action === 'company-workspace-tab') setCompanyWorkspaceTab(button.dataset.companyWorkspaceTab);
       if (action === 'add-custom-field') addDrawerCustomField();
       if (action === 'hide-custom-field') hideDrawerCustomField(button.dataset.key);
       if (action === 'manage-fields') openFieldManager(button.dataset.scope);
