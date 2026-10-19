@@ -367,7 +367,7 @@ T17 → T18
 
 #### T11: Expose Deal activity and observation APIs
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Add authorized Deal timeline GET and observation POST routes with stable contracts and failure mapping.  
 **Where**: `app/main.py`  
@@ -383,11 +383,11 @@ T17 → T18
 
 **Done when**:
 
-- [ ] `GET /api/deals/{deal_id}/activities` supports category, limit and opaque cursor.
-- [ ] `POST /api/deals/{deal_id}/observations` requires exact Origin and returns original event for an idempotent retry.
-- [ ] Routes return stable 401/403/404/422/503 envelopes, `no-store` and no tenant/entity metadata leaks.
-- [ ] Client-supplied actor/workspace/tenant/timestamp fields are rejected or ignored by strict contracts.
-- [ ] API tests cover every route branch, permissions, pagination, forgery and database failure; full gate passes.
+- [x] `GET /api/deals/{deal_id}/activities` supports category, limit and opaque cursor.
+- [x] `POST /api/deals/{deal_id}/observations` requires exact Origin and returns original event for an idempotent retry.
+- [x] Routes return stable 401/403/404/422/503 envelopes, `no-store` and no tenant/entity metadata leaks.
+- [x] Client-supplied actor/workspace/tenant/timestamp fields are rejected or ignored by strict contracts.
+- [x] API tests cover every route branch, permissions, pagination, forgery and database failure; full gate passes.
 
 **Tests**: API + PostgreSQL integration — add `tests/backend/test_activity_api.py`  
 **Gate**: full  

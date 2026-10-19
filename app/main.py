@@ -25,6 +25,9 @@ from app.auth import (
 from app.database import Database, database
 from app.policies import Action, can_perform_action
 from app.schemas import (
+    ActivityEventResponse,
+    ActivityPage,
+    ActivityQuery,
     BootstrapRequest,
     DealPipelineAuditPage,
     DealPipelineHistoryQuery,
@@ -34,6 +37,7 @@ from app.schemas import (
     LocateTenantRequest,
     LocateTenantResponse,
     LoginRequest,
+    ObservationCreateRequest,
     ResetRequest,
     RestoreRequest,
     SaveRequest,
@@ -41,7 +45,14 @@ from app.schemas import (
     WorkspaceReferenceError,
     normalize_tenant_identifier,
 )
+from app.repositories.activity import ActivityCursorError, ActivityScopeError
 from app.services.auth import AuthenticationError, AuthService, SessionContext
+from app.services.activity import (
+    ActivityAuthorizationError,
+    ActivityNotFoundError,
+    ActivityService,
+    ActivityValidationError,
+)
 from app.services.pipeline import (
     DealPipelineAuthorizationError,
     DealPipelineService,
@@ -119,6 +130,7 @@ def create_app(
     database_instance: Database | None = None,
     workspace_service: WorkspaceService | None = None,
     pipeline_service: DealPipelineService | None = None,
+    activity_service: ActivityService | None = None,
     static_dir: Path = STATIC_DIR,
     auth_service: AuthService | None = None,
     tenant_router: TenantDatabaseRouter | None = None,
@@ -131,6 +143,7 @@ def create_app(
     active_health_check = health_check or active_database.check_database
     service = workspace_service or WorkspaceService()
     active_pipeline_service = pipeline_service or DealPipelineService()
+    active_activity_service = activity_service or ActivityService()
     active_auth_settings = auth_settings or AuthSettings(
         expected_origin="https://sc2030.brbots.com"
     )
@@ -225,7 +238,7 @@ def create_app(
 
         response = await call_next(request)
         if request.url.path.startswith(
-            ("/api/auth", "/api/workspace", "/api/deal-pipeline")
+            ("/api/auth", "/api/workspace", "/api/deal-pipeline", "/api/deals")
         ):
             response.headers["Cache-Control"] = "no-store"
         return _add_security_headers(response)
@@ -347,6 +360,40 @@ def create_app(
     ) -> JSONResponse:
         audit_request_denial(request, "forbidden")
         return _error(403, "forbidden", "Acesso negado.")
+
+    @app.exception_handler(ActivityAuthorizationError)
+    async def activity_authorization_error(
+        request: Request,
+        _error_value: ActivityAuthorizationError,
+    ) -> JSONResponse:
+        audit_request_denial(request, "forbidden")
+        return _error(403, "forbidden", "Acesso negado.")
+
+    @app.exception_handler(ActivityNotFoundError)
+    async def activity_not_found(
+        _request: Request,
+        _error_value: ActivityNotFoundError,
+    ) -> JSONResponse:
+        return _error(404, "activity_not_found", "Registro não encontrado.")
+
+    @app.exception_handler(ActivityValidationError)
+    @app.exception_handler(ActivityCursorError)
+    async def activity_validation_error(
+        _request: Request,
+        _error_value: ActivityValidationError | ActivityCursorError,
+    ) -> JSONResponse:
+        return _error(422, "validation_error", "Parâmetros de atividade inválidos.")
+
+    @app.exception_handler(ActivityScopeError)
+    async def activity_unavailable(
+        _request: Request,
+        _error_value: ActivityScopeError,
+    ) -> JSONResponse:
+        return _error(
+            503,
+            "activity_unavailable",
+            "Histórico temporariamente indisponível.",
+        )
 
     @app.exception_handler(DealPipelineValidationError)
     async def pipeline_validation_error(
@@ -642,6 +689,42 @@ def create_app(
             principal.context.principal,
             before_id=query.before,
             limit=query.limit,
+        )
+
+    @app.get(
+        "/api/deals/{deal_id}/activities",
+        response_model=ActivityPage,
+    )
+    def deal_activities(
+        deal_id: str,
+        query: ActivityQuery = Depends(),
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> ActivityPage:
+        require_action(principal, Action.READ)
+        return active_activity_service.deal_timeline(
+            principal.tenant_session,
+            principal.context.principal,
+            deal_id,
+            query,
+        )
+
+    @app.post(
+        "/api/deals/{deal_id}/observations",
+        response_model=ActivityEventResponse,
+    )
+    def add_deal_observation(
+        deal_id: str,
+        payload: ObservationCreateRequest,
+        request: Request,
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> ActivityEventResponse:
+        require_expected_origin(request)
+        require_action(principal, Action.UPDATE)
+        return active_activity_service.add_deal_observation(
+            principal.tenant_session,
+            principal.context.principal,
+            deal_id,
+            payload,
         )
 
     @app.get("/")
