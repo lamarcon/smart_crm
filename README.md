@@ -2,7 +2,7 @@
 
 CRM em desenvolvimento para substituir o uso comercial atual do Bitrix24. O repositório contém as especificações do MVP de produção e um protótipo local navegável para validação antecipada do layout e dos fluxos.
 
-**Status:** a aplicação multiempresa já está em operação na release atualmente publicada. O funil de Negócios personalizável, com revisão tenant `c7f3a9d8e2b1`, está implementado e validado somente no ambiente local deste repositório. Essa atualização ainda não foi enviada nem aplicada em produção; upload, migração e cutover exigem autorização própria.
+**Status:** a aplicação multiempresa já está em operação na release atualmente publicada. A candidata local `v0.3.0` acrescenta o funil de Negócios personalizável e o histórico operacional de Negócios/Empresas, com revisão tenant `e1c4a7b9d2f6`. Ela está implementada e validada somente neste repositório; upload, migração e cutover não foram executados e exigem autorização própria.
 
 ## Modelo multiempresa: plano de controle e bancos dedicados
 
@@ -27,7 +27,17 @@ Regras, indicadores e automações usam semântica interna (`open`, `won` e `los
 
 Arquivar uma etapa vazia não exige destino. Arquivar uma etapa ocupada exige transferir, na mesma transação, todos os Negócios ativos e excluídos logicamente para outra etapa ativa. O histórico administrativo registra ator, instante, versão, ações, antes/depois e resumo da transferência. Somente Administradores podem editar o funil ou consultar essa auditoria.
 
-O código e os gates locais desta V1 estão concluídos até T11. A evidência final e o checklist autoral de T12 aguardam verificação independente antes do commit de release. Nenhum resultado local autoriza deploy ou migração de produção.
+O código, a evidência e os gates locais desta V1 estão concluídos. Nenhum resultado local autoriza deploy ou migração de produção.
+
+## Histórico operacional de Negócios e Empresas V1
+
+Na ficha ampla do Negócio, a release `v0.3.0` apresenta uma linha do tempo paginada com movimentações de etapa, resultados confirmados da automação de Faturamento e observações manuais imutáveis. Repetir uma observação com a mesma chave de idempotência não cria duplicata; uma correção é registrada como um novo evento, preservando o conteúdo anterior.
+
+Na ficha da Empresa, a aplicação calcula diretamente dos Negócios visíveis as quantidades e os valores em aberto, ganhos e perdidos, além de listar cada Negócio associado. A Empresa possui histórico próprio para alterações e observações; eventos internos dos Negócios não são duplicados nessa linha do tempo. Renomear uma etapa não altera a classificação semântica `open`, `won` ou `lost`.
+
+Consultas e gravações respeitam o tenant, o workspace e o escopo do perfil autenticado, com RLS forçada e falha fechada. A versão ativa aparece discretamente no rodapé autenticado; indisponibilidade de `/api/version` não bloqueia login nem operação comercial.
+
+Ficam fora desta V1: tarefas, agenda, lembretes futuros, editor genérico de automações, ticket médio, tempo médio até a venda e sincronização direta com Bitrix24/RD Station. O resultado local não autoriza deploy ou migração de produção.
 
 ### Setup local com controle + tenant A + tenant B
 

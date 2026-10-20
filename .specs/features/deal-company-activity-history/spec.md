@@ -233,26 +233,26 @@ O Smart CRM registra tecnicamente mudanças de etapa, mas o usuário não possui
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| HIST-01 | Consultar a linha do tempo do Negócio | Execute | In progress (implementation complete; T19 validation pending) |
-| HIST-02 | Registrar movimentações e automações atomicamente | Execute | In progress (implementation complete; T19 validation pending) |
-| HIST-03 | Publicar observações manuais imutáveis | Execute | In progress (implementation complete; T19 validation pending) |
-| HIST-04 | Usar um painel amplo e responsivo no Negócio | Execute | In progress (implementation complete; T19 validation pending) |
-| HIST-05 | Resumir os Negócios vinculados na Empresa | Execute | In progress (implementation complete; T19 validation pending) |
-| HIST-06 | Manter histórico próprio da Empresa | Execute | In progress (implementation complete; T19 validation pending) |
-| HIST-07 | Preservar isolamento e operação segura | Execute | In progress (implementation complete; T19 validation pending) |
-| HIST-08 | Identificar a release ativa | Execute | In progress (implementation complete; T19 validation pending) |
+| HIST-01 | Consultar a linha do tempo do Negócio | Execute | Verified |
+| HIST-02 | Registrar movimentações e automações atomicamente | Execute | Verified |
+| HIST-03 | Publicar observações manuais imutáveis | Execute | Verified |
+| HIST-04 | Usar um painel amplo e responsivo no Negócio | Execute | Verified |
+| HIST-05 | Resumir os Negócios vinculados na Empresa | Execute | Verified |
+| HIST-06 | Manter histórico próprio da Empresa | Execute | Verified |
+| HIST-07 | Preservar isolamento e operação segura | Execute | Verified |
+| HIST-08 | Identificar a release ativa | Execute | Verified |
 
-**Coverage:** 8 requirements mapped to approved tasks; T1-T18 complete, T19 pending.
+**Coverage:** 8 requirements mapped to approved tasks; T1-T19 complete; independent validation PASS.
 
 ---
 
 ## Success Criteria
 
-- [ ] O usuário consulta movimentações, automações e observações sem sair do Negócio.
-- [ ] Uma observação permanece após recarregar e não pode ser editada ou excluída.
-- [ ] A Empresa mostra contagens e valores exatos para total, andamento, ganho e perdido.
-- [ ] Renomear uma etapa não altera classificação, indicadores nem descrição histórica anterior.
-- [ ] O histórico da Empresa não duplica a linha do tempo detalhada dos Negócios.
-- [ ] Nenhuma sessão, API ou consulta recebe eventos ou indicadores de outro tenant/workspace.
-- [ ] A interface passa nos fluxos de desktop amplo, responsivo, teclado, vazio, loading e erro sem regressão das abas existentes.
-- [ ] A aplicação autenticada mostra `v0.3.0`, fornecida pelo backend, sem bloquear o uso se a consulta falhar.
+- [x] O usuário consulta movimentações, automações e observações sem sair do Negócio.
+- [x] Uma observação permanece após recarregar e não pode ser editada ou excluída.
+- [x] A Empresa mostra contagens e valores exatos para total, andamento, ganho e perdido.
+- [x] Renomear uma etapa não altera classificação, indicadores nem descrição histórica anterior.
+- [x] O histórico da Empresa não duplica a linha do tempo detalhada dos Negócios.
+- [x] Nenhuma sessão, API ou consulta recebe eventos ou indicadores de outro tenant/workspace.
+- [x] A interface passa nos fluxos de desktop amplo, responsivo, teclado, vazio, loading e erro sem regressão das abas existentes.
+- [x] A aplicação autenticada mostra `v0.3.0`, fornecida pelo backend, sem bloquear o uso se a consulta falhar.

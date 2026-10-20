@@ -598,7 +598,7 @@ T17 → T18 → T19
 
 #### T19: Publish traceable local release evidence
 
-**Status**: Planned
+**Status**: Complete
 
 **What**: Record complete local evidence, requirement traceability and a no-execution deployment/rollback checklist after all gates pass.  
 **Where**: `.specs/features/deal-company-activity-history/validation.md`  
@@ -614,12 +614,12 @@ T17 → T18 → T19
 
 **Done when**:
 
-- [ ] README accurately describes Deal/Company history, current local-only status and excluded V1 tasks/metrics.
-- [ ] Every requirement and edge case cites exact automated evidence; backend/browser counts are not below baseline and no test was removed/skipped/weakened.
-- [ ] Build and Structural gates pass; feature-specific state is complete even if the previously documented unrelated Apache validation remains unresolved.
-- [ ] Behavior-level mutants for activity append, server billing automation, tenant predicate and semantic Company grouping each cause the expected test failure.
-- [ ] A fresh independent Verifier (not the author) runs adequacy, discrimination and evidence-or-zero checks and records PASS.
-- [ ] Deployment checklist separates backup, upload, migration, cutover, UAT and rollback but executes none of them.
+- [x] README accurately describes Deal/Company history, current local-only status and excluded V1 tasks/metrics.
+- [x] Every requirement and edge case cites exact automated evidence; backend/browser counts are not below baseline and no test was removed/skipped/weakened.
+- [x] Build and Structural gates pass; feature-specific state is complete even if the previously documented unrelated Apache validation remains unresolved.
+- [x] Behavior-level mutants for activity append, server billing automation, tenant predicate and semantic Company grouping each cause the expected test failure.
+- [x] A fresh independent Verifier (not the author) runs adequacy, discrimination and evidence-or-zero checks and records PASS.
+- [x] Deployment checklist separates backup, upload, migration, cutover, UAT and rollback but executes none of them.
 
 **Tests**: structural + full regression — TLC validators, Build gate, discrimination sensor and independent Verifier  
 **Gate**: build  
