@@ -764,7 +764,8 @@ function companyActivitySeries(total = 52) {
       details: category === 'change'
         ? { changes: [
           { field: 'name', label: 'Nome', before: `Arkos ${id - 1}`, after: `Arkos ${id}` },
-          { field: 'phone', label: 'Telefone', before: null, after: '(11) 3456-7788' }
+          { field: 'phone', label: 'Telefone', before: null, after: '(11) 3456-7788' },
+          { field: 'custom:commercial-secret', label: 'Segredo comercial', before: null, after: null, redacted: true }
         ] }
         : { text: `Contexto da empresa ${id}` },
       occurredAt: new Date(Date.UTC(2026, 9, 19, 16, id, 0)).toISOString()
@@ -1630,6 +1631,8 @@ async function storageEntries(page) {
     await timeline.locator('[data-activity-event]').first().waitFor();
     assert.equal(await timeline.locator('[data-activity-event]').count(), 50);
     assert.deepEqual(await timeline.locator('[data-activity-event]').evaluateAll(items => [items[0].dataset.activityEvent, items.at(-1).dataset.activityEvent]), ['52', '3']);
+    assert.match(await timeline.locator('[data-activity-event]').first().locator('time').innerText(), /19\/10\/2026.*12:52/);
+    assert.doesNotMatch(await timeline.locator('[data-activity-event]').first().locator('time').innerText(), /15:52/);
     await drawer.getByRole('button', { name: 'Carregar mais' }).click();
     await timeline.locator('[data-activity-event="1"]').waitFor();
     assert.equal(await timeline.locator('[data-activity-event]').count(), 52);
@@ -1824,6 +1827,8 @@ async function storageEntries(page) {
     assert.equal(await timeline.locator('[data-activity-event]').count(), 50);
     assert.match(await timeline.locator('[data-activity-event]').first().innerText(), /Nome:\s+Arkos 51\s+→\s+Arkos 52/);
     assert.match(await timeline.locator('[data-activity-event]').first().innerText(), /Telefone:\s+vazio\s+→\s+\(11\) 3456-7788/);
+    assert.match(await timeline.locator('[data-activity-event]').first().innerText(), /Segredo comercial:\s+conteúdo redigido/);
+    assert.doesNotMatch(await timeline.locator('[data-activity-event]').first().innerText(), /segredo-antigo|segredo-novo/);
     assert.equal(await timeline.locator('[data-category="movement"], [data-category="automation"]').count(), 0);
     await drawer.getByRole('button', { name: 'Alterações', exact: true }).click();
     await timeline.locator('[data-category="change"]').first().waitFor();

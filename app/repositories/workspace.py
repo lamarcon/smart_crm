@@ -158,6 +158,8 @@ class WorkspaceRepository:
                 item["sourceOccurrence"] = definition.source_occurrence
             if definition.user_created:
                 item["userCreated"] = True
+            if definition.redact_in_history:
+                item["redactInHistory"] = True
             state["customFieldSchemas"].setdefault(definition.module, []).append(item)
 
         settings = self.session.scalars(
@@ -570,7 +572,7 @@ class WorkspaceRepository:
         for module in MODULES:
             for position, item in enumerate(schemas.get(module) or []):
                 row = self.session.scalar(select(CustomFieldDefinition).where(CustomFieldDefinition.workspace_id == self.workspace_id, CustomFieldDefinition.module == module, CustomFieldDefinition.key == item["key"]))
-                values = dict(label=item.get("label", item["key"]), field_type=item.get("type", "text"), options=item.get("options") or [], source=item.get("source", "custom"), source_name=item.get("sourceName"), source_occurrence=item.get("sourceOccurrence"), position=item.get("position", position), user_created=bool(item.get("userCreated", False)), deleted_at=None)
+                values = dict(label=item.get("label", item["key"]), field_type=item.get("type", "text"), options=item.get("options") or [], source=item.get("source", "custom"), source_name=item.get("sourceName"), source_occurrence=item.get("sourceOccurrence"), position=item.get("position", position), user_created=bool(item.get("userCreated", False)), redact_in_history=bool(item.get("redactInHistory", False)), deleted_at=None)
                 if row is None:
                     row = CustomFieldDefinition(workspace_id=self.workspace_id, module=module, key=item["key"], **values)
                     self.session.add(row)

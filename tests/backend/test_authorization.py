@@ -8,6 +8,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, select, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
@@ -339,3 +340,17 @@ def test_sql_deal_visibility_requires_principal_and_workspace_scope(
             ).all() == []
     finally:
         engine.dispose()
+
+
+def test_sql_deal_visibility_keeps_explicit_workspace_defense_for_admin() -> None:
+    statement = select(Deal.id).where(
+        deal_visibility_predicate(principal("Administrador"))
+    )
+    compiled = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "deals.workspace_id = 'default'" in compiled

@@ -2654,7 +2654,10 @@
       }
       if (event.category === 'change') {
         const changes = Array.isArray(event.details?.changes) ? event.details.changes : [];
-        return changes.map(change => `${change.label || change.field}: ${activityValue(change.before)} → ${activityValue(change.after)}`).join('\n');
+        return changes.map(change => change.redacted === true
+          ? `${change.label || change.field}: conteúdo redigido`
+          : `${change.label || change.field}: ${activityValue(change.before)} → ${activityValue(change.after)}`
+        ).join('\n');
       }
       if (event.category === 'observation') return event.details?.text || '';
       return '';

@@ -588,6 +588,13 @@ def test_activity_schema_has_exact_constraints_indexes_and_forced_rls(pipeline_d
         "ix_crm_activity_events_company_timeline"
     ]
     assert tuple(rls) == (True, True)
+    custom_definition_columns = {
+        column["name"]
+        for column in inspect(connection).get_columns(
+            "custom_field_definitions", schema=schema
+        )
+    }
+    assert "redact_in_history" in custom_definition_columns
 
 
 def test_activity_rls_fails_closed_without_or_with_foreign_workspace(pipeline_database) -> None:

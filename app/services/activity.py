@@ -183,8 +183,8 @@ def collect_company_changes(
         raise ValueError("company activity timestamp must be timezone-aware")
     actor_name = _actor_name(before, principal)
     before_by_id = {str(record.get("id")): record for record in before.companies}
-    custom_labels = {
-        str(item.get("key")): str(item.get("label") or item.get("key"))
+    custom_definitions = {
+        str(item.get("key")): item
         for item in after.custom_field_schemas.get("companies", [])
         if item.get("key") is not None
     }
@@ -211,14 +211,16 @@ def collect_company_changes(
             old_value = old_custom.get(key)
             new_value = new_custom.get(key)
             if previous is None or old_value != new_value:
-                changes.append(
-                    {
-                        "field": f"custom:{key}",
-                        "label": custom_labels.get(key, key),
-                        "before": old_value,
-                        "after": new_value,
-                    }
-                )
+                definition = custom_definitions.get(key, {})
+                change: dict[str, object] = {
+                    "field": f"custom:{key}",
+                    "label": str(definition.get("label") or key),
+                    "before": old_value,
+                    "after": new_value,
+                }
+                if definition.get("redactInHistory") is True:
+                    change.update(before=None, after=None, redacted=True)
+                changes.append(change)
         if not changes:
             continue
         created = previous is None

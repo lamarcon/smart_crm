@@ -495,6 +495,9 @@ class CustomFieldDefinition(Base, TimestampMixin, SoftDeleteMixin):
     source_occurrence: Mapped[int | None] = mapped_column(Integer)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     user_created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    redact_in_history: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
 
 class CustomFieldValue(Base):

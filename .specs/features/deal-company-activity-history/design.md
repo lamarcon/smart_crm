@@ -437,6 +437,7 @@ The browser test must assert that moving into Billing produces its responsible c
 | Idempotency | Unique server namespaced dedupe key | Covers double-clicks, retries and automation reprocessing. |
 | Automation ownership | Server-side shared executor | Makes state, notification and timeline trustworthy for UI and API callers. |
 | Company totals | Query canonical Deal/stage tables on demand | Avoids stale counters and survives stage rename. |
+| Confidential Company fields | Persist `redactInHistory` on the custom-field definition and store only a `redacted: true` change marker with null values | Records that a field changed without placing either confidential value in immutable history. |
 | Money | PostgreSQL `Numeric` → Python `Decimal` → fixed string | Avoids binary-float loss in aggregates. |
 | Frontend organization | Localized additions to existing static app | Avoids a bundler/framework migration outside scope. |
 

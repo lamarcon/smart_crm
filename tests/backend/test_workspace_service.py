@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -487,6 +488,7 @@ def test_workspace_stage_move_dual_writes_activity_retries_and_undoes(service) -
                 DealPipelineStage.semantic_type == "won",
             )
         )
+        expected_won_name = won.name
     moved_input = deepcopy(loaded.state)
     moved_input.deals[0].update(
         {
@@ -532,6 +534,19 @@ def test_workspace_stage_move_dual_writes_activity_retries_and_undoes(service) -
             "workspaceId",
         }.intersection(persisted_record)
 
+    with database.session_scope() as session:
+        original_stage = session.get(DealPipelineStage, uuid.UUID(original["stageId"]))
+        renamed_stage = session.get(DealPipelineStage, won.id)
+        original_stage.name = "Entrada renomeada depois"
+        renamed_stage.name = "Vitória renomeada depois"
+
+    with database.session_scope() as session:
+        preserved_event = session.scalar(
+            select(CrmActivityEvent).where(CrmActivityEvent.deal_id == "N-1")
+        )
+        assert preserved_event.details["fromStageName"] == "Em Contato"
+        assert preserved_event.details["toStageName"] == expected_won_name
+
     undo = deepcopy(moved.state)
     undo.deals[0]["stageId"] = original["stageId"]
     undone = workspace.save(moved.version, undo)
@@ -552,8 +567,26 @@ def test_workspace_stage_move_dual_writes_activity_retries_and_undoes(service) -
 
 def test_workspace_company_creation_change_redaction_and_no_op(service) -> None:
     workspace, database = service
-    workspace.bootstrap(state())
+    initial = state()
+    initial.custom_field_schemas["companies"] = [
+        {
+            "key": "commercial-secret",
+            "label": "Segredo comercial",
+            "type": "text",
+            "redactInHistory": True,
+        }
+    ]
+    initial.companies[0]["customFields"] = [
+        {
+            "key": "commercial-secret",
+            "label": "Segredo comercial",
+            "type": "text",
+            "value": "segredo-antigo",
+        }
+    ]
+    workspace.bootstrap(initial)
     loaded = workspace.load()
+    assert loaded.state.custom_field_schemas["companies"][0]["redactInHistory"] is True
     changed = deepcopy(loaded.state)
     changed.companies[0].update(
         {
@@ -565,6 +598,7 @@ def test_workspace_company_creation_change_redaction_and_no_op(service) -> None:
             "eventType": "company.forged",
         }
     )
+    changed.companies[0]["customFields"][0]["value"] = "segredo-novo"
     changed.companies.append(
         {
             "id": "E-2",
@@ -592,14 +626,27 @@ def test_workspace_company_creation_change_redaction_and_no_op(service) -> None:
             ("E-2", "company.created"),
         ]
         updated_changes = events[0].details["changes"]
-        assert [change["field"] for change in updated_changes] == ["name", "city"]
+        assert [change["field"] for change in updated_changes] == [
+            "name",
+            "city",
+            "custom:commercial-secret",
+        ]
         assert updated_changes[0]["before"] == "Empresa"
         assert updated_changes[0]["after"] == "Empresa Renomeada"
+        assert updated_changes[2] == {
+            "field": "custom:commercial-secret",
+            "label": "Segredo comercial",
+            "before": None,
+            "after": None,
+            "redacted": True,
+        }
+        serialized_details = json.dumps(events[0].details, ensure_ascii=False)
+        assert "segredo-antigo" not in serialized_details
+        assert "segredo-novo" not in serialized_details
         assert events[0].actor_name == events[1].actor_name == "Ana"
         assert all(
             set(change) == {"field", "label", "before", "after"}
-            for event in events
-            for change in event.details["changes"]
+            for change in updated_changes[:2]
         )
         first = session.get(Company, "E-1")
         second = session.get(Company, "E-2")

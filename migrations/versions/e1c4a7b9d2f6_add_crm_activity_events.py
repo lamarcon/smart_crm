@@ -19,6 +19,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.add_column(
+        "custom_field_definitions",
+        sa.Column(
+            "redact_in_history",
+            sa.Boolean(),
+            server_default=sa.false(),
+            nullable=False,
+        ),
+    )
     op.create_table(
         "crm_activity_events",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
@@ -157,3 +166,4 @@ def downgrade() -> None:
     op.execute(sa.text('ALTER TABLE "crm_activity_events" NO FORCE ROW LEVEL SECURITY'))
     op.execute(sa.text('ALTER TABLE "crm_activity_events" DISABLE ROW LEVEL SECURITY'))
     op.drop_table("crm_activity_events")
+    op.drop_column("custom_field_definitions", "redact_in_history")
