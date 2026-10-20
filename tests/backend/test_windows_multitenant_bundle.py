@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import tomllib
 import zipfile
 from pathlib import Path
 
 import pytest
+
+from app.version import APP_VERSION
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -90,6 +93,13 @@ def test_build_fails_before_archive_when_argon2_wheel_is_missing(tmp_path: Path)
 
 
 def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_path: Path) -> None:
+    project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert project["project"]["dynamic"] == ["version"]
+    assert project["tool"]["setuptools"]["dynamic"]["version"] == {
+        "attr": "app.version.APP_VERSION"
+    }
+    assert APP_VERSION == "0.3.0"
+
     archive, digest_file = builder.build(
         PROJECT_ROOT,
         tmp_path,
@@ -112,6 +122,7 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
             "app/services/activity.py",
             "app/services/deal_automation.py",
             "app/static/index.html",
+            "app/version.py",
             "migrations/versions/c7f3a9d8e2b1_add_customizable_deal_pipeline.py",
             "migrations/versions/e1c4a7b9d2f6_add_crm_activity_events.py",
         } <= names
@@ -124,6 +135,8 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
         assert "app/services/activity.py" in manifest
         assert "app/services/deal_automation.py" in manifest
         assert "app/static/index.html" in manifest
+        assert "app/version.py" in manifest
+        assert b'APP_VERSION = "0.3.0"' in bundle.read("app/version.py")
         assert "app/fleet.py" in manifest
         assert "argon2_cffi_bindings-25.1.0-cp39-abi3-win_amd64.whl" in manifest
     assert digest_file.read_text(encoding="ascii") == f"{builder.sha256(archive)}  {archive.name}\n"

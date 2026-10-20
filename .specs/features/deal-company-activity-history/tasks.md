@@ -68,7 +68,7 @@ T13 → T14 → T15 → T16
 ### Phase 4: Fleet readiness and independent evidence
 
 ```text
-T17 → T18
+T17 → T18 → T19
 ```
 
 ---
@@ -568,15 +568,43 @@ T17 → T18
 **Gate**: build  
 **Commit**: `feat(fleet): support activity history tenant head`
 
-#### T18: Publish traceable local release evidence
+#### T18: Show the active release version
+
+**Status**: Complete
+
+**What**: Define one canonical semantic version, expose it through a no-cache metadata endpoint and render it discreetly in the authenticated sidebar.
+**Where**: application release metadata boundary and authenticated sidebar
+**Depends on**: T17
+**Reuses**: Existing health-style metadata response, static application bootstrap and offline bundle collection of `app`.
+**Requirement**: HIST-08
+
+**Tools**:
+
+- MCP: NONE
+- Local: `apply_patch`, backend/browser/package test runners
+- Skill: `tlc-spec-driven`
+
+**Done when**:
+
+- [x] One canonical constant defines `0.3.0` for Python packaging, API and UI consumption.
+- [x] `GET /api/version` returns exactly `{"version":"0.3.0"}` with `Cache-Control: no-store` and existing security headers.
+- [x] The authenticated sidebar displays `v0.3.0` without exposing secrets or blocking login/workspace operation if metadata loading fails.
+- [x] Browser tests cover success and failure, and the offline package test proves the canonical source and UI are included.
+- [x] Build gate passes without weakening prior assertions.
+
+**Tests**: unit + browser e2e + package contract — extend `tests/backend/test_api.py`, `tests/ui-prototype.spec.cjs`, `tests/backend/test_windows_multitenant_bundle.py`
+**Gate**: build
+**Commit**: `feat(release): show active application version`
+
+#### T19: Publish traceable local release evidence
 
 **Status**: Planned
 
 **What**: Record complete local evidence, requirement traceability and a no-execution deployment/rollback checklist after all gates pass.  
 **Where**: `.specs/features/deal-company-activity-history/validation.md`  
-**Depends on**: T17  
+**Depends on**: T18
 **Reuses**: README verification commands, Windows side-by-side runbook, TLC validators and evidence-or-zero Verifier process.  
-**Requirement**: HIST-01, HIST-02, HIST-03, HIST-04, HIST-05, HIST-06, HIST-07
+**Requirement**: HIST-01, HIST-02, HIST-03, HIST-04, HIST-05, HIST-06, HIST-07, HIST-08
 
 **Tools**:
 
@@ -605,10 +633,10 @@ T17 → T18
 Phase 1: T1 → T2 → T3 → T4
 Phase 2: T5 → T6 → T7 → T8 → T9 → T10 → T11 → T12
 Phase 3: T13 → T14 → T15 → T16
-Phase 4: T17 → T18
+Phase 4: T17 → T18 → T19
 ```
 
-Cross-phase entry dependencies are T5 on T4, T13 on T12 and T17 on T16. Execution remains sequential. With 18 tasks, Execute must offer task-budgeted phase batches before T1; agents are used only if the user explicitly accepts.
+Cross-phase entry dependencies are T5 on T4, T13 on T12 and T17 on T16. Execution remains sequential. With 19 tasks, Execute must offer task-budgeted phase batches before T1; agents are used only if the user explicitly accepts.
 
 ---
 
@@ -633,7 +661,8 @@ Cross-phase entry dependencies are T5 on T4, T13 on T12 and T17 on T16. Executio
 | T15 | Company Deal dashboard UI | Granular |
 | T16 | Company history UI | Granular |
 | T17 | Fleet/package revision | Granular |
-| T18 | Validation evidence/checklist | Granular |
+| T18 | Active release version | Granular |
+| T19 | Validation evidence/checklist | Granular |
 
 ---
 
@@ -659,6 +688,7 @@ Cross-phase entry dependencies are T5 on T4, T13 on T12 and T17 on T16. Executio
 | T16 | T15 | T15 → T16 | Match |
 | T17 | T16 | Cross-phase entry | Match |
 | T18 | T17 | T17 → T18 | Match |
+| T19 | T18 | T18 → T19 | Match |
 
 ---
 
@@ -683,7 +713,8 @@ Cross-phase entry dependencies are T5 on T4, T13 on T12 and T17 on T16. Executio
 | T15 | Company Deal dashboard | browser e2e | browser e2e | OK |
 | T16 | Company history | browser e2e | browser e2e | OK |
 | T17 | Fleet/package | unit + contract + PostgreSQL integration | unit + contract + PostgreSQL integration | OK |
-| T18 | Documentation/validation | structural + full regression | structural + full regression | OK |
+| T18 | Release metadata/UI/package | unit + browser e2e + package contract | unit + browser e2e + package contract | OK |
+| T19 | Documentation/validation | structural + full regression | structural + full regression | OK |
 
 ---
 
@@ -691,15 +722,16 @@ Cross-phase entry dependencies are T5 on T4, T13 on T12 and T17 on T16. Executio
 
 | Requirement | Tasks | Evidence target |
 | ----------- | ----- | --------------- |
-| HIST-01 | T1,T2,T3,T4,T5,T10,T11,T14,T18 | Tenant-scoped Deal timeline, filters and stable cursor |
-| HIST-02 | T1,T4,T8,T9,T10,T14,T18 | Atomic movement/automation activities and server billing behavior |
-| HIST-03 | T1,T2,T4,T5,T11,T12,T14,T16,T18 | Immutable idempotent Deal/Company observations |
-| HIST-04 | T13,T14,T18 | Wide accessible responsive Deal workspace |
-| HIST-05 | T2,T6,T7,T12,T13,T15,T18 | Exact visible Company Deal totals and list |
-| HIST-06 | T1,T3,T4,T5,T9,T12,T13,T16,T18 | Company own change/observation history without Deal duplication |
-| HIST-07 | T1,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T17,T18 | Tenant isolation, RLS, redaction, migration and fleet safety |
+| HIST-01 | T1,T2,T3,T4,T5,T10,T11,T14,T19 | Tenant-scoped Deal timeline, filters and stable cursor |
+| HIST-02 | T1,T4,T8,T9,T10,T14,T19 | Atomic movement/automation activities and server billing behavior |
+| HIST-03 | T1,T2,T4,T5,T11,T12,T14,T16,T19 | Immutable idempotent Deal/Company observations |
+| HIST-04 | T13,T14,T19 | Wide accessible responsive Deal workspace |
+| HIST-05 | T2,T6,T7,T12,T13,T15,T19 | Exact visible Company Deal totals and list |
+| HIST-06 | T1,T3,T4,T5,T9,T12,T13,T16,T19 | Company own change/observation history without Deal duplication |
+| HIST-07 | T1,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T17,T19 | Tenant isolation, RLS, redaction, migration and fleet safety |
+| HIST-08 | T18,T19 | Canonical no-cache version metadata, authenticated UI indicator and package inclusion |
 
-**Coverage:** 7 requirements, 18 mapped tasks, 0 unmapped.
+**Coverage:** 8 requirements, 19 mapped tasks, 0 unmapped.
 
 ---
 
@@ -707,6 +739,6 @@ Cross-phase entry dependencies are T5 on T4, T13 on T12 and T17 on T16. Executio
 
 1. User approves `spec.md`, `context.md`, `design.md` and this `tasks.md`.
 2. User confirms `tlc-spec-driven` plus local filesystem/shell/PostgreSQL/Playwright as the tools for all tasks; no external plugin is required.
-3. Because 18 tasks exceed one batch, user chooses sequential phase-batch sub-agents or inline execution before T1.
+3. Because 19 tasks exceed one batch, user chooses sequential phase-batch sub-agents or inline execution before T1.
 4. Baseline backend/browser counts and current dirty-worktree files are recaptured before modifying code.
 5. Push, deploy, production backup/migration, task scheduler and server changes remain forbidden without explicit separate authorization.

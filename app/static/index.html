@@ -80,6 +80,7 @@
     .nav-count { margin-left: auto; min-width: 21px; padding: 2px 6px; border-radius: 999px; color: #d8e3f4; background: rgba(255,255,255,.09); font-size: 11px; text-align: center; }
     .sidebar-note { margin-top: auto; padding: 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 11px; color: #9eabc0; background: rgba(255,255,255,.035); font-size: 12px; line-height: 1.5; }
     .sidebar-note strong { color: #dce6f5; }
+    .app-version { margin-top: auto; padding: 14px 12px 0; color: #73839f; font-size: 11px; font-variant-numeric: tabular-nums; }
 
     .main { min-width: 0; }
     .demo-banner { min-height: 38px; display: flex; justify-content: center; align-items: center; gap: 9px; padding: 8px 18px; color: #4b3500; background: #fff5cb; border-bottom: 1px solid #f7df88; font-size: 12px; font-weight: 650; text-align: center; }
@@ -505,7 +506,7 @@
         <button data-view="pipeline-admin" data-admin-nav hidden><span class="nav-icon">⇄</span>Funil de negócios</button>
         <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
       </nav>
-
+      <small class="app-version" id="appVersion" hidden></small>
     </aside>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
@@ -1148,6 +1149,20 @@
     }
     function apiFetch(input, init = {}) {
       return fetch(input, { ...init, credentials: 'same-origin' });
+    }
+    async function loadApplicationVersion() {
+      const element = document.getElementById('appVersion');
+      try {
+        const payload = await responseJson(await apiFetch('/api/version', { headers: { Accept: 'application/json' } }));
+        if (typeof payload.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(payload.version)) throw new Error('Versão inválida.');
+        element.textContent = `v${payload.version}`;
+        element.setAttribute('aria-label', `Versão instalada ${payload.version}`);
+        element.hidden = false;
+      } catch (_) {
+        element.textContent = '';
+        element.removeAttribute('aria-label');
+        element.hidden = true;
+      }
     }
     function tenantSlugFromPath() {
       const segments = location.pathname.split('/').filter(Boolean);
@@ -3915,6 +3930,7 @@
     document.getElementById('tenantLoginForm').addEventListener('submit', submitTenantLogin);
     document.getElementById('logoutButton').addEventListener('click', logout);
 
+    loadApplicationVersion();
     initializeRoute();
   </script>
 </body>

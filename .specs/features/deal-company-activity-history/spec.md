@@ -12,6 +12,7 @@ O Smart CRM registra tecnicamente mudanças de etapa, mas o usuário não possui
 - [ ] Mostrar na Empresa totais, quantidades, valores e lista dos Negócios vinculados.
 - [ ] Manter na Empresa um histórico próprio de alterações cadastrais e observações.
 - [ ] Preservar isolamento multiempresa, autorização e consistência transacional.
+- [ ] Exibir na aplicação autenticada a versão da release servida pelo backend.
 
 ## Out of Scope
 
@@ -46,6 +47,7 @@ O Smart CRM registra tecnicamente mudanças de etapa, mas o usuário não possui
 | Visibilidade | Acompanha a permissão de leitura da entidade | Não cria um canal paralelo de acesso. | y |
 | Publicação de observação | Exige permissão de alteração da entidade | Reutiliza a fronteira de autorização comercial. | y |
 | Automação | Evento registra regra, resultado e resumo das ações, sem segredos | Torna a execução compreensível e segura. | y |
+| Identificação da release | Versão semântica discreta no rodapé do menu, fornecida pelo backend | Permite confirmar visualmente qual versão está ativa sem depender do nome da pasta no servidor. | y |
 
 **Open questions:** none — as decisões de produto e recomendações acima foram aprovadas pelo usuário.
 
@@ -179,6 +181,22 @@ O Smart CRM registra tecnicamente mudanças de etapa, mas o usuário não possui
 
 **Independent Test**: Exercitar APIs e repositórios em dois bancos tenant, tentar forjar escopo, remover contexto RLS e executar upgrade/downgrade em banco PostgreSQL isolado.
 
+### P1: Identificar a release ativa
+
+**User Story**: Como administrador, quero ver a versão ativa na interface para confirmar rapidamente qual release está atendendo o ambiente.
+
+**Why P1**: A implantação lado a lado precisa de uma confirmação visual simples depois do cutover.
+
+**Acceptance Criteria**:
+
+1. WHEN o backend estiver disponível THEN the system SHALL expor a versão semântica canônica `0.3.0` em resposta somente leitura e sem cache.
+2. WHEN a aplicação autenticada for exibida THEN the system SHALL mostrar `v0.3.0` discretamente no rodapé do menu lateral.
+3. IF a consulta da versão falhar THEN the system SHALL manter login e operação comercial utilizáveis sem apresentar uma versão incorreta.
+4. The system SHALL usar a mesma fonte canônica para a versão do pacote Python e para a resposta exibida na interface.
+5. WHEN o pacote offline for montado THEN the system SHALL incluir a fonte canônica e a interface que consome a versão.
+
+**Independent Test**: Consultar a rota de versão, abrir a aplicação autenticada, simular falha da consulta e inspecionar o conteúdo do pacote offline.
+
 ---
 
 ## Edge Cases
@@ -215,15 +233,16 @@ O Smart CRM registra tecnicamente mudanças de etapa, mas o usuário não possui
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| HIST-01 | Consultar a linha do tempo do Negócio | Execute | In progress (implementation complete; T18 validation pending) |
-| HIST-02 | Registrar movimentações e automações atomicamente | Execute | In progress (implementation complete; T18 validation pending) |
-| HIST-03 | Publicar observações manuais imutáveis | Execute | In progress (implementation complete; T18 validation pending) |
-| HIST-04 | Usar um painel amplo e responsivo no Negócio | Execute | In progress (implementation complete; T18 validation pending) |
-| HIST-05 | Resumir os Negócios vinculados na Empresa | Execute | In progress (implementation complete; T18 validation pending) |
-| HIST-06 | Manter histórico próprio da Empresa | Execute | In progress (implementation complete; T18 validation pending) |
-| HIST-07 | Preservar isolamento e operação segura | Execute | In progress (implementation complete; T18 validation pending) |
+| HIST-01 | Consultar a linha do tempo do Negócio | Execute | In progress (implementation complete; T19 validation pending) |
+| HIST-02 | Registrar movimentações e automações atomicamente | Execute | In progress (implementation complete; T19 validation pending) |
+| HIST-03 | Publicar observações manuais imutáveis | Execute | In progress (implementation complete; T19 validation pending) |
+| HIST-04 | Usar um painel amplo e responsivo no Negócio | Execute | In progress (implementation complete; T19 validation pending) |
+| HIST-05 | Resumir os Negócios vinculados na Empresa | Execute | In progress (implementation complete; T19 validation pending) |
+| HIST-06 | Manter histórico próprio da Empresa | Execute | In progress (implementation complete; T19 validation pending) |
+| HIST-07 | Preservar isolamento e operação segura | Execute | In progress (implementation complete; T19 validation pending) |
+| HIST-08 | Identificar a release ativa | Execute | In progress (implementation complete; T19 validation pending) |
 
-**Coverage:** 7 requirements mapped to approved tasks; T1-T17 complete, T18 pending.
+**Coverage:** 8 requirements mapped to approved tasks; T1-T18 complete, T19 pending.
 
 ---
 
@@ -236,3 +255,4 @@ O Smart CRM registra tecnicamente mudanças de etapa, mas o usuário não possui
 - [ ] O histórico da Empresa não duplica a linha do tempo detalhada dos Negócios.
 - [ ] Nenhuma sessão, API ou consulta recebe eventos ou indicadores de outro tenant/workspace.
 - [ ] A interface passa nos fluxos de desktop amplo, responsivo, teclado, vazio, loading e erro sem regressão das abas existentes.
+- [ ] A aplicação autenticada mostra `v0.3.0`, fornecida pelo backend, sem bloquear o uso se a consulta falhar.

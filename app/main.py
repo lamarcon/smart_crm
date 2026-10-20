@@ -75,6 +75,7 @@ from app.services.workspace import (
     WorkspaceStageConflict,
 )
 from app.tenant_database import TenantDatabaseRouter, TenantUnavailableError
+from app.version import APP_VERSION
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -469,6 +470,13 @@ def create_app(
             "persistence_error",
             "Não foi possível concluir a operação.",
             errorId=error_id,
+        )
+
+    @app.get("/api/version")
+    def application_version() -> JSONResponse:
+        return JSONResponse(
+            content={"version": APP_VERSION},
+            headers={"Cache-Control": "no-store"},
         )
 
     @app.get("/health")

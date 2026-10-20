@@ -121,6 +121,7 @@ async function openFresh(options = {}) {
   const initialState = options.preloadState ? attachCanonicalDealStages(durableState(options.preloadState), pipeline) : null;
   const api = {
     initialized: Boolean(initialState), version: initialState ? 1 : 0, state: initialState,
+    applicationVersion: options.applicationVersion || '0.3.0', versionFailure: Boolean(options.versionFailure),
     session: { ...AUTH_SESSION, ...(options.session || {}) },
     loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false,
     pipeline, pipelineFailure: Boolean(options.pipelineFailure), pipelineConflict: false,
@@ -137,6 +138,13 @@ async function openFresh(options = {}) {
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
+  await context.route('**/api/version', route => route.fulfill({
+    status: api.versionFailure ? 503 : 200,
+    contentType: 'application/json',
+    body: JSON.stringify(api.versionFailure
+      ? { error: { code: 'version_unavailable', message: 'Versão indisponível.' } }
+      : { version: api.applicationVersion })
+  }));
   await context.route('**/api/auth/session', route => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify(api.session)
@@ -871,6 +879,19 @@ async function storageEntries(page) {
     assert.equal(await page.evaluate(() => document.documentElement.dataset.workspaceReady), 'false');
     assert.equal(authRequests.filter(item => item.url.includes('/logout')).length, 1);
   }, { authenticated: true });
+
+  await run('HIST-08 exibe a versão canônica no rodapé autenticado', async page => {
+    const version = page.locator('#appVersion');
+    await version.waitFor();
+    assert.equal(await version.innerText(), 'v0.3.0');
+    assert.equal(await version.getAttribute('aria-label'), 'Versão instalada 0.3.0');
+  });
+
+  await run('HIST-08 falha de metadados não bloqueia a operação nem inventa versão', async page => {
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#appVersion').isHidden(), true);
+    assert.equal(await page.locator('#page-dashboard').isVisible(), true);
+  }, { preloadState: minimalWorkspace(), versionFailure: true });
 
 
   const SELLER_SESSION = {

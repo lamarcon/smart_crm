@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smart-crm-demo"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Smart CRM local API and PostgreSQL persistence runtime"
 requires-python = ">=3.11,<3.13"
 dependencies = [
@@ -24,6 +24,9 @@ dev = [
 
 [tool.setuptools]
 packages = ["app"]
+
+[tool.setuptools.dynamic]
+version = {attr = "app.version.APP_VERSION"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests/backend"]
