@@ -17,6 +17,8 @@ TEST_DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
+ACTIVITY_HEAD = "e1c4a7b9d2f6"
+TENANT_HEAD = "f6b1d3a8c2e4"
 
 
 def alembic_config(connection=None) -> Config:  # noqa: ANN001
@@ -54,7 +56,16 @@ def test_upgrade_reaches_head_and_creates_uninitialized_singleton(isolated_migra
     ).one()
     assert set(Base.metadata.tables).issubset(tables)
     assert tuple(workspace) == ("default", 0, None)
-    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "e1c4a7b9d2f6"
+    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == TENANT_HEAD
+    history_redaction = next(
+        column
+        for column in inspect(connection).get_columns(
+            "custom_field_definitions", schema=schema
+        )
+        if column["name"] == "redact_in_history"
+    )
+    assert history_redaction["nullable"] is False
+    assert str(history_redaction["default"]).lower() == "false"
     status_constraint = connection.scalar(
         text(
             "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
@@ -76,6 +87,35 @@ def test_repeated_upgrade_is_idempotent(isolated_migration) -> None:
 
     assert connection.scalar(text("SELECT count(*) FROM workspaces")) == 1
     assert connection.scalar(text("SELECT version FROM workspaces WHERE id='default'")) == 0
+
+
+def test_upgrade_repairs_activity_head_missing_history_redaction_column(
+    isolated_migration,
+) -> None:
+    connection, schema, config = isolated_migration
+    command.upgrade(config, "c7f3a9d8e2b1")
+    command.stamp(config, ACTIVITY_HEAD)
+
+    columns_before = {
+        column["name"]
+        for column in inspect(connection).get_columns(
+            "custom_field_definitions", schema=schema
+        )
+    }
+    assert "redact_in_history" not in columns_before
+
+    command.upgrade(config, "head")
+
+    repaired = next(
+        column
+        for column in inspect(connection).get_columns(
+            "custom_field_definitions", schema=schema
+        )
+        if column["name"] == "redact_in_history"
+    )
+    assert repaired["nullable"] is False
+    assert str(repaired["default"]).lower() == "false"
+    assert connection.scalar(text("SELECT version_num FROM alembic_version")) == TENANT_HEAD
 
 
 def test_downgrade_and_upgrade_cycle_runs_only_in_isolated_schema(isolated_migration) -> None:
@@ -103,5 +143,5 @@ def test_upgrade_current_database_preserves_existing_probe() -> None:
         after = connection.scalar(text("SELECT count(*) FROM _smartcrm_test_probe"))
         head = connection.scalar(text("SELECT version_num FROM alembic_version"))
     assert after == before == 1
-    assert head == "e1c4a7b9d2f6"
+    assert head == TENANT_HEAD
     engine.dispose()
