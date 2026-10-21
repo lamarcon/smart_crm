@@ -94,6 +94,23 @@ def test_upgrade_repairs_activity_head_missing_history_redaction_column(
 ) -> None:
     connection, schema, config = isolated_migration
     command.upgrade(config, "c7f3a9d8e2b1")
+    definition_id = connection.scalar(
+        text(
+            "INSERT INTO custom_field_definitions "
+            "(workspace_id, module, key, label, field_type, options, source, "
+            "source_name, source_occurrence, position, user_created) "
+            "VALUES ('default', 'deals', 'legacy_sensitive', 'Dado legado', "
+            "'text', '[\"preservar\"]'::jsonb, 'custom', 'legacy_source', 1, 7, true) "
+            "RETURNING id"
+        )
+    )
+    definition_before = connection.scalar(
+        text(
+            "SELECT to_jsonb(definition) FROM custom_field_definitions AS definition "
+            "WHERE id = :definition_id"
+        ),
+        {"definition_id": definition_id},
+    )
     command.stamp(config, ACTIVITY_HEAD)
 
     columns_before = {
@@ -115,6 +132,22 @@ def test_upgrade_repairs_activity_head_missing_history_redaction_column(
     )
     assert repaired["nullable"] is False
     assert str(repaired["default"]).lower() == "false"
+    assert connection.scalar(text("SELECT count(*) FROM custom_field_definitions")) == 1
+    definition_after = connection.scalar(
+        text(
+            "SELECT to_jsonb(definition) - 'redact_in_history' "
+            "FROM custom_field_definitions AS definition WHERE id = :definition_id"
+        ),
+        {"definition_id": definition_id},
+    )
+    assert definition_after == definition_before
+    assert connection.scalar(
+        text(
+            "SELECT redact_in_history FROM custom_field_definitions "
+            "WHERE id = :definition_id"
+        ),
+        {"definition_id": definition_id},
+    ) is False
     assert connection.scalar(text("SELECT version_num FROM alembic_version")) == TENANT_HEAD
 
 
