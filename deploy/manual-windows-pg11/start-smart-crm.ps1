@@ -116,8 +116,11 @@ $logPath = Join-Path $LogDirectory "smart-crm.log"
 Push-Location $AppRoot
 try {
     $uvicornArguments = Get-SmartCrmUvicornArguments
-    & $python @uvicornArguments *>> $logPath
-    exit $LASTEXITCODE
+    $exitCode = Invoke-SmartCrmLoggedProcess `
+        -FilePath $python `
+        -ArgumentList $uvicornArguments `
+        -LogPath $logPath
+    exit $exitCode
 }
 finally {
     foreach ($key in $runtimeKeys) {

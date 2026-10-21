@@ -137,6 +137,27 @@ function Get-SmartCrmUvicornArguments {
     )
 }
 
+function Invoke-SmartCrmLoggedProcess {
+    param(
+        [string]$FilePath,
+        [string[]]$ArgumentList,
+        [string]$LogPath
+    )
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5.1 converts native stderr into ErrorRecord objects.
+        # Uvicorn writes normal lifecycle messages to stderr, so Stop would
+        # terminate an otherwise healthy scheduled task on its first log line.
+        $ErrorActionPreference = "Continue"
+        & $FilePath @ArgumentList *>> $LogPath
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    return $exitCode
+}
+
 function Assert-SmartCrmCommandSucceeded {
     param(
         [int]$ExitCode,

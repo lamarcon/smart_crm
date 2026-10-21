@@ -55,7 +55,15 @@ def verify_source(root: Path) -> set[str]:
         "Get-SmartCrmControlAlembicUpgradeArguments",
         "Get-SmartCrmTenantAlembicUpgradeArguments",
     )) and "CREATE TABLE" not in scripts, "MPG-09", "separate Alembic-only schema migration contract missing", passed)
-    _require('"--host", "127.0.0.1", "--port", "8080"' in policy and "Get-SmartCrmUvicornArguments" in start and "@uvicornArguments" in start, "MPG-10", "loopback Uvicorn binding missing", passed)
+    _require(
+        '"--host", "127.0.0.1", "--port", "8080"' in policy
+        and "Get-SmartCrmUvicornArguments" in start
+        and "Invoke-SmartCrmLoggedProcess" in start
+        and "-ArgumentList $uvicornArguments" in start,
+        "MPG-10",
+        "loopback Uvicorn binding or PowerShell 5.1-safe launcher missing",
+        passed,
+    )
     _require('$Health.status -eq "ok" -and $Health.database -eq "ok"' in policy and "Test-SmartCrmHealth -Health $health" in initialize and "LOCAL GATE: PASS" in initialize, "MPG-11", "exact health gate before Apache missing", passed)
     _require('$_.LocalAddress -eq "127.0.0.1"' in policy and "$ipv4Loopback.Count -eq 0" in policy and "Assert-SmartCrmPostgresListeners -Listeners $listeners" in install, "MPG-12", "exact IPv4 PostgreSQL listener gate missing", passed)
     _require("\\du smartcrm" in readme and "\\l smartcrm" in readme and "nao a recrie nem apague" in readme, "MPG-13", "existing role/database validation guidance missing", passed)

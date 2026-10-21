@@ -417,6 +417,30 @@ def test_health_policy_rejects_each_partial_failure():
     assert outcomes == {("ok", "ok"): 0, ("bad", "ok"): 9, ("ok", "bad"): 9, ("bad", "bad"): 9}
 
 
+def test_windows_powershell_51_keeps_native_stderr_in_log_without_stopping(tmp_path):
+    log_path = tmp_path / "smart-crm.log"
+    expression = (
+        "$ErrorActionPreference='Stop'; "
+        "$arguments=@('/d','/c','echo uvicorn-info 1>&2'); "
+        f"$code=Invoke-SmartCrmLoggedProcess -FilePath $env:ComSpec "
+        f"-ArgumentList $arguments -LogPath {powershell_literal(str(log_path))}; "
+        "if ($code -ne 0) { exit 9 }; Write-Output 'runtime-continued'"
+    )
+
+    result = run_policy(expression)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "runtime-continued" in result.stdout
+    assert "uvicorn-info" in log_path.read_text(encoding="utf-16")
+
+
+def test_start_script_uses_the_powershell_51_safe_logged_process_helper():
+    start = START.read_text(encoding="utf-8")
+
+    assert "Invoke-SmartCrmLoggedProcess" in start
+    assert "& $python @uvicornArguments *>> $logPath" not in start
+
+
 def test_migration_failure_throws_before_publication_and_apache_is_absent():
     failure = run_policy("Assert-SmartCrmCommandSucceeded -ExitCode 7 -FailureMessage 'migration-blocked'")
     success = run_policy("Assert-SmartCrmCommandSucceeded -ExitCode 0 -FailureMessage 'must-not-throw'")
