@@ -125,12 +125,14 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
             "app/version.py",
             "migrations/versions/c7f3a9d8e2b1_add_customizable_deal_pipeline.py",
             "migrations/versions/e1c4a7b9d2f6_add_crm_activity_events.py",
+            "migrations/versions/f6b1d3a8c2e4_repair_custom_field_history_redaction.py",
         } <= names
         assert not any(name.endswith(("server.env", ".bin", ".key")) for name in names)
         manifest = bundle.read("MANIFEST.sha256").decode("utf-8")
         assert "migrations_control/env.py" in manifest
         assert "migrations/versions/c7f3a9d8e2b1_add_customizable_deal_pipeline.py" in manifest
         assert "migrations/versions/e1c4a7b9d2f6_add_crm_activity_events.py" in manifest
+        assert "migrations/versions/f6b1d3a8c2e4_repair_custom_field_history_redaction.py" in manifest
         assert "app/repositories/activity.py" in manifest
         assert "app/services/activity.py" in manifest
         assert "app/services/deal_automation.py" in manifest

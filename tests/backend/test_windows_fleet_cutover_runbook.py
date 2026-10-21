@@ -57,7 +57,7 @@ def test_control_and_tenant_migration_lineages_are_separate_and_ordered() -> Non
 
     assert "c01a5d8e4f20" in text
     assert "c7f3a9d8e2b1" in text
-    assert "e1c4a7b9d2f6" in text
+    assert "f6b1d3a8c2e4" in text
     assert "A linhagem tenant desta release avança da revisão do funil personalizável" in text
     assert "alembic-control.ini" in text
     assert "Todos os backups e ensaios devem estar verdes antes da primeira migração." in text
@@ -123,7 +123,7 @@ def test_activation_and_basic_auth_cutover_require_recorded_uat() -> None:
 def test_no_execution_checklist_targets_activity_head_without_shared_database_changes() -> None:
     text = read_runbook()
 
-    assert "migração tenant `e1c4a7b9d2f6`" in text
-    assert "target `e1c4a7b9d2f6`" in text
+    assert "migração tenant `f6b1d3a8c2e4`" in text
+    assert "target `f6b1d3a8c2e4`" in text
     assert "`DW_CMS`, `DW_PRODUTOS`, listener PostgreSQL e regras HBA globais permanecem fora da mudança" in text
     assert "conta dedicada `SmartCRMService`" in text

@@ -50,7 +50,7 @@ def verify_source(root: Path) -> set[str]:
     _require(not re.search(r"(?i)\b(?:Stop|Restart|Set|Remove)-Service\b|ALTER\s+SYSTEM|pg_ctl", scripts), "MPG-08", "PG11 service mutation command found", passed)
     _require(all(token in policy for token in (
         '"alembic-control.ini", "upgrade", "c01a5d8e4f20"',
-        '"alembic.ini", "upgrade", "e1c4a7b9d2f6"',
+        '"alembic.ini", "upgrade", "f6b1d3a8c2e4"',
     )) and all(token in initialize for token in (
         "Get-SmartCrmControlAlembicUpgradeArguments",
         "Get-SmartCrmTenantAlembicUpgradeArguments",
@@ -73,7 +73,7 @@ def verify_source(root: Path) -> set[str]:
         "Get-SmartCrmTenantAlembicCurrentArguments",
         "Assert-SmartCrmAlembicRevision",
         "c01a5d8e4f20",
-        "e1c4a7b9d2f6",
+        "f6b1d3a8c2e4",
     )) and "alembic" not in start.lower(), "MPG-15", "exact revisions are not verified separately before publication or web startup runs migrations", passed)
     _require(all(token in readme for token in (
         "smart-crm-<SHA>",

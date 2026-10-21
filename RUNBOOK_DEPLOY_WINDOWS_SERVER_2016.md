@@ -709,16 +709,18 @@ assinado pelo operador e pelo DBA. Cada linha representa exatamente um banco e c
 | `tenant_id` / `slug` | Vazios somente para `control_database`; explícitos para cada tenant |
 | `database_fingerprint` | Hash aprovado da identidade host/porta/nome, nunca a DSN |
 | `secret_ref` | secret_ref opaco existente no plano de controle; nunca o segredo |
-| `expected_revision` | `c01a5d8e4f20` para controle ou `e1c4a7b9d2f6` para tenant |
+| `expected_revision` | `c01a5d8e4f20` para controle ou `f6b1d3a8c2e4` para tenant |
 | `change_ticket` / `authorized_by` | Mudança, operador e DBA que autorizaram aquele banco |
 | `backup_sha256` | Hash da evidência de backup daquele banco |
 | `restore_rehearsal` | Deve ser exatamente `restore_rehearsal=passed` |
 | `uat_result` | Pendente até a validação isolada do banco/tenant |
 
 A linhagem tenant desta release avança da revisão do funil personalizável
-`c7f3a9d8e2b1` para o alvo do histórico operacional `e1c4a7b9d2f6`. O primeiro valor
-é a revisão anterior esperada, não um target alternativo; qualquer outro predecessor
-é drift e bloqueia o preflight.
+`c7f3a9d8e2b1`, passa pela criação do histórico em `e1c4a7b9d2f6` e termina na
+revisão corretiva `f6b1d3a8c2e4`. A última revisão adiciona de forma idempotente a
+coluna de redação do histórico quando um banco já foi marcado com a revisão anterior.
+O primeiro valor é a revisão anterior esperada, não um target alternativo; qualquer
+outro predecessor é drift e bloqueia o preflight.
 
 O conjunto deve conter um `control_database`, o banco `tenant_default` que já possui os
 dados atuais e somente os bancos `tenant_remote` nominalmente escolhidos.
@@ -761,7 +763,7 @@ usa credenciais de migração temporárias e processa uma linhagem por vez:
 3. confirmar exatamente `c01a5d8e4f20` em `alembic_control_version`;
 4. executar preflight redigido com seletores explícitos para os tenants do manifesto;
 5. para cada tenant, aplicar a linhagem `alembic.ini` somente ao banco daquela linha;
-6. confirmar exatamente `e1c4a7b9d2f6`, identidade, contagens e RLS antes de avançar;
+6. confirmar exatamente `f6b1d3a8c2e4`, identidade, contagens e RLS antes de avançar;
 7. registrar sucesso ou falha de cada tenant independentemente, sem ativação automática.
 
 Não passar slug, DSN ou nome do banco pelo navegador. O `FleetService` recebe seletores
@@ -869,12 +871,12 @@ seleção, copiar dados ou reaproveitar a autorização de outro tenant.
 
 - [ ] Validar localmente o ZIP offline e seu SHA-256 antes de qualquer transferência.
 - [ ] Planejar uma pasta de release nova e versionada; não sobrescrever a release ativa.
-- [ ] Confirmar que o pacote contém a migração tenant `e1c4a7b9d2f6`, `app/fleet.py` e o manifesto íntegro.
+- [ ] Confirmar que o pacote contém a migração tenant `f6b1d3a8c2e4`, `app/fleet.py` e o manifesto íntegro.
 - [ ] Preservar a release anterior, a tarefa atual e o arquivo de ambiente como rollback recuperável.
 
 ### Preflight
 
-- [ ] Confirmar seleção explícita do tenant, backup aprovado, confirmação operacional e target `e1c4a7b9d2f6`.
+- [ ] Confirmar seleção explícita do tenant, backup aprovado, confirmação operacional e target `f6b1d3a8c2e4`.
 - [ ] Confirmar que a revisão anterior do banco coincide com a revisão esperada no plano de controle.
 - [ ] Confirmar `tenant_identity`, `workspace_id`, contrato de schema, RLS e credencial de runtime sem privilégios elevados.
 - [ ] Confirmar que `DW_CMS`, `DW_PRODUTOS`, listener PostgreSQL e regras HBA globais permanecem fora da mudança.

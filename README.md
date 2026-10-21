@@ -2,7 +2,7 @@
 
 CRM em desenvolvimento para substituir o uso comercial atual do Bitrix24. O repositório contém as especificações do MVP de produção e um protótipo local navegável para validação antecipada do layout e dos fluxos.
 
-**Status:** a aplicação multiempresa já está em operação na release atualmente publicada. A candidata local `v0.3.0` acrescenta o funil de Negócios personalizável e o histórico operacional de Negócios/Empresas, com revisão tenant `e1c4a7b9d2f6`. Ela está implementada e validada somente neste repositório; upload, migração e cutover não foram executados e exigem autorização própria.
+**Status:** a aplicação multiempresa já está em operação na release atualmente publicada. A candidata local `v0.3.0` acrescenta o funil de Negócios personalizável e o histórico operacional de Negócios/Empresas, com revisão tenant `f6b1d3a8c2e4`. Ela está implementada e validada somente neste repositório; upload, migração e cutover não foram executados e exigem autorização própria.
 
 ## Modelo multiempresa: plano de controle e bancos dedicados
 

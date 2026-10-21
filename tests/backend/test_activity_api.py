@@ -31,7 +31,7 @@ DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
-TENANT_HEAD = "e1c4a7b9d2f6"
+TENANT_HEAD = "f6b1d3a8c2e4"
 ORIGIN = "https://sc2030.brbots.com"
 WORKSPACE_ID = "default"
 TENANT_ID = uuid.UUID("0704e2f5-38f2-440d-9ef2-1d9e91a77508")

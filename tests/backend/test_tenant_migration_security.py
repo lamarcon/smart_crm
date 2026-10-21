@@ -19,7 +19,7 @@ TEST_DATABASE_URL = os.getenv(
 )
 LEGACY_HEAD = "9f7a2c31d5e8"
 PIPELINE_HEAD = "c7f3a9d8e2b1"
-TENANT_HEAD = "e1c4a7b9d2f6"
+TENANT_HEAD = "f6b1d3a8c2e4"
 TENANT_TABLES = {
     "workspaces",
     "teams",

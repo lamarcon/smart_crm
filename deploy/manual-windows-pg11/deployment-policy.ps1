@@ -109,7 +109,7 @@ function Get-SmartCrmControlAlembicCurrentArguments {
 }
 
 function Get-SmartCrmTenantAlembicUpgradeArguments {
-    return @("-m", "alembic", "-c", "alembic.ini", "upgrade", "e1c4a7b9d2f6")
+    return @("-m", "alembic", "-c", "alembic.ini", "upgrade", "f6b1d3a8c2e4")
 }
 
 function Get-SmartCrmTenantAlembicCurrentArguments {

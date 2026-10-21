@@ -135,7 +135,7 @@ def test_brbots_cutover_is_versioned_preserves_data_and_keeps_secrets_interactiv
     assert "`smartcrm_control` contem somente" in text
     assert "nao copie dados comerciais" in text
     assert 'register-tenant brbots --display-name "brbots"' in text
-    assert "--secret-ref brbots-db --expected-revision e1c4a7b9d2f6" in text
+    assert "--secret-ref brbots-db --expected-revision f6b1d3a8c2e4" in text
     assert "activate-default brbots --admin-email lfmarcon@brbots.com" in text
     assert '--admin-name "Luiz Felipe"' in text
     assert "senhas sao solicitadas interativamente" in text

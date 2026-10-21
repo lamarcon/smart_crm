@@ -251,9 +251,13 @@ Stop-ScheduledTask -TaskName SmartCRM -ErrorAction SilentlyContinue
 O inicializador executa, nesta ordem:
 
 1. `alembic-control.ini` ate `c01a5d8e4f20` e confirma exatamente esse head;
-2. `alembic.ini` no database existente `smartcrm` de `c7f3a9d8e2b1` ate `e1c4a7b9d2f6` e confirma exatamente esse head;
+2. `alembic.ini` no database existente `smartcrm` de `c7f3a9d8e2b1` ate `f6b1d3a8c2e4` e confirma exatamente esse head;
 3. registra a tarefa `SmartCRM` na nova release usando `SmartCRMService`;
 4. valida `http://127.0.0.1:8080/health`.
+
+A linhagem tenant passa por `e1c4a7b9d2f6` e termina na revisao corretiva
+`f6b1d3a8c2e4`. A revisao final repara de forma idempotente bancos que ja foram
+marcados com o head anterior sem a coluna de redacao do historico.
 
 Qualquer falha para antes da publicacao. O startup web nunca executa Alembic. O Apache permanece inalterado.
 
@@ -283,7 +287,7 @@ $tenantDsn = "postgresql+psycopg://smartcrm:$($settings.SMART_CRM_DB_PASSWORD)@1
 Set-Clipboard -Value $tenantDsn
 & .\.venv\Scripts\python.exe -m app.admin_cli `
     register-tenant brbots --display-name "brbots" `
-    --secret-ref brbots-db --expected-revision e1c4a7b9d2f6
+    --secret-ref brbots-db --expected-revision f6b1d3a8c2e4
 Set-Clipboard -Value ""
 Remove-Variable tenantDsn -ErrorAction SilentlyContinue
 
@@ -341,4 +345,4 @@ Nao use `git reset --hard`, nao execute downgrade Alembic improvisado e nao apag
 
 ## 10. Proximas empresas
 
-Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `e1c4a7b9d2f6`, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.
+Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `f6b1d3a8c2e4`, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.
