@@ -2524,7 +2524,9 @@ async function storageEntries(page) {
   });
 
   await run('BITRIX-01 importa uma amostra e preserva todos os campos por posição', async page => {
-    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
+    const importButton = page.getByRole('button', { name: 'Importar', exact: true });
+    assert.equal((await importButton.textContent()).trim(), '⇩ Importar');
+    await importButton.click();
     const dialog = page.locator('#bitrixImportDialog');
     assert.equal(await dialog.getByLabel('CSV de Negócios').isVisible(), true);
     assert.equal(await dialog.getByLabel('CSV de Contatos').isVisible(), true);
@@ -2646,7 +2648,7 @@ async function storageEntries(page) {
   });
 
   await run('BITRIX-02 reimporta pelo ID sem criar duplicata', async page => {
-    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
+    await page.getByRole('button', { name: 'Importar', exact: true }).click();
     const dialog = page.locator('#bitrixImportDialog');
     const input = dialog.getByLabel('CSV de Negócios');
     const first = '\ufeffID;Nome do negócio;Empresa;Fase;Total;Observação;Campo futuro\n'
@@ -2667,7 +2669,7 @@ async function storageEntries(page) {
     await drawer.getByRole('button', { name: 'Adicionar campo' }).click();
     await drawer.getByRole('button', { name: 'Salvar registro' }).click();
     await goTo(page, 'Visão geral');
-    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
+    await page.getByRole('button', { name: 'Importar', exact: true }).click();
 
     await input.setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(first, 'utf8') });
     await dialog.getByRole('button', { name: 'Importar amostra' }).click();
@@ -2697,7 +2699,7 @@ async function storageEntries(page) {
   });
 
   await run('BCF-03 pesquisa e filtra campos adicionais em conjunto com campos padrão', async page => {
-    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
+    await page.getByRole('button', { name: 'Importar', exact: true }).click();
     const dialog = page.locator('#bitrixImportDialog');
     const csv = '\ufeffID;Nome do negócio;Empresa;Fase;Total;Código interno;Campo futuro\n'
       + '9201;Primeiro Alpha;Empresa Teste;Em Contato;10;COD-ALPHA;\n'
@@ -3181,7 +3183,7 @@ async function storageEntries(page) {
 
   await run('BITRIX-02 rejeita arquivos inválidos e mantém a importação parcial', async page => {
     const before = await stateFrom(page);
-    await page.getByRole('button', { name: 'Importar Bitrix' }).click();
+    await page.getByRole('button', { name: 'Importar', exact: true }).click();
     const dialog = page.locator('#bitrixImportDialog');
     await dialog.getByLabel('CSV de Leads').setInputFiles({
       name: 'lead.csv', mimeType: 'text/csv', buffer: Buffer.from('\ufeffID;Nome\n;Lead sem chave\n5002;Lead válido dois\n5003;Lead válido três\n', 'utf8')
