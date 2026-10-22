@@ -168,6 +168,32 @@ def test_release_workflow_is_tag_only_and_uses_minimum_release_permission() -> N
     assert "PERSONAL_ACCESS_TOKEN" not in workflow
 
 
+def test_release_workflow_provisions_postgresql_for_the_full_cross_platform_gate() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "quality:\n    runs-on: ubuntu-latest" in workflow
+    assert "image: postgres:17-alpine" in workflow
+    assert "POSTGRES_USER: smartcrm" in workflow
+    assert "POSTGRES_PASSWORD: smartcrm_local_dev" in workflow
+    assert "POSTGRES_DB: smartcrm_test" in workflow
+    assert 'pg_isready -U smartcrm -d smartcrm_test' in workflow
+    assert "--ignore=tests/backend/test_github_release_delivery.py" in workflow
+    assert "--ignore=tests/backend/test_manual_windows_pg11_outcomes.py" in workflow
+
+
+def test_release_job_waits_for_quality_and_runs_windows_only_contracts() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "release:\n    needs: quality\n    runs-on: windows-2022" in workflow
+    assert "Run Windows deployment tests" in workflow
+    assert "tests/backend/test_github_release_delivery.py" in workflow
+    assert "tests/backend/test_manual_windows_pg11_deployment.py" in workflow
+    assert "tests/backend/test_manual_windows_pg11_outcomes.py" in workflow
+    assert workflow.index("Run Windows deployment tests") < workflow.index(
+        "Build and verify the offline bundle"
+    )
+
+
 def test_release_workflow_matches_tag_to_canonical_application_version() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -175,7 +201,7 @@ def test_release_workflow_matches_tag_to_canonical_application_version() -> None
     assert '$expectedTag = "v$appVersion"' in workflow
     assert "$env:GITHUB_REF_NAME -ne $expectedTag" in workflow
     assert workflow.index("Verify tag matches the application version") < workflow.index(
-        "Run backend tests"
+        "Run backend tests with PostgreSQL"
     )
 
 
