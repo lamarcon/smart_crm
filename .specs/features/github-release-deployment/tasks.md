@@ -226,4 +226,3 @@ Execution is strictly sequential.
 | T3 | PowerShell staging policy | integration | integration | ✅ OK |
 | T4 | Operator documentation | none | none | ✅ OK |
 | T5 | PowerShell outcome evidence | integration | integration | ✅ OK |
-

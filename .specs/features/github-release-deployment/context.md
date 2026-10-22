@@ -50,4 +50,3 @@ Publicar o pacote offline existente em GitHub Releases a partir de uma tag semâ
 - Cutover integral em um único comando com backup de ambos os bancos e rollback transacional coordenado.
 - Assinatura/attestation verificável no Windows Server além do SHA-256 publicado.
 - Política automatizada de retenção depois que o histórico de rollback estiver estabilizado.
-

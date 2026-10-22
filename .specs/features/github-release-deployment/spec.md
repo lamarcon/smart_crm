@@ -115,4 +115,3 @@ O deploy atual depende de copiar manualmente um ZIP e seu hash para o Windows Se
 - [x] Uma tag incorreta, teste falho ou build falho não publica release.
 - [x] O servidor prepara uma pasta imutável validada sem Git e sem token.
 - [x] Nenhum caminho de preparação altera banco, tarefa agendada, `server.env` ou release existente.
-

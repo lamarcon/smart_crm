@@ -125,4 +125,3 @@ flowchart LR
 | Unidade de instalação | Pasta `smart-crm-vX.Y.Z` | Liga diretamente a pasta ao release tag e mantém rollback lado a lado. |
 | Promoção | Rename após duas validações | A pasta final só aparece depois do SHA externo e manifesto interno passarem. |
 | Ativação | Separada do download | Mantém banco e disponibilidade fora do blast radius de rede. |
-
