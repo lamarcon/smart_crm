@@ -1,0 +1,81 @@
+name: Release Windows PostgreSQL 11 bundle
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pinned toolchains and dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check -e ".[dev]"
+          corepack enable
+          corepack prepare pnpm@10.18.3 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Verify tag matches the application version
+        shell: pwsh
+        run: |
+          $appVersion = (& python -c "from app.version import APP_VERSION; print(APP_VERSION)").Trim()
+          $expectedTag = "v$appVersion"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+              throw "Tag $env:GITHUB_REF_NAME does not match application version $expectedTag."
+          }
+
+      - name: Run backend tests
+        shell: pwsh
+        run: python -m pytest -q
+
+      - name: Run UI tests
+        shell: pwsh
+        run: pnpm test
+
+      - name: Build and verify the offline bundle
+        shell: pwsh
+        run: |
+          python scripts/build_manual_windows_pg11_bundle.py --version $env:GITHUB_REF_NAME
+          $zip = "dist/smart-crm-manual-pg11-$env:GITHUB_REF_NAME.zip"
+          python scripts/verify_manual_windows_pg11_deployment.py --bundle $zip
+
+      - name: Publish the immutable release assets
+        shell: pwsh
+        run: |
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+              throw "Release $env:GITHUB_REF_NAME already exists and will not be overwritten."
+          }
+          $zip = "dist/smart-crm-manual-pg11-$env:GITHUB_REF_NAME.zip"
+          $digest = "$zip.sha256"
+          gh release create $env:GITHUB_REF_NAME `
+              $zip `
+              $digest `
+              --verify-tag `
+              --generate-notes `
+              --title "Smart CRM $env:GITHUB_REF_NAME"

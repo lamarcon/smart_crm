@@ -98,12 +98,12 @@ T3 → T4
 
 **Done when**:
 
-- [ ] Only pushed tags beginning with `v` trigger the workflow.
-- [ ] The workflow rejects a tag unequal to `v` + `APP_VERSION`.
-- [ ] Backend and UI tests precede bundle creation.
-- [ ] `gh release create --verify-tag` receives exactly the ZIP and digest.
-- [ ] The job has only the repository permission needed to create the release.
-- [ ] Build gate passes with no skipped or deleted tests.
+- [x] Only pushed tags beginning with `v` trigger the workflow.
+- [x] The workflow rejects a tag unequal to `v` + `APP_VERSION`.
+- [x] Backend and UI tests precede bundle creation.
+- [x] `gh release create --verify-tag` receives exactly the ZIP and digest.
+- [x] The job has only the repository permission needed to create the release.
+- [x] Build gate passes with no skipped or deleted tests (`802 backend + 122 UI`).
 
 **Tests**: unit
 **Gate**: build

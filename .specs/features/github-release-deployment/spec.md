@@ -90,11 +90,11 @@ O deploy atual depende de copiar manualmente um ZIP e seu hash para o Windows Se
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| GRD-01 | P1: Publicar release | Execute | Implementing |
-| GRD-02 | P1: Publicar release | Design | Pending |
-| GRD-03 | P1: Publicar release | Execute | Implementing |
-| GRD-04 | P1: Publicar release | Design | Pending |
-| GRD-05 | P1: Publicar release | Design | Pending |
+| GRD-01 | P1: Publicar release | Execute | Verified |
+| GRD-02 | P1: Publicar release | Execute | Verified |
+| GRD-03 | P1: Publicar release | Execute | Verified |
+| GRD-04 | P1: Publicar release | Execute | Verified |
+| GRD-05 | P1: Publicar release | Execute | Verified |
 | GRD-06 | P1: Preparar release | Design | Pending |
 | GRD-07 | P1: Preparar release | Design | Pending |
 | GRD-08 | P1: Preparar release | Design | Pending |

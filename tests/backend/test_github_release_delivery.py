@@ -7,6 +7,7 @@ import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = PROJECT_ROOT / ".github/workflows/release-windows-pg11.yml"
 
 
 def load_builder():
@@ -75,3 +76,52 @@ def test_unsafe_version_is_rejected_before_output_directory_creation(
         )
 
     assert not output_dir.exists()
+
+
+def test_release_workflow_is_tag_only_and_uses_minimum_release_permission() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'tags:\n      - "v*"' in workflow
+    assert "workflow_dispatch" not in workflow
+    assert "contents: write" in workflow
+    assert "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in workflow
+    assert "PERSONAL_ACCESS_TOKEN" not in workflow
+
+
+def test_release_workflow_matches_tag_to_canonical_application_version() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "from app.version import APP_VERSION" in workflow
+    assert '$expectedTag = "v$appVersion"' in workflow
+    assert "$env:GITHUB_REF_NAME -ne $expectedTag" in workflow
+    assert workflow.index("Verify tag matches the application version") < workflow.index(
+        "Run backend tests"
+    )
+
+
+def test_release_workflow_tests_before_build_and_publishes_exact_assets() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    backend = workflow.index("python -m pytest -q")
+    ui = workflow.index("pnpm test")
+    build = workflow.index("python scripts/build_manual_windows_pg11_bundle.py")
+    publish = workflow.index("gh release create")
+
+    assert backend < build
+    assert ui < build
+    assert build < publish
+    assert "--version $env:GITHUB_REF_NAME" in workflow
+    assert 'python scripts/verify_manual_windows_pg11_deployment.py --bundle $zip' in workflow
+    assert '$zip = "dist/smart-crm-manual-pg11-$env:GITHUB_REF_NAME.zip"' in workflow
+    assert '$digest = "$zip.sha256"' in workflow
+    assert "gh release create $env:GITHUB_REF_NAME `\n              $zip `\n              $digest `" in workflow
+    assert "--verify-tag" in workflow
+    assert "--clobber" not in workflow
+    assert "gh release upload" not in workflow
+
+
+def test_release_workflow_refuses_to_replace_an_existing_release() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "gh release view $env:GITHUB_REF_NAME" in workflow
+    assert "already exists and will not be overwritten" in workflow
+    assert workflow.index("gh release view") < workflow.index("gh release create")
