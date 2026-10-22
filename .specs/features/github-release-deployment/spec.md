@@ -95,16 +95,16 @@ O deploy atual depende de copiar manualmente um ZIP e seu hash para o Windows Se
 | GRD-03 | P1: Publicar release | Execute | Verified |
 | GRD-04 | P1: Publicar release | Execute | Verified |
 | GRD-05 | P1: Publicar release | Execute | Verified |
-| GRD-06 | P1: Preparar release | Design | Pending |
-| GRD-07 | P1: Preparar release | Design | Pending |
-| GRD-08 | P1: Preparar release | Design | Pending |
-| GRD-09 | P1: Preparar release | Design | Pending |
-| GRD-10 | P1: Preparar release | Design | Pending |
-| GRD-11 | P1: Preparar release | Design | Pending |
-| GRD-12 | Edge case: tag inválida | Execute | Implementing |
-| GRD-13 | Edge case: GitHub indisponível | Design | Pending |
-| GRD-14 | Edge case: digest inválido | Design | Pending |
-| GRD-15 | Edge case: concorrência | Design | Pending |
+| GRD-06 | P1: Preparar release | Execute | Verified |
+| GRD-07 | P1: Preparar release | Execute | Verified |
+| GRD-08 | P1: Preparar release | Execute | Verified |
+| GRD-09 | P1: Preparar release | Execute | Verified |
+| GRD-10 | P1: Preparar release | Execute | Verified |
+| GRD-11 | P1: Preparar release | Execute | Verified |
+| GRD-12 | Edge case: tag inválida | Execute | Verified |
+| GRD-13 | Edge case: GitHub indisponível | Execute | Verified |
+| GRD-14 | Edge case: digest inválido | Execute | Verified |
+| GRD-15 | Edge case: concorrência | Execute | Verified |
 
 **Coverage:** 15 total, 15 mapped to tasks, 0 unmapped.
 

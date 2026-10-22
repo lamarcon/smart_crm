@@ -123,13 +123,13 @@ T3 → T4
 
 **Done when**:
 
-- [ ] Public release lookup requires an explicit safe semantic tag and no token.
-- [ ] Draft, prerelease, tag mismatch, missing or duplicate assets fail before extraction.
-- [ ] Digest parsing requires exact SHA-256 and filename and verifies downloaded bytes.
-- [ ] Valid fixture promotes only after the packaged manifest verifier passes.
-- [ ] Existing final directory and tampered fixture remain unchanged and leave no staging directory.
-- [ ] Script source contains no task, Alembic, database or `server.env` mutation.
-- [ ] Full gate passes with no skipped or deleted tests.
+- [x] Public release lookup requires an explicit safe semantic tag and no token.
+- [x] Draft, prerelease, tag mismatch, missing or duplicate assets fail before extraction.
+- [x] Digest parsing requires exact SHA-256 and filename and verifies downloaded bytes.
+- [x] Valid fixture promotes only after the packaged manifest verifier passes.
+- [x] Existing final directory and tampered fixture remain unchanged and leave no staging directory.
+- [x] Script source contains no task, Alembic, database or `server.env` mutation.
+- [x] Full gate passes with no skipped or deleted tests (`65 passed`).
 
 **Tests**: integration
 **Gate**: full

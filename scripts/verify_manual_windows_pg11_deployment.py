@@ -41,7 +41,7 @@ def verify_source(root: Path) -> set[str]:
     _require(all(token in builder for token in ("app", "migrations", "alembic.ini", "wheelhouse", "win_amd64", "cp311")), "MPG-02", "runtime allowlist or Windows wheel target missing", passed)
     allowlist = builder.partition("RUNTIME_PATHS")[2].partition(")")[0]
     _require(all(token not in allowlist for token in (".git", ".specs", ".venv", "tests")), "MPG-03", "forbidden path included in runtime allowlist", passed)
-    _require("Get-FileHash" in integrity and "throw \"Hash invalido" in integrity and install.index("test-package-integrity.ps1") < install.index("-m venv"), "MPG-04", "integrity failure gate missing or runs after installation", passed)
+    _require("Get-SmartCrmFileSha256" in integrity and "throw \"Hash invalido" in integrity and install.index("test-package-integrity.ps1") < install.index("-m venv"), "MPG-04", "integrity failure gate missing or runs after installation", passed)
     python_guard = install.index("platform.python_implementation()")
     venv_action = install.index("-m venv")
     _require(python_guard < venv_action and "Assert-SmartCrmRuntimeFacts" in install and '$Implementation -ne "CPython"' in policy and "$Major -ne 3" in policy and "$Minor -ne 11" in policy and "$Bits -ne 64" in policy, "MPG-05", "CPython 3.11 x64 is not gated before venv creation", passed)

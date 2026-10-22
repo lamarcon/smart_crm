@@ -6,6 +6,20 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Get-SmartCrmFileSha256 {
+    param([string]$Path)
+
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $stream.Dispose()
+        $algorithm.Dispose()
+    }
+}
+
 $manifestPath = Join-Path $AppRoot "MANIFEST.sha256"
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
     throw "Manifesto ausente: $manifestPath"
@@ -46,7 +60,7 @@ foreach ($relativePath in $actualPaths) {
         throw "Arquivo nao previsto no manifesto: $relativePath"
     }
     $fullPath = Join-Path $AppRoot $relativePath
-    $actualHash = (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualHash = Get-SmartCrmFileSha256 -Path $fullPath
     if ($actualHash -ne $expected[$relativePath]) {
         throw "Hash invalido: $relativePath"
     }
