@@ -67,7 +67,7 @@ flowchart LR
 - **Interfaces**:
   - evento `push.tags: v*`.
   - assets `dist/smart-crm-manual-pg11-<tag>.zip{,.sha256}`.
-- **Dependencies**: GitHub-hosted Windows runner, Python 3.11, Node 20, pnpm e GitHub CLI.
+- **Dependencies**: runners GitHub-hosted Linux e Windows, PostgreSQL de servico, Python 3.11, Node 20, pnpm e GitHub CLI.
 - **Reuses**: comandos de teste e build do repositório.
 
 ### Public release staging script

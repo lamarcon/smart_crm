@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/github-release-deployment/design.md`
-**Status**: In Progress
+**Status**: Done
 
 ---
 
@@ -100,10 +100,10 @@ T3 → T4
 
 - [x] Only pushed tags beginning with `v` trigger the workflow.
 - [x] The workflow rejects a tag unequal to `v` + `APP_VERSION`.
-- [x] Backend and UI tests precede bundle creation.
+- [x] Backend and UI tests precede bundle creation; PostgreSQL roda no job Linux e os contratos PowerShell 5.1 no job Windows.
 - [x] `gh release create --verify-tag` receives exactly the ZIP and digest.
 - [x] The job has only the repository permission needed to create the release.
-- [x] Build gate passes with no skipped or deleted tests (`802 backend + 122 UI`).
+- [x] Build gate passes with no skipped or deleted tests (`823 backend + 122 UI`).
 
 **Tests**: unit
 **Gate**: build
@@ -149,11 +149,11 @@ T3 → T4
 
 **Done when**:
 
-- [ ] Runbook shows how to create/push the approved tag and what GitHub publishes.
-- [ ] Server bootstrap downloads the staging script from the same immutable tag.
-- [ ] The short staging command is followed by the existing install/cutover gates, not an automatic activation.
-- [ ] Runbook states that no GitHub token, Git checkout or production secret belongs in the flow.
-- [ ] Build gate passes with no skipped or deleted tests.
+- [x] Runbook shows how to create/push the approved tag and what GitHub publishes.
+- [x] Server bootstrap downloads the staging script from the same immutable tag.
+- [x] The short staging command is followed by the existing install/cutover gates, not an automatic activation.
+- [x] Runbook states that no GitHub token, Git checkout or production secret belongs in the flow.
+- [x] Build gate passes with no skipped or deleted tests (`823 backend + 122 UI`).
 
 **Tests**: none
 **Gate**: build

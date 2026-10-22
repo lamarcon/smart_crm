@@ -6,9 +6,9 @@ O deploy atual depende de copiar manualmente um ZIP e seu hash para o Windows Se
 
 ## Goals
 
-- [ ] Publicar automaticamente um ZIP offline e seu SHA-256 quando uma tag de versão aprovada for enviada ao GitHub.
-- [ ] Permitir que o Windows Server prepare uma release imutável lado a lado a partir de uma tag explícita.
-- [ ] Preservar a ativação, migração, health check e rollback já validados como uma etapa operacional separada.
+- [x] Publicar automaticamente um ZIP offline e seu SHA-256 quando uma tag de versão aprovada for enviada ao GitHub.
+- [x] Permitir que o Windows Server prepare uma release imutável lado a lado a partir de uma tag explícita.
+- [x] Preservar a ativação, migração, health check e rollback já validados como uma etapa operacional separada.
 
 ## Out of Scope
 
@@ -110,8 +110,8 @@ O deploy atual depende de copiar manualmente um ZIP e seu hash para o Windows Se
 
 ## Success Criteria
 
-- [ ] Uma tag correta produz uma release pública com exatamente os dois assets esperados.
-- [ ] Uma tag incorreta, teste falho ou build falho não publica release.
-- [ ] O servidor prepara uma pasta imutável validada sem Git e sem token.
-- [ ] Nenhum caminho de preparação altera banco, tarefa agendada, `server.env` ou release existente.
+- [x] Uma tag correta produz uma release pública com exatamente os dois assets esperados.
+- [x] Uma tag incorreta, teste falho ou build falho não publica release.
+- [x] O servidor prepara uma pasta imutável validada sem Git e sem token.
+- [x] Nenhum caminho de preparação altera banco, tarefa agendada, `server.env` ou release existente.
 

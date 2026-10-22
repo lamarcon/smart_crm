@@ -35,9 +35,62 @@ Crie a conta local `SmartCRMService` antes da instalacao, sem coloca-la no grupo
 
 O instalador resolve o SID dessa conta, concede leitura do `server.env` e modificacao somente em `logs` e `tenant-secrets`. A aplicacao nao roda como `SYSTEM`. O provisionamento DPAPI e a tarefa usam a mesma identidade `SmartCRMService`.
 
+## 2.1. Publicar a release aprovada no GitHub
+
+O GitHub e a fonte de versao e distribuicao do codigo. O servidor continua sendo a fonte exclusiva de configuracao e segredos: `server.env`, credenciais de banco, arquivos DPAPI e backups nunca entram no Git ou na release.
+
+Na estacao de desenvolvimento, depois de aprovar e enviar o commit que sera publicado, confirme que a arvore esta limpa e crie uma tag exatamente igual a `v` seguida de `APP_VERSION`:
+
+```powershell
+$appVersion = (& .\.venv\Scripts\python.exe -c "from app.version import APP_VERSION; print(APP_VERSION)").Trim()
+$tag = "v$appVersion"
+if (git status --porcelain) {
+    throw "A arvore de trabalho deve estar limpa antes de criar a tag."
+}
+git tag --annotate $tag --message "Smart CRM $tag"
+git push origin $tag
+```
+
+O envio da tag inicia `.github/workflows/release-windows-pg11.yml`. A publicacao so ocorre depois de:
+
+1. validar que a tag coincide com a versao da aplicacao;
+2. executar a suite backend com PostgreSQL e a suite de interface;
+3. executar os testes de implantacao em Windows PowerShell 5.1;
+4. montar e validar o pacote offline.
+
+No GitHub Actions, aguarde os jobs `quality` e `release` ficarem verdes. Depois confira que a GitHub Release publicada contem exatamente estes dois assets:
+
+```text
+smart-crm-manual-pg11-vX.Y.Z.zip
+smart-crm-manual-pg11-vX.Y.Z.zip.sha256
+```
+
+Se a Action falhar, se a release estiver como rascunho ou preliminar, ou se houver asset adicional ou ausente, pare. Nao corrija uma release existente por cima: corrija o codigo e publique uma nova versao.
+
 ## 3. Copiar a release lado a lado
 
-Cada pacote deve ser extraido em uma pasta imutavel no formato `C:\brbots\apps\smart-crm-<SHA>`. Exemplo:
+O caminho recomendado baixa a release publica por uma tag explicita. No servidor, abra PowerShell como Administrador e execute:
+
+```powershell
+$tag = "vX.Y.Z"
+$bootstrap = Join-Path $env:TEMP "stage-smartcrm-$tag.ps1"
+[Net.ServicePointManager]::SecurityProtocol = (
+    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+)
+Invoke-WebRequest `
+    -Uri "https://raw.githubusercontent.com/lamarcon/smart_crm/$tag/deploy/manual-windows-pg11/stage-github-release.ps1" `
+    -OutFile $bootstrap `
+    -UseBasicParsing
+& $bootstrap -Tag $tag
+$releaseRoot = "C:\brbots\apps\smart-crm-$tag"
+$serviceAccount = "$env:COMPUTERNAME\SmartCRMService"
+```
+
+O resultado obrigatorio inclui `RELEASE_STAGED=PASS`, o SHA-256 e o caminho `C:\brbots\apps\smart-crm-vX.Y.Z`. O script aceita somente uma release publicada, nao preliminar, com os dois assets exatos; valida o hash do download e o `MANIFEST.sha256` interno antes de promover a pasta. Ele apenas prepara a release lado a lado: nao altera banco, `server.env`, tarefa agendada ou Apache e nao ativa a nova versao.
+
+Esse fluxo nao exige token do GitHub, cliente Git ou checkout no servidor. Nao grave credencial do GitHub no servidor. Continue obrigatoriamente pelas secoes 3.1, 4, 5, 6 e 8; o cutover e o rollback permanecem explicitos.
+
+Como alternativa manual de contingencia, cada pacote pode ser extraido em uma pasta imutavel no formato `C:\brbots\apps\smart-crm-<SHA>`. Exemplo:
 
 ```powershell
 $releaseSha = "<SHA>"
@@ -45,7 +98,7 @@ $releaseRoot = "C:\brbots\apps\smart-crm-$releaseSha"
 $serviceAccount = "$env:COMPUTERNAME\SmartCRMService"
 ```
 
-Confira o ZIP antes de extrair:
+Nesse caminho manual, confira o ZIP antes de extrair:
 
 ```powershell
 Get-FileHash .\smart-crm-manual-pg11-$releaseSha.zip -Algorithm SHA256
