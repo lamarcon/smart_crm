@@ -82,6 +82,14 @@
 - **Date**: 2026-10-15
 - **Status**: active
 
+### AD-011
+- **Decision**: Releases de produção serão publicadas a partir de tags semânticas em GitHub Releases públicas; o Windows Server baixa e valida os assets sem Git ou token, prepara uma pasta imutável lado a lado e mantém a ativação como operação separada e autorizada.
+- **Reason**: Reduzir o trabalho manual de transporte sem permitir que falhas de rede, tags divergentes ou downloads incompletos alterem banco, tarefa agendada ou release ativa.
+- **Trade-off**: O deploy passa a depender da disponibilidade do GitHub para preparar uma nova release, mas a aplicação em execução permanece independente e o pacote ainda pode ser transportado manualmente como fallback.
+- **Scope**: Pipeline de release, identidade de versão, distribuição de pacote Windows PostgreSQL 11, staging no servidor e runbook de atualização.
+- **Date**: 2026-10-22
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: Histórico Operacional de Negócios e Empresas V1 / `.specs/features/deal-company-activity-history`

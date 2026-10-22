@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,7 @@ RUNTIME_PATHS = (
     Path("requirements-runtime.txt"),
 )
 IGNORED_PARTS = {"__pycache__", ".pytest_cache"}
+SAFE_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
 def sha256(path: Path) -> str:
@@ -160,6 +162,12 @@ def git_version(root: Path) -> str:
     ).strip()
 
 
+def validate_version(value: str) -> str:
+    if not SAFE_VERSION_PATTERN.fullmatch(value) or ".." in value:
+        raise ValueError("version must be a safe release identifier")
+    return value
+
+
 def build(
     root: Path,
     output_dir: Path,
@@ -168,8 +176,8 @@ def build(
     version: str | None = None,
     wheel_downloader=download_windows_wheels,
 ) -> tuple[Path, Path]:
+    version = validate_version(git_version(root) if version is None else version)
     output_dir.mkdir(parents=True, exist_ok=True)
-    version = version or git_version(root)
     archive = output_dir / f"smart-crm-manual-pg11-{version}.zip"
     digest_file = output_dir / f"{archive.name}.sha256"
     with tempfile.TemporaryDirectory(prefix="smart-crm-pg11-", dir=output_dir) as temp:
@@ -188,8 +196,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=PROJECT_ROOT)
     parser.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "dist")
+    parser.add_argument("--version")
     args = parser.parse_args()
-    archive, digest_file = build(args.root.resolve(), args.output_dir.resolve())
+    archive, digest_file = build(
+        args.root.resolve(),
+        args.output_dir.resolve(),
+        version=args.version,
+    )
     print(archive)
     print(digest_file)
     return 0
