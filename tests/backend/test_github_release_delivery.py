@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import time
 import zipfile
 
 import pytest
@@ -110,6 +111,50 @@ def create_minimal_release_archive(tmp_path: Path, *, tamper: bool = False) -> P
     archive = tmp_path / "smart-crm-manual-pg11-v0.3.0.zip"
     builder.create_deterministic_zip(staging, archive)
     return archive
+
+
+def write_archive_digest(archive: Path, digest_path: Path | None = None) -> Path:
+    path = digest_path or archive.with_name(f"{archive.name}.sha256")
+    path.write_text(f"{builder.sha256(archive)}  {archive.name}\n", encoding="ascii")
+    return path
+
+
+def local_release_overrides(
+    tmp_path: Path,
+    archive: Path,
+    digest: Path,
+    metadata: dict | None = None,
+) -> str:
+    release = metadata or release_metadata()
+    metadata_path = tmp_path / "release.json"
+    metadata_path.write_text(json.dumps(release), encoding="utf-8")
+    zip_url = release["assets"][0]["browser_download_url"]
+    digest_url = release["assets"][1]["browser_download_url"]
+    return (
+        "function Get-SmartCrmPublicRelease { param([string]$ReleaseTag) "
+        f"Get-Content -LiteralPath {powershell_literal(metadata_path)} -Raw | ConvertFrom-Json "
+        "}; "
+        "function Invoke-WebRequest { param([string]$Uri, [string]$OutFile, "
+        "[switch]$UseBasicParsing) "
+        f"if ($Uri -eq {powershell_literal(zip_url)}) {{ "
+        f"Copy-Item -LiteralPath {powershell_literal(archive)} -Destination $OutFile "
+        f"}} elseif ($Uri -eq {powershell_literal(digest_url)}) {{ "
+        f"Copy-Item -LiteralPath {powershell_literal(digest)} -Destination $OutFile "
+        "} else { throw 'URL inesperada no teste' } }; "
+    )
+
+
+def assert_preserved_failure_state(
+    apps_root: Path,
+    download_root: Path,
+    release_marker: Path,
+    env_marker: Path,
+) -> None:
+    assert not (apps_root / "smart-crm-v0.3.0").exists()
+    assert release_marker.read_text(encoding="utf-8") == "release anterior"
+    assert env_marker.read_text(encoding="utf-8") == "configuracao preservada"
+    assert not list(apps_root.glob("*.staging-*"))
+    assert not list(download_root.glob("release-*"))
 
 
 def test_tag_version_creates_exact_release_asset_names(tmp_path: Path) -> None:
@@ -366,6 +411,8 @@ def test_stager_removes_only_temporary_directory_after_manifest_failure(
     existing.mkdir(parents=True)
     marker = existing / "keep.txt"
     marker.write_text("untouched", encoding="utf-8")
+    env_marker = tmp_path / "server.env"
+    env_marker.write_text("configuracao preservada", encoding="utf-8")
 
     result = run_stager(
         f"Install-SmartCrmReleaseArchive -ArchivePath {powershell_literal(archive)} "
@@ -375,6 +422,195 @@ def test_stager_removes_only_temporary_directory_after_manifest_failure(
     assert result.returncode != 0
     assert not (apps_root / "smart-crm-v0.3.0").exists()
     assert marker.read_text(encoding="utf-8") == "untouched"
+    assert env_marker.read_text(encoding="utf-8") == "configuracao preservada"
+    assert not list(apps_root.glob("*.staging-*"))
+
+
+def test_stager_api_failure_happens_before_final_or_temporary_directory(
+    tmp_path: Path,
+) -> None:
+    apps_root = tmp_path / "apps"
+    download_root = tmp_path / "downloads"
+    expression = (
+        "function Get-SmartCrmPublicRelease { param([string]$ReleaseTag) "
+        "throw 'GitHub indisponivel no teste' }; "
+        f"Invoke-SmartCrmReleaseStaging -ReleaseTag 'v0.3.0' "
+        f"-DestinationRoot {powershell_literal(apps_root)} "
+        f"-TemporaryRoot {powershell_literal(download_root)}"
+    )
+
+    result = run_stager(expression)
+
+    assert result.returncode != 0
+    assert "GitHub indisponivel no teste" in (result.stdout + result.stderr)
+    assert not (apps_root / "smart-crm-v0.3.0").exists()
+    assert not download_root.exists()
+
+
+def test_stager_download_failure_preserves_release_and_configuration(
+    tmp_path: Path,
+) -> None:
+    apps_root = tmp_path / "apps"
+    previous = apps_root / "smart-crm-v0.2.0"
+    previous.mkdir(parents=True)
+    release_marker = previous / "keep.txt"
+    release_marker.write_text("release anterior", encoding="utf-8")
+    env_marker = tmp_path / "server.env"
+    env_marker.write_text("configuracao preservada", encoding="utf-8")
+    download_root = tmp_path / "downloads"
+    metadata_path = tmp_path / "release.json"
+    metadata_path.write_text(json.dumps(release_metadata()), encoding="utf-8")
+    expression = (
+        "function Get-SmartCrmPublicRelease { param([string]$ReleaseTag) "
+        f"Get-Content -LiteralPath {powershell_literal(metadata_path)} -Raw | ConvertFrom-Json "
+        "}; function Invoke-WebRequest { throw 'download interrompido no teste' }; "
+        f"Invoke-SmartCrmReleaseStaging -ReleaseTag 'v0.3.0' "
+        f"-DestinationRoot {powershell_literal(apps_root)} "
+        f"-TemporaryRoot {powershell_literal(download_root)}"
+    )
+
+    result = run_stager(expression)
+
+    assert result.returncode != 0
+    assert "download interrompido no teste" in (result.stdout + result.stderr)
+    assert_preserved_failure_state(
+        apps_root, download_root, release_marker, env_marker
+    )
+
+
+def test_stager_hash_failure_preserves_release_and_configuration(tmp_path: Path) -> None:
+    archive = create_minimal_release_archive(tmp_path)
+    digest = tmp_path / f"{archive.name}.sha256"
+    digest.write_text(f"{'0' * 64}  {archive.name}\n", encoding="ascii")
+    apps_root = tmp_path / "apps"
+    previous = apps_root / "smart-crm-v0.2.0"
+    previous.mkdir(parents=True)
+    release_marker = previous / "keep.txt"
+    release_marker.write_text("release anterior", encoding="utf-8")
+    env_marker = tmp_path / "server.env"
+    env_marker.write_text("configuracao preservada", encoding="utf-8")
+    download_root = tmp_path / "downloads"
+    expression = local_release_overrides(tmp_path, archive, digest) + (
+        f"Invoke-SmartCrmReleaseStaging -ReleaseTag 'v0.3.0' "
+        f"-DestinationRoot {powershell_literal(apps_root)} "
+        f"-TemporaryRoot {powershell_literal(download_root)}"
+    )
+
+    result = run_stager(expression)
+
+    assert result.returncode != 0
+    assert_preserved_failure_state(
+        apps_root, download_root, release_marker, env_marker
+    )
+
+
+def test_stager_extraction_failure_preserves_release_and_configuration(
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "smart-crm-manual-pg11-v0.3.0.zip"
+    archive.write_bytes(b"arquivo que nao e zip")
+    digest = write_archive_digest(archive)
+    apps_root = tmp_path / "apps"
+    previous = apps_root / "smart-crm-v0.2.0"
+    previous.mkdir(parents=True)
+    release_marker = previous / "keep.txt"
+    release_marker.write_text("release anterior", encoding="utf-8")
+    env_marker = tmp_path / "server.env"
+    env_marker.write_text("configuracao preservada", encoding="utf-8")
+    download_root = tmp_path / "downloads"
+    expression = local_release_overrides(tmp_path, archive, digest) + (
+        f"Invoke-SmartCrmReleaseStaging -ReleaseTag 'v0.3.0' "
+        f"-DestinationRoot {powershell_literal(apps_root)} "
+        f"-TemporaryRoot {powershell_literal(download_root)}"
+    )
+
+    result = run_stager(expression)
+
+    assert result.returncode != 0
+    assert_preserved_failure_state(
+        apps_root, download_root, release_marker, env_marker
+    )
+
+
+def test_stager_reports_exact_final_identity_without_secret_values(tmp_path: Path) -> None:
+    archive = create_minimal_release_archive(tmp_path)
+    digest = write_archive_digest(archive)
+    apps_root = tmp_path / "apps"
+    download_root = tmp_path / "downloads"
+    secret_sentinel = "nao-pode-aparecer-no-log"
+    metadata = release_metadata()
+    for asset in metadata["assets"]:
+        asset["browser_download_url"] += f"?token={secret_sentinel}"
+    expression = local_release_overrides(tmp_path, archive, digest, metadata) + (
+        f"$result = Invoke-SmartCrmReleaseStaging -ReleaseTag 'v0.3.0' "
+        f"-DestinationRoot {powershell_literal(apps_root)} "
+        f"-TemporaryRoot {powershell_literal(download_root)}; "
+        "$result | ConvertTo-Json -Compress"
+    )
+
+    result = run_stager(expression)
+
+    assert result.returncode == 0, result.stderr
+    parsed = json.loads(result.stdout)
+    assert parsed == {
+        "Tag": "v0.3.0",
+        "Sha256": builder.sha256(archive),
+        "ReleaseRoot": str(apps_root / "smart-crm-v0.3.0"),
+    }
+    assert secret_sentinel not in (result.stdout + result.stderr)
+    source = STAGER.read_text(encoding="utf-8")
+    assert 'Write-Output "RELEASE_STAGED=PASS"' in source
+
+
+def test_concurrent_staging_has_exactly_one_winner_and_no_residue(
+    tmp_path: Path,
+) -> None:
+    archive = create_minimal_release_archive(tmp_path)
+    apps_root = tmp_path / "apps"
+    gate = tmp_path / "go.signal"
+    processes: list[subprocess.Popen[str]] = []
+    ready_files = [tmp_path / f"ready-{index}.signal" for index in range(2)]
+    for ready in ready_files:
+        expression = (
+            f"[IO.File]::WriteAllText({powershell_literal(ready)}, 'ready'); "
+            f"while (-not (Test-Path -LiteralPath {powershell_literal(gate)})) {{ "
+            "Start-Sleep -Milliseconds 10 }; "
+            f"Install-SmartCrmReleaseArchive -ArchivePath {powershell_literal(archive)} "
+            f"-ReleaseTag 'v0.3.0' -DestinationRoot {powershell_literal(apps_root)} "
+            "| Select-Object -ExpandProperty FullName"
+        )
+        command = f". {powershell_literal(STAGER)}; {expression}"
+        processes.append(
+            subprocess.Popen(
+                [
+                    str(POWERSHELL),
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    command,
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        )
+
+    deadline = time.monotonic() + 10
+    while not all(path.exists() for path in ready_files):
+        if time.monotonic() >= deadline:
+            for process in processes:
+                process.kill()
+            pytest.fail("processos concorrentes nao chegaram ao ponto de sincronizacao")
+        time.sleep(0.01)
+    gate.write_text("go", encoding="ascii")
+    results = [process.communicate(timeout=30) for process in processes]
+    returncodes = [process.returncode for process in processes]
+
+    assert sum(code == 0 for code in returncodes) == 1, results
+    assert sum(code != 0 for code in returncodes) == 1, results
+    final_root = apps_root / "smart-crm-v0.3.0"
+    assert (final_root / "payload.txt").read_text(encoding="utf-8") == "expected"
     assert not list(apps_root.glob("*.staging-*"))
 
 
@@ -391,5 +627,6 @@ def test_stager_source_has_no_cutover_or_secret_mutation_commands() -> None:
         "alembic",
         "psql",
         "PGPASSWORD",
+        "Set-Content",
     ):
         assert forbidden not in source

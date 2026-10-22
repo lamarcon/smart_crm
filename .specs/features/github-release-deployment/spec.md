@@ -88,25 +88,26 @@ O deploy atual depende de copiar manualmente um ZIP e seu hash para o Windows Se
 
 ## Requirement Traceability
 
-| Requirement ID | Story | Phase | Status |
-| -------------- | ----- | ----- | ------ |
-| GRD-01 | P1: Publicar release | Execute | Verified |
-| GRD-02 | P1: Publicar release | Execute | Verified |
-| GRD-03 | P1: Publicar release | Execute | Verified |
-| GRD-04 | P1: Publicar release | Execute | Verified |
-| GRD-05 | P1: Publicar release | Execute | Verified |
-| GRD-06 | P1: Preparar release | Execute | Verified |
-| GRD-07 | P1: Preparar release | Execute | Verified |
-| GRD-08 | P1: Preparar release | Execute | Verified |
-| GRD-09 | P1: Preparar release | Execute | Verified |
-| GRD-10 | P1: Preparar release | Execute | Verified |
-| GRD-11 | P1: Preparar release | Execute | Verified |
-| GRD-12 | Edge case: tag inválida | Execute | Verified |
-| GRD-13 | Edge case: GitHub indisponível | Execute | Verified |
-| GRD-14 | Edge case: digest inválido | Execute | Verified |
-| GRD-15 | Edge case: concorrência | Execute | Verified |
+| Requirement ID | Story / criterion | Phase | Status |
+| -------------- | ----------------- | ----- | ------ |
+| GRD-01 | Publicar release AC1: tag e versão | Execute | Verified |
+| GRD-02 | Publicar release AC2: testes | Execute | Verified |
+| GRD-03 | Publicar release AC3: artefatos | Execute | Verified |
+| GRD-04 | Publicar release AC4: falha fechada | Execute | Verified |
+| GRD-05 | Publicar release AC5: publicação exata | Execute | Verified |
+| GRD-06 | Preparar release AC1: consulta pública | Execute | Verified |
+| GRD-07 | Preparar release AC2: metadados | Execute | Verified |
+| GRD-08 | Preparar release AC3: SHA-256 externo | Execute | Verified |
+| GRD-09 | Preparar release AC4: manifesto e promoção | Execute | Verified |
+| GRD-10 | Preparar release AC5: pasta preexistente | Execute | Verified |
+| GRD-11 | Preparar release AC6: limpeza e preservação | Execute | Verified |
+| GRD-12 | Preparar release AC7: saída sem segredos | Execute | Verified |
+| GRD-13 | Edge case: tag inválida | Execute | Verified |
+| GRD-14 | Edge case: GitHub indisponível | Execute | Verified |
+| GRD-15 | Edge case: digest inválido | Execute | Verified |
+| GRD-16 | Edge case: concorrência | Execute | Verified |
 
-**Coverage:** 15 total, 15 mapped to tasks, 0 unmapped.
+**Coverage:** 16 total, 16 mapped to tasks, 0 unmapped.
 
 ## Success Criteria
 

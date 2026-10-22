@@ -53,7 +53,7 @@ T2 → T3
 ### Phase 3: Operator handoff
 
 ```
-T3 → T4
+T3 → T4 → T5
 ```
 
 ---
@@ -66,7 +66,7 @@ T3 → T4
 **Where**: `scripts/build_manual_windows_pg11_bundle.py`
 **Depends on**: None
 **Reuses**: Existing `build()` and deterministic artifact naming.
-**Requirement**: GRD-01, GRD-03, GRD-12
+**Requirement**: GRD-01, GRD-03, GRD-13
 
 **Tools**:
 
@@ -114,7 +114,7 @@ T3 → T4
 **Where**: `deploy/manual-windows-pg11/stage-github-release.ps1`
 **Depends on**: T2
 **Reuses**: Packaged `test-package-integrity.ps1` and current side-by-side directory contract.
-**Requirement**: GRD-06, GRD-07, GRD-08, GRD-09, GRD-10, GRD-11, GRD-12, GRD-13, GRD-14, GRD-15
+**Requirement**: GRD-06, GRD-07, GRD-08, GRD-09, GRD-10, GRD-11, GRD-12, GRD-13, GRD-14, GRD-15, GRD-16
 
 **Tools**:
 
@@ -140,7 +140,7 @@ T3 → T4
 **Where**: `deploy/manual-windows-pg11/LEIA-ME.md`
 **Depends on**: T3
 **Reuses**: Existing sections 1, 3, 4, 6, 8 and 9.
-**Requirement**: GRD-05, GRD-06, GRD-10, GRD-11
+**Requirement**: GRD-05, GRD-06, GRD-10, GRD-11, GRD-12
 
 **Tools**:
 
@@ -158,6 +158,31 @@ T3 → T4
 **Tests**: none
 **Gate**: build
 
+### T5: Close independent evidence gaps
+
+**What**: Add outcome-level tests for every failure class, final output and concurrent promotion, and align traceability one-to-one with the 16 explicit criteria.
+**Where**: `tests/backend/test_github_release_delivery.py`, `.specs/features/github-release-deployment/spec.md`
+**Depends on**: T4
+**Reuses**: Existing PowerShell fixtures, local function overrides and atomic directory promotion.
+**Requirement**: GRD-11, GRD-12, GRD-14, GRD-16
+
+**Tools**:
+
+- MCP: NONE
+- Skill: `tlc-spec-driven`
+
+**Done when**:
+
+- [x] API, download, digest, extraction and manifest failures prove that no final or residual staging directory is left.
+- [x] Failure fixtures prove that the previous release and `server.env` marker remain unchanged; source contract continues excluding task and database mutation.
+- [x] Successful staging asserts exact tag, SHA-256 and release path while a secret sentinel is absent from all output.
+- [x] Two synchronized staging processes produce exactly one winner, one intact final directory and no residue.
+- [x] Traceability maps all 16 explicit criteria one-to-one.
+- [x] Build gate passes with no skipped or deleted tests (`829 backend + 122 UI`).
+
+**Tests**: integration
+**Gate**: build
+
 ---
 
 ## Phase Execution Map
@@ -167,7 +192,7 @@ Phase 1 → Phase 2 → Phase 3
 
 Phase 1: T1 ------→ T2
 Phase 2:             T2 ------→ T3
-Phase 3:                         T3 ------→ T4
+Phase 3:                         T3 ------→ T4 ------→ T5
 ```
 
 Execution is strictly sequential.
@@ -180,6 +205,7 @@ Execution is strictly sequential.
 | T2 | One workflow plus co-located contract tests | ✅ Granular |
 | T3 | One staging component plus co-located integration tests | ✅ Granular |
 | T4 | One runbook update | ✅ Granular |
+| T5 | One evidence-hardening pass from independent validation | ✅ Granular |
 
 ## Diagram-Definition Cross-Check
 
@@ -189,6 +215,7 @@ Execution is strictly sequential.
 | T2 | T1 | T1 → T2 | ✅ Match |
 | T3 | T2 | T2 → T3 | ✅ Match |
 | T4 | T3 | T3 → T4 | ✅ Match |
+| T5 | T4 | T4 → T5 | ✅ Match |
 
 ## Test Co-location Validation
 
@@ -198,4 +225,5 @@ Execution is strictly sequential.
 | T2 | GitHub workflow contract | unit/static contract | unit | ✅ OK |
 | T3 | PowerShell staging policy | integration | integration | ✅ OK |
 | T4 | Operator documentation | none | none | ✅ OK |
+| T5 | PowerShell outcome evidence | integration | integration | ✅ OK |
 
