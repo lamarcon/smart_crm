@@ -165,7 +165,9 @@ def test_downgrade_and_upgrade_cycle_runs_only_in_isolated_schema(isolated_migra
     )
 
 
-def test_upgrade_current_database_preserves_existing_probe() -> None:
+def test_upgrade_current_database_preserves_existing_probe(
+    technical_probe_table: None,
+) -> None:
     engine = create_engine(TEST_DATABASE_URL)
     with engine.connect() as connection:
         before = connection.scalar(text("SELECT count(*) FROM _smartcrm_test_probe"))
@@ -175,6 +177,7 @@ def test_upgrade_current_database_preserves_existing_probe() -> None:
     with engine.connect() as connection:
         after = connection.scalar(text("SELECT count(*) FROM _smartcrm_test_probe"))
         head = connection.scalar(text("SELECT version_num FROM alembic_version"))
-    assert after == before == 1
+    assert before >= 1
+    assert after == before
     assert head == TENANT_HEAD
     engine.dispose()

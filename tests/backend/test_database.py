@@ -46,7 +46,9 @@ def test_database_check_returns_false_when_postgres_is_unavailable() -> None:
     unavailable.dispose()
 
 
-def test_session_scope_rolls_back_and_closes_on_exception() -> None:
+def test_session_scope_rolls_back_and_closes_on_exception(
+    technical_probe_table: None,
+) -> None:
     database = Database(DatabaseSettings(database_url=TEST_DATABASE_URL))
     probe_id = 2_000_000_000
 

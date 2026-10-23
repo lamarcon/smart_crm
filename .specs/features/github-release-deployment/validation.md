@@ -143,3 +143,22 @@ Nenhum. Os quatro gaps funcionais e a inconsistência de rastreabilidade do rela
 **Issues found**: none.
 
 **Next steps**: feature pronta para o fluxo de revisão/entrega autorizado. Este veredito não autoriza commit, push, tag ou deploy.
+
+---
+
+## Post-publication CI correction (2026-10-23)
+
+The first public tag, `v0.3.0`, correctly stopped before release publication because the backend quality gate failed on a fresh PostgreSQL service. No GitHub Release asset and no production-server change occurred.
+
+**Root cause**: `test_session_scope_rolls_back_and_closes_on_exception` and `test_upgrade_current_database_preserves_existing_probe` assumed that `_smartcrm_test_probe` had already been created by the local Compose verification script. A clean CI database does not contain that table.
+
+**Correction**: `tests/backend/conftest.py` now provisions and restores the technical probe only for tests that request it. The two affected tests explicitly request the fixture, and the migration assertion preserves any pre-existing row count instead of assuming exactly one row.
+
+**Fresh-database reproduction before the correction**: 764 passed, 2 failed. Both failures were `UndefinedTable` for `_smartcrm_test_probe`.
+
+**Fresh-database verification after the correction**:
+
+- Linux / Python 3.11 / PostgreSQL 17: 766 passed, 0 failed, 0 skipped; 6 warnings; 115.94 s.
+- Focused Windows database + release/deployment gate: 82 passed, 0 failed, 0 skipped; 33.68 s.
+
+**Publication state**: locally corrected and verified. Because published tags are immutable, `v0.3.0` is not moved; a new application version/tag is required for the next publication attempt. Production remains unchanged.
