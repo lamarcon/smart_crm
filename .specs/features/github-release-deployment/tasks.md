@@ -183,16 +183,35 @@ T3 → T4 → T5
 **Tests**: integration
 **Gate**: build
 
+### T6: Make the clean-database quality gate deterministic
+
+**What**: Remove the hidden dependency on `_smartcrm_test_probe` having been created by an earlier local verification run.
+**Where**: `tests/backend/conftest.py`, `tests/backend/test_database.py`, `tests/backend/test_migrations.py`
+**Depends on**: T5
+**Reuses**: The existing technical probe table excluded by `migrations/env.py`.
+**Requirement**: GRD-02, GRD-04
+
+**Done when**:
+
+- [x] The rollback and migration-preservation tests create their technical prerequisite explicitly.
+- [x] The fixture restores a pre-existing probe table and removes a table created only for the test.
+- [x] The exact Linux/Python 3.11 backend gate passes against a fresh PostgreSQL 17 database.
+- [x] The focused Windows packaging/deployment gate remains green.
+
+**Tests**: integration
+**Gate**: full
+
 ---
 
 ## Phase Execution Map
 
 ```
-Phase 1 → Phase 2 → Phase 3
+Phase 1 → Phase 2 → Phase 3 → Phase 4
 
 Phase 1: T1 ------→ T2
 Phase 2:             T2 ------→ T3
 Phase 3:                         T3 ------→ T4 ------→ T5
+Phase 4:                                               T5 ------→ T6
 ```
 
 Execution is strictly sequential.
@@ -206,6 +225,7 @@ Execution is strictly sequential.
 | T3 | One staging component plus co-located integration tests | ✅ Granular |
 | T4 | One runbook update | ✅ Granular |
 | T5 | One evidence-hardening pass from independent validation | ✅ Granular |
+| T6 | One clean-database test-fixture repair | ✅ Granular |
 
 ## Diagram-Definition Cross-Check
 
@@ -216,6 +236,7 @@ Execution is strictly sequential.
 | T3 | T2 | T2 → T3 | ✅ Match |
 | T4 | T3 | T3 → T4 | ✅ Match |
 | T5 | T4 | T4 → T5 | ✅ Match |
+| T6 | T5 | T5 → T6 | ✅ Match |
 
 ## Test Co-location Validation
 
@@ -226,3 +247,4 @@ Execution is strictly sequential.
 | T3 | PowerShell staging policy | integration | integration | ✅ OK |
 | T4 | Operator documentation | none | none | ✅ OK |
 | T5 | PowerShell outcome evidence | integration | integration | ✅ OK |
+| T6 | PostgreSQL test fixture | integration | integration | ✅ OK |

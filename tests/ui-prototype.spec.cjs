@@ -121,7 +121,7 @@ async function openFresh(options = {}) {
   const initialState = options.preloadState ? attachCanonicalDealStages(durableState(options.preloadState), pipeline) : null;
   const api = {
     initialized: Boolean(initialState), version: initialState ? 1 : 0, state: initialState,
-    applicationVersion: options.applicationVersion || '0.3.0', versionFailure: Boolean(options.versionFailure),
+    applicationVersion: options.applicationVersion || '0.3.1', versionFailure: Boolean(options.versionFailure),
     session: { ...AUTH_SESSION, ...(options.session || {}) },
     loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false,
     pipeline, pipelineFailure: Boolean(options.pipelineFailure), pipelineConflict: false,
@@ -884,8 +884,8 @@ async function storageEntries(page) {
   await run('HIST-08 exibe a versão canônica no rodapé autenticado', async page => {
     const version = page.locator('#appVersion');
     await version.waitFor();
-    assert.equal(await version.innerText(), 'v0.3.0');
-    assert.equal(await version.getAttribute('aria-label'), 'Versão instalada 0.3.0');
+    assert.equal(await version.innerText(), 'v0.3.1');
+    assert.equal(await version.getAttribute('aria-label'), 'Versão instalada 0.3.1');
   });
 
   await run('HIST-08 falha de metadados não bloqueia a operação nem inventa versão', async page => {

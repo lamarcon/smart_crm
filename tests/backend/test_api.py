@@ -176,7 +176,7 @@ def test_version_reports_canonical_release_without_cache(client_factory) -> None
     response = client.get("/api/version")
 
     assert response.status_code == 200
-    assert response.json() == {"version": "0.3.0"}
+    assert response.json() == {"version": "0.3.1"}
     assert response.headers["cache-control"] == "no-store"
     assert_security_headers(response)
 
