@@ -1186,7 +1186,7 @@ async function storageEntries(page) {
     const api = apiByPage.get(page);
     api.version += 1;
     api.state.leads[0].name = 'Lead atualizado em outra sessão';
-    await createLead(page, 'Lead em conflito');
+    await createLead(page, 'Lead em conflito', { waitForSaved: false });
     await page.getByText('Dados atualizados em outra sessão. A versão atual foi recarregada.', { exact: true }).waitFor();
     const reloaded = await stateFrom(page);
     assert.equal(reloaded.leads[0].name, 'Lead atualizado em outra sessão');
