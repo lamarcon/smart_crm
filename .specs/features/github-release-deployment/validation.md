@@ -161,4 +161,4 @@ The first public tag, `v0.3.0`, correctly stopped before release publication bec
 - Linux / Python 3.11 / PostgreSQL 17: 766 passed, 0 failed, 0 skipped; 6 warnings; 115.94 s.
 - Focused Windows database + release/deployment gate: 82 passed, 0 failed, 0 skipped; 33.68 s.
 
-**Publication state**: locally corrected and verified as application version `0.3.1`. Because published tags are immutable, `v0.3.0` is not moved; publishing tag `v0.3.1` requires a new explicit authorization. Production remains unchanged.
+**Publication state**: tag `v0.3.1` preserved as an immutable failed run after the browser gate exposed that the workflow did not start the UI server. The workflow is corrected and locally verified as application version `0.3.2`; publishing `v0.3.2` remains a separate explicit action. Production remains unchanged.

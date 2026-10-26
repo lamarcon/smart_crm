@@ -250,6 +250,19 @@ def test_release_workflow_matches_tag_to_canonical_application_version() -> None
     )
 
 
+def test_release_workflow_starts_the_ui_server_before_browser_tests() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "SMART_CRM_TEST_URL: http://localhost:8080/" in workflow
+    assert (
+        "python -m uvicorn app.main:create_app --factory "
+        "--host 127.0.0.1 --port 8080"
+    ) in workflow
+    assert "curl --fail --silent --show-error http://localhost:8080/" in workflow
+    assert "trap 'kill \"$server_pid\" 2>/dev/null || true' EXIT" in workflow
+    assert workflow.index("python -m uvicorn") < workflow.index("pnpm test")
+
+
 def test_release_workflow_tests_before_build_and_publishes_exact_assets() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     backend = workflow.index("python -m pytest -q")
