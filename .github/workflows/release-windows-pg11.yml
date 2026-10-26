@@ -67,7 +67,23 @@ jobs:
           --ignore=tests/backend/test_manual_windows_pg11_outcomes.py
 
       - name: Run UI tests
-        run: pnpm test
+        env:
+          SMART_CRM_TEST_URL: http://localhost:8080/
+        run: |
+          python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8080 > /tmp/smartcrm-ui.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://localhost:8080/ > /dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              cat /tmp/smartcrm-ui.log
+              exit 1
+            fi
+            sleep 1
+          done
+          pnpm test
 
   release:
     needs: quality
