@@ -161,4 +161,4 @@ The first public tag, `v0.3.0`, correctly stopped before release publication bec
 - Linux / Python 3.11 / PostgreSQL 17: 766 passed, 0 failed, 0 skipped; 6 warnings; 115.94 s.
 - Focused Windows database + release/deployment gate: 82 passed, 0 failed, 0 skipped; 33.68 s.
 
-**Publication state**: tag `v0.3.1` preserved as an immutable failed run after the browser gate exposed that the workflow did not start the UI server. The workflow is corrected and locally verified as application version `0.3.2`; publishing `v0.3.2` remains a separate explicit action. Production remains unchanged.
+**Publication state**: tags `v0.3.1` and `v0.3.2` remain immutable failed runs. The `v0.3.2` pipeline started the UI server and passed all backend tests, but exposed a race in the DBP-10 browser test after 121 other UI tests passed. The test is deterministic and locally verified as application version `0.3.3`; publishing `v0.3.3` remains a separate explicit action. Production remains unchanged.
