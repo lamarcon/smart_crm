@@ -129,7 +129,7 @@ async function openFresh(options = {}) {
     pipelineHistory: clone(options.pipelineHistory || []), pipelineHistoryRequests: [],
     dealActivities: clone(options.dealActivities || {}), activityRequests: [],
     activityFailures: new Set(), activityGates: new Map(), observationWrites: [],
-    observationFailuresRemaining: 0, observationByKey: new Map(), workspaceWrites: [],
+    observationFailuresRemaining: 0, observationByKey: new Map(), workspaceLoads: 0, workspaceWrites: [],
     companyActivities: clone(options.companyActivities || {}), companyActivityRequests: [],
     companyActivityFailures: new Set(), companyActivityGates: new Map(), companyObservationWrites: [],
     companyObservationFailuresRemaining: 0, companyObservationByKey: new Map(),
@@ -369,6 +369,7 @@ async function openFresh(options = {}) {
     const workspacePaths = ['/api/workspace', '/api/workspace/bootstrap', '/api/workspace/reset', '/api/workspace/deleted', '/api/workspace/restore'];
     if (!workspacePaths.includes(url.pathname)) return route.continue();
     if (request.method() === 'GET' && url.pathname === '/api/workspace') {
+      api.workspaceLoads += 1;
       if (api.loadFailure) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Banco de dados indisponível.' } }) });
       }
@@ -1184,13 +1185,14 @@ async function storageEntries(page) {
 
   await run('DBP-10 recarrega o estado canônico após conflito de versão', async page => {
     const api = apiByPage.get(page);
+    const loadsBeforeConflict = api.workspaceLoads;
     api.version += 1;
     api.state.leads[0].name = 'Lead atualizado em outra sessão';
     await createLead(page, 'Lead em conflito', { waitForSaved: false });
     await page.getByText('Dados atualizados em outra sessão. A versão atual foi recarregada.', { exact: true }).waitFor();
-    const reloaded = await stateFrom(page);
-    assert.equal(reloaded.leads[0].name, 'Lead atualizado em outra sessão');
-    assert.equal(reloaded.leads.some(lead => lead.name === 'Lead em conflito'), false);
+    await page.locator('#page-leads .entity-link').filter({ hasText: 'Lead atualizado em outra sessão' }).waitFor();
+    assert.equal(api.workspaceLoads, loadsBeforeConflict + 1);
+    assert.equal(await page.locator('#page-leads .entity-link').filter({ hasText: 'Lead em conflito' }).count(), 0);
   });
 
   await run('DBP-12 e DBP-13 listam e recuperam registro excluído com vínculos', async page => {
