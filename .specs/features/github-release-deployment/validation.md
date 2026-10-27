@@ -1,73 +1,80 @@
 # Validation: GitHub Release Deployment - PASS ✅
 
 **Verdict**: PASS ✅
-**Date**: 2026-10-22
+**Date**: 2026-10-26
 **Spec**: `.specs/features/github-release-deployment/spec.md`
-**Diff range**: `23ab7b0^..HEAD` (`23ab7b0..0f72680`)
-**Verifier**: independent sub-agent (author != verifier)
+**Diff range**: `44e95cf3a8905dcbdb59849f2199b47ca45c9a89..b7bdc7439f7bf0e26e72336a605f6ce96559bd93`
+**Verifier**: independent re-verifier (author != verifier)
 
-O Build passou, os 16 critérios têm assertions alinhadas ao outcome da spec e as três mutações foram mortas.
+The full backend and browser gates pass. All 16 release requirements retain outcome-level evidence. Both mandatory behavior mutations are killed. The repaired DBP-10 test now proves the conflict path performs a canonical reload and updates browser-rendered state.
 
 ---
 
 ## Task Completion
 
-| Task | Status | Notes |
-| ---- | ------ | ----- |
-| T1 | ✅ Done | Builder aceita versão segura e preserva fallback para SHA. |
-| T2 | ✅ Done | Workflow versiona, testa, constrói e publica dois assets. |
-| T3 | ✅ Done | Stager valida metadados, digest, manifesto e promoção lado a lado. |
-| T4 | ✅ Done | Runbook documenta publicação, staging e fronteira de cutover. |
-| T5 | ✅ Done | Gaps independentes foram fechados com testes de falha, saída e concorrência. |
+| Scope | Status | Evidence |
+| ----- | ------ | -------- |
+| T1-T6 from `tasks.md` | ✅ Done | Every task checkbox is complete and the release workflow, builder, stager, runbook, evidence hardening, and clean-database fixture are present. |
+| `5ed7392` deterministic conflict setup | ✅ Done | The test no longer waits for a transient lead that the conflict response discards. |
+| `6a419d3` v0.3.3 release identity | ✅ Done | Canonical version and exact-value assertions are `0.3.3`. |
+| `b7bdc74` canonical conflict reload assertion | ✅ Done | DBP-10 asserts the additional workspace GET and browser-rendered canonical lead state. |
 
-Todas as tarefas estão marcadas como concluídas. Nenhuma está bloqueada ou parcial.
+No task is blocked or partial.
 
 ---
 
 ## Spec-Anchored Acceptance Criteria
 
-| Criterion | Spec-defined outcome | `file:line` + assertion expression | Result |
-| --------- | -------------------- | ---------------------------------- | ------ |
-| Publish AC1 / GRD-01 | Tag é exatamente `v` + `APP_VERSION` antes dos artefatos. | `tests/backend/test_github_release_delivery.py:245` - `assert "from app.version import APP_VERSION" in workflow`; `:246-249` - tag esperada, comparação e ordem antes dos testes | ✅ PASS |
-| Publish AC2 / GRD-02 | Todos os testes backend e UI antecedem publicação. | `tests/backend/test_github_release_delivery.py:232-239` - release depende de quality e testes Windows precedem build; `:260-262` - backend/UI/build precedem publish | ✅ PASS |
-| Publish AC3 / GRD-03 | ZIP e SHA-256 usam nomes exatos e digest dos bytes. | `tests/backend/test_github_release_delivery.py:168-170` - nomes exatos e conteúdo do digest igual a `sha256(archive)` + nome | ✅ PASS |
-| Publish AC4 / GRD-04 | Falha em validação, teste ou build impede publicação. | `tests/backend/test_github_release_delivery.py:248-250` - validação antecede teste; `:260-262` - testes e build antecedem publish; `:270` - upload alternativo ausente | ✅ PASS |
-| Publish AC5 / GRD-05 | Release da tag existente recebe exatamente ZIP e SHA-256. | `tests/backend/test_github_release_delivery.py:265-270` - paths exatos, dois assets, `--verify-tag`, sem clobber/upload; `:276-278` - release existente é recusada antes de create | ✅ PASS |
-| Stage AC1 / GRD-06 | Consulta somente release pública da tag em `lamarcon/smart_crm`, sem token. | `tests/backend/test_github_release_delivery.py:620-622` - endpoint e repositório exatos; ausência de `Authorization` | ✅ PASS |
-| Stage AC2 / GRD-07 | Draft, prerelease, tag divergente e assets ambíguos falham antes da extração. | `tests/backend/test_github_release_delivery.py:299-325` - matriz dos metadados inválidos e `assert result.returncode != 0` na função de validação | ✅ PASS |
-| Stage AC3 / GRD-08 | Nome e SHA-256 externos correspondem exatamente ao arquivo de digest. | `tests/backend/test_github_release_delivery.py:340-341` - sucesso e SHA real; `:344-365` - formato, nome e hash divergentes retornam não zero | ✅ PASS |
-| Stage AC4 / GRD-09 | Extrai em staging, valida manifesto e só então promove. | `tests/backend/test_github_release_delivery.py:380-384` - final, payload e ausência de staging; `:422-426` - manifesto adulterado não cria final, preserva estado e remove staging | ✅ PASS |
-| Stage AC5 / GRD-10 | Pasta final preexistente bloqueia sem alteração. | `tests/backend/test_github_release_delivery.py:400-402` - retorno não zero, marcador intacto e nenhuma staging | ✅ PASS |
-| Stage AC6 / GRD-11 | Falhas de download, hash, extração ou manifesto limpam temporários e preservam configuração/releases; tarefa e bancos não são mutados. | `tests/backend/test_github_release_delivery.py:153-157` - helper afirma final ausente, release e `server.env` intactos e ausência de resíduos; `:474-478`, `:501-504`, `:529-532`, `:422-426` aplicam os outcomes a download, hash, extração e manifesto; `:623-632` proíbe comandos de tarefa, banco e escrita de configuração | ✅ PASS |
-| Stage AC7 / GRD-12 | Sucesso informa tag, hash e caminho final sem segredo. | `tests/backend/test_github_release_delivery.py:553-560` - retorno zero, dicionário exato de `Tag`, `Sha256`, `ReleaseRoot` e sentinel secreto ausente; `:562` - `RELEASE_STAGED=PASS` exigido | ✅ PASS |
-| Edge AC1 / GRD-13 | Tag inválida/path-like é rejeitada antes de caminhos/URLs. | `tests/backend/test_github_release_delivery.py:281-286` - matriz inválida, retorno não zero e mensagem `formato vX.Y.Z` | ✅ PASS |
-| Edge AC2 / GRD-14 | GitHub indisponível/release inexistente falha antes da pasta final. | `tests/backend/test_github_release_delivery.py:442-447` - erro de API, mensagem esperada, final ausente e download root não criado | ✅ PASS |
-| Edge AC3 / GRD-15 | Digest malformado, divergente ou de outro nome falha antes da extração. | `tests/backend/test_github_release_delivery.py:344-365` - três digests inválidos e `assert result.returncode != 0` | ✅ PASS |
-| Edge AC4 / GRD-16 | Duas execuções concorrentes produzem exatamente um vencedor sem overwrite/resíduo. | `tests/backend/test_github_release_delivery.py:599-614` - barreira sincroniza dois processos; assertions exigem um sucesso, uma falha, payload íntegro e nenhuma staging | ✅ PASS |
+| Requirement / criterion | Spec-defined outcome | `file:line` + assertion expression | Result |
+| ----------------------- | -------------------- | ---------------------------------- | ------ |
+| GRD-01 / Publish AC1 | The pushed tag equals `v` + `APP_VERSION` before artifacts are created. | `tests/backend/test_github_release_delivery.py:245` - `assert "from app.version import APP_VERSION" in workflow`; `:246-250` assert exact expected-tag construction, mismatch gate, and ordering before tests. | ✅ PASS |
+| GRD-02 / Publish AC2 | Backend and UI tests run before publication. | `tests/backend/test_github_release_delivery.py:232-239` assert the release job depends on quality and Windows tests precede build; `:268-275` assert backend and UI precede build and publication. | ✅ PASS |
+| GRD-03 / Publish AC3 | The builder emits the exact versioned ZIP and SHA-256 names and digest content. | `tests/backend/test_github_release_delivery.py:168-170` - exact archive name, digest name, and `f"{builder.sha256(archive)}  {archive.name}\n"`. | ✅ PASS |
+| GRD-04 / Publish AC4 | Validation, test, or build failure prevents publication. | `tests/backend/test_github_release_delivery.py:248-250` and `:268-275` assert version/test/build/publish order in fail-fast jobs. | ✅ PASS |
+| GRD-05 / Publish AC5 | The existing tag gets exactly the ZIP and digest without overwrite. | `tests/backend/test_github_release_delivery.py:278-283` assert exact asset variables, `--verify-tag`, and absence of clobber/upload; `:289-291` assert existing-release rejection precedes create. | ✅ PASS |
+| GRD-06 / Stage AC1 | The stager uses the public `lamarcon/smart_crm` tag endpoint without a token. | `tests/backend/test_github_release_delivery.py:633-635` assert the exact tag endpoint/repository and `"Authorization" not in source`. | ✅ PASS |
+| GRD-07 / Stage AC2 | Draft, prerelease, tag mismatch, missing assets, or ambiguous assets fail before extraction. | `tests/backend/test_github_release_delivery.py:312-338` drives every invalid metadata class through metadata validation and asserts `result.returncode != 0`. | ✅ PASS |
+| GRD-08 / Stage AC3 | Digest filename and SHA-256 exactly match the downloaded ZIP. | `tests/backend/test_github_release_delivery.py:341-354` asserts the returned hash equals `builder.sha256(archive)`; `:357-378` rejects malformed, wrong-name, and wrong-hash digests. | ✅ PASS |
+| GRD-09 / Stage AC4 | Extraction occurs in staging, the internal manifest passes, then the directory is promoted. | `tests/backend/test_github_release_delivery.py:393-397` assert exact final path/payload and no staging residue; `:435-439` assert a bad manifest creates no final directory and preserves existing state. | ✅ PASS |
+| GRD-10 / Stage AC5 | A pre-existing final directory blocks staging without modification. | `tests/backend/test_github_release_delivery.py:413-415` assert non-zero exit, unchanged marker, and no staging residue. | ✅ PASS |
+| GRD-11 / Stage AC6 | Failures clean only temporary state and preserve releases/configuration; no task/database/secret mutation occurs. | `tests/backend/test_github_release_delivery.py:153-157` define exact preservation assertions used at `:489-491`, `:515-517`, and `:543-545`; `:435-439` cover manifest failure; `:630-645` reject cutover/database/secret mutation commands. | ✅ PASS |
+| GRD-12 / Stage AC7 | Success reports exact tag, hash, and final path without secrets. | `tests/backend/test_github_release_delivery.py:566-575` assert the exact result object, secret-sentinel absence, and `RELEASE_STAGED=PASS`. | ✅ PASS |
+| GRD-13 / Invalid tag edge | Unsafe/path-like tags fail before paths or URLs are formed. | `tests/backend/test_github_release_delivery.py:195-203` assert builder rejection before output creation; `:294-299` assert invalid stager tags fail with the required format error. | ✅ PASS |
+| GRD-14 / GitHub unavailable edge | API failure occurs before final or temporary directory creation. | `tests/backend/test_github_release_delivery.py:455-460` assert non-zero exit, the API error, no final directory, and no download root. | ✅ PASS |
+| GRD-15 / Invalid digest edge | Malformed, mismatched, or wrong-name digest fails before extraction. | `tests/backend/test_github_release_delivery.py:357-378` assert all three invalid digest classes return non-zero. | ✅ PASS |
+| GRD-16 / Concurrency edge | Two preparations produce exactly one winner, one intact final directory, and no residue. | `tests/backend/test_github_release_delivery.py:623-627` assert one zero exit, one non-zero exit, exact payload, and no staging directory. | ✅ PASS |
 
-**Status**: ✅ 16/16 critérios cobertos; 0 gaps e 0 spec-precision gaps. A tabela de rastreabilidade possui 16 IDs one-to-one em `.specs/features/github-release-deployment/spec.md:91-110`.
+**Status**: ✅ 16/16 criteria match the spec-defined outcomes; 0 uncovered criteria and 0 spec-precision gaps.
+
+### v0.3.3 Diff Evidence
+
+- `app/version.py:3` sets `APP_VERSION = "0.3.3"`.
+- `tests/backend/test_api.py:179` asserts `response.json() == {"version": "0.3.3"}`.
+- `tests/backend/test_windows_multitenant_bundle.py:101` asserts `APP_VERSION == "0.3.3"`.
+- `tests/backend/test_windows_multitenant_bundle.py:141` asserts the packaged source contains `APP_VERSION = "0.3.3"`.
+- `tests/ui-prototype.spec.cjs:888-889` assert footer text `v0.3.3` and accessible label `Versão instalada 0.3.3`.
+- `tests/ui-prototype.spec.cjs:1188-1195` record the pre-conflict GET count, wait for the rendered canonical lead, assert one additional workspace GET, and assert the conflicting local lead is absent.
 
 ---
 
 ## Discrimination Sensor
 
-As mutações foram aplicadas somente em `.verifier-sensor-scratch`, uma extração isolada de `HEAD`. O scratch foi removido após os testes.
+Both mutations ran only in detached scratch worktree `release-v033-reverify-sensor` at `b7bdc74`. The worktree, temporary pytest directories, browser, and Uvicorn processes were removed after the runs.
 
-| Mutation | File:line | Description | Relevant assertion | Killed? |
-| -------- | --------- | ----------- | ------------------ | ------- |
-| 1 | `deploy/manual-windows-pg11/stage-github-release.ps1:222` | Removeu o cleanup do diretório temporário de download. | `tests/backend/test_github_release_delivery.py:157` exige ausência de `release-*` após falha. | ✅ Killed: 1 failed |
-| 2 | `deploy/manual-windows-pg11/stage-github-release.ps1:216` | Alterou a tag final de `v0.3.0` para `v9.9.9`. | `tests/backend/test_github_release_delivery.py:555-559` exige payload exato. | ✅ Killed: 1 failed |
-| 3 | `deploy/manual-windows-pg11/stage-github-release.ps1:180` | Substituiu promoção atômica por cópia com overwrite, permitindo dois vencedores. | `tests/backend/test_github_release_delivery.py:610-611` exige exatamente um sucesso e uma falha. | ✅ Killed: 1 failed |
+| Mutation | Production file:line | Fault | Focused evidence | Result |
+| -------- | -------------------- | ----- | ---------------- | ------ |
+| 1 | `app/static/index.html:1361` | Replaced `await loadCanonicalWorkspace()` with a no-op while retaining the success toast. | Focused DBP-10 failed at `tests/ui-prototype.spec.cjs:1193`: the rendered canonical lead never appeared (`0 passed, 1 failed`, exit 1). | ✅ Killed |
+| 2 | `app/version.py:3` | Changed canonical version `0.3.3` to `0.3.2`. | `tests/backend/test_api.py:179` failed on API payload `0.3.2 != 0.3.3`; `tests/backend/test_windows_multitenant_bundle.py:101` failed on imported version `0.3.2 != 0.3.3` (`2 failed`, exit 1). | ✅ Killed |
 
-**Sensor depth**: lightweight, 3 mutações focadas nos fixes de maior risco.
-**Sensor outcome**: 3/3 killed - PASS ✅.
-**Isolation**: `git status --porcelain` após cleanup corresponde exatamente ao baseline anterior. O baseline já continha mudanças/untracked de outros trabalhos; nenhuma foi alterada.
+**Sensor depth**: lightweight, 2 targeted behavior mutations.
+**Result**: 2/2 killed, 0 survived - PASS ✅.
+**Isolation**: real-tree porcelain before and after sensor cleanup is identical: only `.specs/features/github-release-deployment/validation.md` is modified. Ports 18086 and 18087 are clear, and the scratch worktree no longer exists.
 
 ---
 
 ## Interactive UAT
 
-Não executado. Esta feature é infraestrutura/backend; checks automatizados são suficientes.
+Not performed. This is an infrastructure/release feature; the workflow, PowerShell, API, packaging, and browser automation provide the required evidence.
 
 ---
 
@@ -75,58 +82,56 @@ Não executado. Esta feature é infraestrutura/backend; checks automatizados sã
 
 | Principle | Status | Evidence |
 | --------- | ------ | -------- |
-| Minimum code | ✅ | O fix adiciona fixtures locais e seis testes dirigidos aos gaps, sem alterar o stager. |
-| Surgical changes | ✅ | `0f72680` modifica somente spec, tasks e o arquivo de testes da feature. |
-| No scope creep | ✅ | Nenhuma ativação, migração, segredo, commit remoto ou deploy foi adicionado. |
-| Matches patterns | ✅ | Reusa subprocessos PowerShell 5.1, fixtures locais e promoção lado a lado. |
-| Spec-anchored outcome check | ✅ | 16/16 outcomes têm assertion do valor/estado exigido. |
-| Payload/conjunction rule | ✅ | GRD-11 cobre quatro classes de falha e preservação; GRD-12 afirma todos os campos e ausência do sentinel. |
-| Per-layer Coverage Expectation | ✅ | Builder/workflow têm contratos estáticos; stager cobre happy, metadata, digest, API, download, extração, manifesto, duplicidade e concorrência. |
-| Every test maps to spec/edge/done-when | ✅ | Os 41 casos novos mapeiam aos 16 ACs ou ao fallback SHA do Done-when de T1. |
-| Test integrity | ✅ | Nenhum teste anterior foi removido ou enfraquecido; o arquivo novo coleta 41 casos. |
-| Documented guidelines | ✅ | `pyproject.toml`, `package.json`, `README.md` e `.specs/features/github-release-deployment/tasks.md:16-35`; sem `AGENTS.md`. |
-
-Observação de hygiene: `git diff --check 23ab7b0^..HEAD` ainda sinaliza os quatro EOFs porque o range termina no commit `HEAD` e não inclui a limpeza ainda não commitada. A checagem da base até o working tree, `git diff --check 23ab7b0^`, retorna 0. Quando a limpeza entrar em `HEAD`, o range original também ficará limpo.
+| Minimum code | ✅ | The diff updates one canonical version and strengthens the existing conflict test with one request counter and browser-state assertions. |
+| Surgical changes | ✅ | Diff range changes 5 files with 15 insertions and 13 deletions. |
+| No scope creep | ✅ | No push, tag, GitHub Release, deploy, production database action, migration, or cutover occurred. |
+| Matches patterns | ✅ | Version remains centralized in `app/version.py`; tests use existing pytest and Playwright helpers. |
+| Spec-anchored outcome check | ✅ | 16/16 release criteria assert the required value, state, ordering, or preservation outcome. |
+| Payload/conjunction rule | ✅ | Asset identity, preservation, final identity, rendered state, request count, and secret absence are asserted by value/state. |
+| Per-layer coverage expectation | ✅ | Builder/workflow contracts, PowerShell happy/error/concurrency paths, API/bundle version, and browser behavior are exercised. |
+| Every test is claimed | ✅ | Release tests map to GRD-01..16; changed API/bundle/UI assertions map to the v0.3.3 release identity and DBP-10 regression gate required by GRD-02/04. |
+| Test discrimination | ✅ | Both required mutations are killed at the expected assertion boundary. |
+| Test integrity | ✅ | No test was deleted or skipped; the diff retains 830 backend and 122 UI tests. |
+| Documented guidelines | ✅ | `pyproject.toml`, `package.json`, `README.md`, and `.specs/features/github-release-deployment/tasks.md:16`; no `AGENTS.md` exists. |
 
 ---
 
 ## Edge Cases
 
-- [x] Tag com separador ou fora de `vX.Y.Z` é rejeitada.
-- [x] GitHub indisponível falha antes de qualquer pasta final/temporária.
-- [x] Digest com formato, hash ou nome divergente é rejeitado.
-- [x] Download, hash, extração e manifesto falhos preservam release/configuração e removem resíduos.
-- [x] Duas execuções concorrentes produzem exatamente um vencedor.
-- [x] Release final preexistente é preservada.
+- [x] Invalid/path-like tags are rejected before output creation.
+- [x] GitHub/API failure creates no final or temporary directory.
+- [x] Digest format, name, and bytes are validated before extraction.
+- [x] Failure paths preserve prior release/configuration and remove residue.
+- [x] Existing final directory remains unchanged.
+- [x] Concurrent staging produces exactly one winner.
+- [x] DBP-10 detects removal of the canonical conflict reload and asserts browser-rendered canonical state.
+- [x] Exact v0.3.3 API and bundle assertions detect a version rollback.
 
 ---
 
 ## Gate Check
 
-- **Gate command**: `& .\.venv\Scripts\python.exe -m pytest -q --basetemp test-results/github-release-pytest; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; pnpm test`
-- **Result**: 951 passed, 0 failed, 0 skipped; exit code 0.
-- **Backend**: 829 passed, 0 failed, 0 skipped; 6 warnings; 205.60 s.
-- **UI**: 122 passed, 0 failed.
-- **Test count before feature**: 788 backend + 122 UI = 910.
-- **Test count after feature**: 829 backend + 122 UI = 951.
-- **Delta**: +41 backend tests.
+- **Backend command**: `D:\Develop_CRM_Project\.venv\Scripts\python.exe -m pytest -q --basetemp D:\Develop_CRM_Project\.verify-worktrees\release-v033-reverify-tmp\backend-valid`
+- **Backend result**: 830 passed, 0 failed, 0 skipped; 6 warnings; 214.68 s; exit 0.
+- **UI command**: worktree-bound Uvicorn on `127.0.0.1:18086`, then `SMART_CRM_TEST_URL=http://localhost:18086/ pnpm test`.
+- **UI result**: 122 passed, 0 failed; exit 0.
+- **Build total**: 952 passed, 0 failed, 0 skipped.
+- **Test count before diff**: 830 backend + 122 UI = 952.
+- **Test count after diff**: 830 backend + 122 UI = 952.
+- **Delta**: 0 test definitions; assertions were strengthened, not weakened.
 - **Skipped tests**: none.
-- **Failures**: none no run válido.
-- **Environmental retry**: a primeira tentativa escalada foi inválida porque o parent de `--basetemp` não existia; houve `672 passed, 157 FileNotFoundError`. Após criar somente `test-results`, o comando idêntico passou. A pasta temporária foi removida antes da comparação final.
+- **Diff hygiene**: `git diff --check 44e95cf3a8905dcbdb59849f2199b47ca45c9a89..HEAD` exited 0.
+- **Excluded diagnostic run**: the initial sandboxed pytest attempt could not complete local fixtures and is not counted. The same focused API test passed immediately with approved local access before the full valid gate.
 
 ---
 
-## Fix Plans
+## Requirement Traceability
 
-Nenhum. Os quatro gaps funcionais e a inconsistência de rastreabilidade do relatório anterior foram fechados em `0f72680`.
-
----
-
-## Requirement Traceability Update
-
-| Requirement | Previous Status | New Status |
-| ----------- | --------------- | ---------- |
+| Requirement | Spec status | Validation status |
+| ----------- | ----------- | ----------------- |
 | GRD-01..GRD-16 | Verified | ✅ Verified |
+
+The verifier did not modify `spec.md`, code, or tests.
 
 ---
 
@@ -134,31 +139,12 @@ Nenhum. Os quatro gaps funcionais e a inconsistência de rastreabilidade do rela
 
 **Overall**: ✅ Ready
 
-**Spec-anchored check**: 16/16 ACs matched spec outcome; 0 spec-precision gaps.
-**Sensor**: 3/3 mutations killed.
-**Gate**: 951 passed, 0 failed, 0 skipped.
+**Spec-anchored check**: 16/16 release criteria matched; 0 spec-precision gaps.
+**Gate**: 952 passed, 0 failed, 0 skipped.
+**Sensor**: 2 mutations injected, 2 killed, 0 survived.
 
-**What works**: publicação versionada e fail-closed; dois assets exatos; staging pública sem token; validação de metadata/digest/manifesto; cleanup completo; output sem segredos; promoção concorrente com um vencedor; cutover permanece separado.
+**What works**: version `0.3.3` is canonical across API, packaged runtime, UI, and workflow tag derivation; publication and server staging remain fail-closed; DBP-10 now proves the canonical reload at both network and rendered-state boundaries.
 
 **Issues found**: none.
 
-**Next steps**: feature pronta para o fluxo de revisão/entrega autorizado. Este veredito não autoriza commit, push, tag ou deploy.
-
----
-
-## Post-publication CI correction (2026-10-23)
-
-The first public tag, `v0.3.0`, correctly stopped before release publication because the backend quality gate failed on a fresh PostgreSQL service. No GitHub Release asset and no production-server change occurred.
-
-**Root cause**: `test_session_scope_rolls_back_and_closes_on_exception` and `test_upgrade_current_database_preserves_existing_probe` assumed that `_smartcrm_test_probe` had already been created by the local Compose verification script. A clean CI database does not contain that table.
-
-**Correction**: `tests/backend/conftest.py` now provisions and restores the technical probe only for tests that request it. The two affected tests explicitly request the fixture, and the migration assertion preserves any pre-existing row count instead of assuming exactly one row.
-
-**Fresh-database reproduction before the correction**: 764 passed, 2 failed. Both failures were `UndefinedTable` for `_smartcrm_test_probe`.
-
-**Fresh-database verification after the correction**:
-
-- Linux / Python 3.11 / PostgreSQL 17: 766 passed, 0 failed, 0 skipped; 6 warnings; 115.94 s.
-- Focused Windows database + release/deployment gate: 82 passed, 0 failed, 0 skipped; 33.68 s.
-
-**Publication state**: tag `v0.3.1` preserved as an immutable failed run after the browser gate exposed that the workflow did not start the UI server. The workflow is corrected and locally verified as application version `0.3.2`; publishing `v0.3.2` remains a separate explicit action. Production remains unchanged.
+**Next step**: none within verification. Any push, tag, GitHub Release, deployment, migration, or production action still requires separate explicit authorization.
