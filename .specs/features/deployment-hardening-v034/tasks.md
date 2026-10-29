@@ -155,6 +155,8 @@ T6 → T7 → T8
 
 ### T4: Harden Windows PowerShell deployment primitives
 
+**Status**: Complete
+
 **What**: Add literal environment parsing, native-process capture, port release, task target and exact release readiness helpers compatible with Windows PowerShell 5.1.
 **Where**: `deploy/manual-windows-pg11/deployment-policy.ps1`
 **Depends on**: T3
@@ -168,16 +170,18 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Literal `C:\ProgramData` and values containing `=` round-trip without escape interpretation.
-- [ ] Duplicate/invalid environment keys fail without displaying values.
-- [ ] Informational stderr with exit code 0 is captured as success; non-zero remains failure.
-- [ ] Port, task user/action, health and exact-version helpers cover success, timeout and mismatch.
-- [ ] Full gate passes with no skipped or deleted tests.
+- [x] Literal `C:\ProgramData` and values containing `=` round-trip without escape interpretation.
+- [x] Duplicate/invalid environment keys fail without displaying values.
+- [x] Informational stderr with exit code 0 is captured as success; non-zero remains failure.
+- [x] Port, task user/action, health and exact-version helpers cover success, timeout and mismatch.
+- [x] Full gate passes with no skipped or deleted tests.
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `fix(deploy): harden powershell deployment gates`
+
+**Evidence**: `tests/backend/test_manual_windows_pg11_outcomes.py` exercises Windows PowerShell 5.1 literal parsing, redacted validation failures, native stderr/exit-code capture, finite port wait, immutable scheduled-task targeting and exact release readiness. The deployment-policy/outcomes gate passed (`37 passed`) and the full backend deployment gate passed with local PostgreSQL (`114 passed in 43.31s`) on 2026-10-29.
 
 ### T5: Run fleet migration inside the service identity
 

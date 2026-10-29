@@ -100,6 +100,51 @@ function New-SmartCrmEnvironmentLines {
     )
 }
 
+function Read-SmartCrmEnvironment {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [string[]]$AllowedKeys = @()
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Arquivo de ambiente nao encontrado."
+    }
+
+    $allowed = @{}
+    foreach ($allowedKey in $AllowedKeys) {
+        $allowed[$allowedKey] = $true
+    }
+
+    $settings = @{}
+    $lineNumber = 0
+    foreach ($rawLine in [System.IO.File]::ReadAllLines($Path)) {
+        $lineNumber += 1
+        $trimmed = $rawLine.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $separator = $rawLine.IndexOf("=")
+        if ($separator -lt 1) {
+            throw "Linha de ambiente invalida na linha $lineNumber."
+        }
+        $key = $rawLine.Substring(0, $separator).Trim()
+        if ($key -notmatch "^[A-Z][A-Z0-9_]*$") {
+            throw "Chave de ambiente invalida na linha $lineNumber."
+        }
+        if ($allowed.Count -gt 0 -and -not $allowed.ContainsKey($key)) {
+            throw "Chave de ambiente nao permitida: $key."
+        }
+        if ($settings.ContainsKey($key)) {
+            throw "Chave de ambiente duplicada: $key."
+        }
+
+        # Split only at the first equals sign and keep the value byte-for-byte.
+        $settings[$key] = $rawLine.Substring($separator + 1)
+    }
+    return $settings
+}
+
 function Get-SmartCrmControlAlembicUpgradeArguments {
     return @("-m", "alembic", "-c", "alembic-control.ini", "upgrade", "c01a5d8e4f20")
 }
@@ -137,6 +182,149 @@ function Get-SmartCrmUvicornArguments {
     )
 }
 
+function ConvertTo-SmartCrmNativeArgument {
+    param([AllowEmptyString()][string]$Value)
+    if ($null -eq $Value) {
+        $Value = ""
+    }
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append('"')
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq [char]92) {
+            $backslashes += 1
+            continue
+        }
+        if ($character -eq [char]34) {
+            [void]$builder.Append(('\' * (($backslashes * 2) + 1)))
+            [void]$builder.Append('"')
+            $backslashes = 0
+            continue
+        }
+        if ($backslashes -gt 0) {
+            [void]$builder.Append(('\' * $backslashes))
+            $backslashes = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashes -gt 0) {
+        [void]$builder.Append(('\' * ($backslashes * 2)))
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Invoke-SmartCrmNativeProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [string[]]$ArgumentList = @(),
+        [string]$WorkingDirectory
+    )
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $FilePath
+    $startInfo.Arguments = (@($ArgumentList | ForEach-Object {
+        ConvertTo-SmartCrmNativeArgument -Value $_
+    }) -join " ")
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    if ($WorkingDirectory) {
+        $startInfo.WorkingDirectory = $WorkingDirectory
+    }
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw "Nao foi possivel iniciar o processo nativo."
+        }
+        $standardOutput = $process.StandardOutput.ReadToEndAsync()
+        $standardError = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $stdout = $standardOutput.Result
+        $stderr = $standardError.Result
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            StdOut = $stdout
+            StdErr = $stderr
+        }
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
+function Wait-SmartCrmPortReleased {
+    param(
+        [int]$Port = 8080,
+        [double]$TimeoutSeconds = 30,
+        [int]$PollMilliseconds = 250,
+        [scriptblock]$Probe
+    )
+    if ($TimeoutSeconds -lt 0 -or $PollMilliseconds -lt 1) {
+        throw "Parametros de espera da porta sao invalidos."
+    }
+    if ($null -eq $Probe) {
+        $Probe = {
+            param($CandidatePort)
+            return @(
+                Get-NetTCPConnection -LocalPort $CandidatePort -State Listen `
+                    -ErrorAction SilentlyContinue
+            ).Count -gt 0
+        }
+    }
+
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        if (-not [bool](& $Probe $Port)) {
+            return
+        }
+        if ($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+            throw "A porta $Port nao foi liberada dentro do limite."
+        }
+        Start-Sleep -Milliseconds $PollMilliseconds
+    }
+}
+
+function Assert-SmartCrmScheduledTaskTarget {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Task,
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedUser,
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedAppRoot
+    )
+    if ($Task.Principal.UserId -ine $ExpectedUser) {
+        throw "A tarefa SmartCRM nao usa a conta de servico esperada."
+    }
+    $actions = @($Task.Actions)
+    if ($actions.Count -ne 1) {
+        throw "A tarefa SmartCRM deve possuir exatamente uma acao."
+    }
+
+    $action = $actions[0]
+    if ([System.IO.Path]::GetFileName($action.Execute) -ine "PowerShell.exe") {
+        throw "A tarefa SmartCRM nao usa o executavel esperado."
+    }
+    $root = $ExpectedAppRoot.TrimEnd('\')
+    $startScript = Join-Path $root "deploy\manual-windows-pg11\start-smart-crm.ps1"
+    $filePattern = '(?i)(?:^|\s)-File\s+"?' + [regex]::Escape($startScript) + '"?(?:\s|$)'
+    $rootPattern = '(?i)(?:^|\s)-AppRoot\s+"?' + [regex]::Escape($root) + '"?(?:\s|$)'
+    if ($action.Arguments -notmatch $filePattern -or $action.Arguments -notmatch $rootPattern) {
+        throw "A tarefa SmartCRM nao referencia a release imutavel esperada."
+    }
+    if ($action.WorkingDirectory -and $action.WorkingDirectory.TrimEnd('\') -ine $root) {
+        throw "O diretorio de trabalho da tarefa SmartCRM diverge da release esperada."
+    }
+}
+
 function Invoke-SmartCrmLoggedProcess {
     param(
         [string]$FilePath,
@@ -170,5 +358,28 @@ function Assert-SmartCrmCommandSucceeded {
 
 function Test-SmartCrmHealth {
     param([object]$Health)
-    return $Health.status -eq "ok" -and $Health.database -eq "ok"
+    if ($null -eq $Health) {
+        return $false
+    }
+    $status = $Health.PSObject.Properties["status"]
+    return $null -ne $status -and $status.Value -eq "ok"
+}
+
+function Assert-SmartCrmReleaseReadiness {
+    param(
+        [object]$Health,
+        [object]$Version,
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedVersion
+    )
+    if (-not (Test-SmartCrmHealth -Health $Health)) {
+        throw "O health check da nova release nao retornou status ok."
+    }
+    if ($null -eq $Version) {
+        throw "A nova release nao informou a versao ativa."
+    }
+    $versionProperty = $Version.PSObject.Properties["version"]
+    if ($null -eq $versionProperty -or $versionProperty.Value -cne $ExpectedVersion) {
+        throw "A versao ativa diverge da release esperada."
+    }
 }

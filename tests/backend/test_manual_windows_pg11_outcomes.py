@@ -263,6 +263,54 @@ def test_environment_policy_emits_exact_external_database_contract():
     assert "serviceSid" in install
 
 
+def test_environment_parser_preserves_windows_paths_and_embedded_equals(tmp_path: Path):
+    env_file = tmp_path / "server.env"
+    env_file.write_text(
+        "# comentario\n"
+        r"SMART_CRM_TENANT_SECRET_STORE=C:\ProgramData\SmartCRM\tenant-secrets"
+        "\nSMART_CRM_TEST_VALUE=one=two=three\n",
+        encoding="utf-8",
+    )
+    result = run_policy(
+        f"$settings=Read-SmartCrmEnvironment -Path {powershell_literal(str(env_file))} "
+        "-AllowedKeys @('SMART_CRM_TENANT_SECRET_STORE','SMART_CRM_TEST_VALUE'); "
+        "@($settings['SMART_CRM_TENANT_SECRET_STORE'],$settings['SMART_CRM_TEST_VALUE']) "
+        "| ConvertTo-Json -Compress"
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == [
+        r"C:\ProgramData\SmartCRM\tenant-secrets",
+        "one=two=three",
+    ]
+
+
+def test_environment_parser_rejects_duplicate_and_invalid_keys_without_values(
+    tmp_path: Path,
+):
+    secret = "must-not-appear-in-errors"
+    duplicate = tmp_path / "duplicate.env"
+    duplicate.write_text(
+        f"SMART_CRM_PORT=8080\nSMART_CRM_PORT={secret}\n", encoding="utf-8"
+    )
+    invalid = tmp_path / "invalid.env"
+    invalid.write_text(f"NOT_ALLOWED={secret}\n", encoding="utf-8")
+
+    duplicate_result = run_policy(
+        f"Read-SmartCrmEnvironment -Path {powershell_literal(str(duplicate))} "
+        "-AllowedKeys @('SMART_CRM_PORT') | Out-Null"
+    )
+    invalid_result = run_policy(
+        f"Read-SmartCrmEnvironment -Path {powershell_literal(str(invalid))} "
+        "-AllowedKeys @('SMART_CRM_PORT') | Out-Null"
+    )
+
+    assert duplicate_result.returncode != 0
+    assert invalid_result.returncode != 0
+    assert secret not in duplicate_result.stdout + duplicate_result.stderr
+    assert secret not in invalid_result.stdout + invalid_result.stderr
+
+
 def test_policy_emits_separate_exact_alembic_and_loopback_uvicorn_commands():
     control_upgrade = run_policy(
         "@(Get-SmartCrmControlAlembicUpgradeArguments) | ConvertTo-Json -Compress"
@@ -408,13 +456,86 @@ def test_windows_startup_rejects_zero_max_overflow_before_uvicorn(tmp_path: Path
     assert "SMART_CRM_TENANT_MAX_OVERFLOW" in (result.stdout + result.stderr)
 
 
-def test_health_policy_rejects_each_partial_failure():
-    outcomes = {}
-    for status, database in (("ok", "ok"), ("bad", "ok"), ("ok", "bad"), ("bad", "bad")):
-        expression = f"$h=[pscustomobject]@{{status='{status}';database='{database}'}}; if (Test-SmartCrmHealth -Health $h) {{ exit 0 }} else {{ exit 9 }}"
-        outcomes[(status, database)] = run_policy(expression).returncode
+def test_release_readiness_requires_health_ok_and_exact_version():
+    valid = run_policy(
+        "$health=[pscustomobject]@{status='ok'}; "
+        "$version=[pscustomobject]@{version='0.3.4'}; "
+        "Assert-SmartCrmReleaseReadiness -Health $health -Version $version "
+        "-ExpectedVersion '0.3.4'"
+    )
+    bad_health = run_policy(
+        "$health=[pscustomobject]@{status='bad'}; "
+        "$version=[pscustomobject]@{version='0.3.4'}; "
+        "Assert-SmartCrmReleaseReadiness -Health $health -Version $version "
+        "-ExpectedVersion '0.3.4'"
+    )
+    wrong_version = run_policy(
+        "$health=[pscustomobject]@{status='ok'}; "
+        "$version=[pscustomobject]@{version='0.3.3'}; "
+        "Assert-SmartCrmReleaseReadiness -Health $health -Version $version "
+        "-ExpectedVersion '0.3.4'"
+    )
+    missing_version = run_policy(
+        "$health=[pscustomobject]@{status='ok'}; $version=[pscustomobject]@{}; "
+        "Assert-SmartCrmReleaseReadiness -Health $health -Version $version "
+        "-ExpectedVersion '0.3.4'"
+    )
 
-    assert outcomes == {("ok", "ok"): 0, ("bad", "ok"): 9, ("ok", "bad"): 9, ("bad", "bad"): 9}
+    assert valid.returncode == 0, valid.stdout + valid.stderr
+    assert bad_health.returncode != 0
+    assert wrong_version.returncode != 0
+    assert missing_version.returncode != 0
+
+
+def test_port_release_helper_covers_release_and_timeout():
+    released = run_policy(
+        "$script:attempts=0; $probe={ param($port) $script:attempts += 1; "
+        "return $script:attempts -lt 3 }; "
+        "Wait-SmartCrmPortReleased -Port 8080 -TimeoutSeconds 1 "
+        "-PollMilliseconds 1 -Probe $probe"
+    )
+    timeout = run_policy(
+        "$probe={ param($port) return $true }; "
+        "Wait-SmartCrmPortReleased -Port 8080 -TimeoutSeconds 0.02 "
+        "-PollMilliseconds 1 -Probe $probe"
+    )
+
+    assert released.returncode == 0, released.stdout + released.stderr
+    assert timeout.returncode != 0
+    assert "8080" in timeout.stdout + timeout.stderr
+
+
+def test_scheduled_task_target_requires_service_user_and_immutable_release_action():
+    valid_task = (
+        "$task=[pscustomobject]@{"
+        "Principal=[pscustomobject]@{UserId='HOST\\SmartCRMService'};"
+        "Actions=@([pscustomobject]@{Execute='PowerShell.exe';"
+        "Arguments='-NoProfile -File \"C:\\brbots\\apps\\smart-crm-v0.3.4\\deploy\\manual-windows-pg11\\start-smart-crm.ps1\" "
+        "-AppRoot \"C:\\brbots\\apps\\smart-crm-v0.3.4\"';"
+        "WorkingDirectory='C:\\brbots\\apps\\smart-crm-v0.3.4'})};"
+    )
+    valid = run_policy(
+        valid_task
+        + "Assert-SmartCrmScheduledTaskTarget -Task $task "
+        "-ExpectedUser 'HOST\\SmartCRMService' "
+        "-ExpectedAppRoot 'C:\\brbots\\apps\\smart-crm-v0.3.4'"
+    )
+    wrong_user = run_policy(
+        valid_task
+        + "Assert-SmartCrmScheduledTaskTarget -Task $task "
+        "-ExpectedUser 'HOST\\OtherUser' "
+        "-ExpectedAppRoot 'C:\\brbots\\apps\\smart-crm-v0.3.4'"
+    )
+    wrong_release = run_policy(
+        valid_task
+        + "Assert-SmartCrmScheduledTaskTarget -Task $task "
+        "-ExpectedUser 'HOST\\SmartCRMService' "
+        "-ExpectedAppRoot 'C:\\brbots\\apps\\smart-crm-v0.3.5'"
+    )
+
+    assert valid.returncode == 0, valid.stdout + valid.stderr
+    assert wrong_user.returncode != 0
+    assert wrong_release.returncode != 0
 
 
 def test_windows_powershell_51_keeps_native_stderr_in_log_without_stopping(tmp_path):
@@ -432,6 +553,27 @@ def test_windows_powershell_51_keeps_native_stderr_in_log_without_stopping(tmp_p
     assert result.returncode == 0, result.stdout + result.stderr
     assert "runtime-continued" in result.stdout
     assert "uvicorn-info" in log_path.read_text(encoding="utf-16")
+
+
+def test_native_process_capture_uses_exit_code_instead_of_stderr():
+    success = run_policy(
+        "$result=Invoke-SmartCrmNativeProcess -FilePath $env:ComSpec "
+        "-ArgumentList @('/d','/c','echo informational 1>&2 & exit /b 0'); "
+        "$result | ConvertTo-Json -Compress"
+    )
+    failure = run_policy(
+        "$result=Invoke-SmartCrmNativeProcess -FilePath $env:ComSpec "
+        "-ArgumentList @('/d','/c','echo failed 1>&2 & exit /b 7'); "
+        "$result | ConvertTo-Json -Compress"
+    )
+
+    assert success.returncode == 0, success.stdout + success.stderr
+    success_payload = json.loads(success.stdout)
+    failure_payload = json.loads(failure.stdout)
+    assert success_payload["ExitCode"] == 0
+    assert "informational" in success_payload["StdErr"]
+    assert failure_payload["ExitCode"] == 7
+    assert "failed" in failure_payload["StdErr"]
 
 
 def test_start_script_uses_the_powershell_51_safe_logged_process_helper():

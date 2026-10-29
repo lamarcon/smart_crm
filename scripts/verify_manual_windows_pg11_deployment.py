@@ -64,7 +64,19 @@ def verify_source(root: Path) -> set[str]:
         "loopback Uvicorn binding or PowerShell 5.1-safe launcher missing",
         passed,
     )
-    _require('$Health.status -eq "ok" -and $Health.database -eq "ok"' in policy and "Test-SmartCrmHealth -Health $health" in initialize and "LOCAL GATE: PASS" in initialize, "MPG-11", "exact health gate before Apache missing", passed)
+    _require(
+        all(token in policy for token in (
+            "function Test-SmartCrmHealth",
+            'status -and $status.Value -eq "ok"',
+            "function Assert-SmartCrmReleaseReadiness",
+            "$versionProperty.Value -cne $ExpectedVersion",
+        ))
+        and "Test-SmartCrmHealth -Health $health" in initialize
+        and "LOCAL GATE: PASS" in initialize,
+        "MPG-11",
+        "health and exact-version release readiness policy missing",
+        passed,
+    )
     _require('$_.LocalAddress -eq "127.0.0.1"' in policy and "$ipv4Loopback.Count -eq 0" in policy and "Assert-SmartCrmPostgresListeners -Listeners $listeners" in install, "MPG-12", "exact IPv4 PostgreSQL listener gate missing", passed)
     _require("\\du smartcrm" in readme and "\\l smartcrm" in readme and "nao a recrie nem apague" in readme, "MPG-13", "existing role/database validation guidance missing", passed)
     _require("Assert-SmartCrmCommandSucceeded" in initialize and initialize.index("Assert-SmartCrmCommandSucceeded") < initialize.index("install-scheduled-task.ps1") and not re.search(r"(?i)httpd\.exe|apache.*restart", initialize), "MPG-14", "migration failure does not block publication", passed)
