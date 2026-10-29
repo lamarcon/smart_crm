@@ -18,7 +18,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 ACTIVITY_HEAD = "e1c4a7b9d2f6"
-TENANT_HEAD = "f6b1d3a8c2e4"
+TENANT_HEAD = "a8d4e6f2b1c9"
 
 
 def alembic_config(connection=None) -> Config:  # noqa: ANN001
@@ -169,8 +169,17 @@ def test_upgrade_current_database_preserves_existing_probe(
     technical_probe_table: None,
 ) -> None:
     engine = create_engine(TEST_DATABASE_URL)
-    with engine.connect() as connection:
+    with engine.begin() as connection:
         before = connection.scalar(text("SELECT count(*) FROM _smartcrm_test_probe"))
+        connection.execute(
+            text(
+                "INSERT INTO tenant_identity "
+                "(singleton_key, control_tenant_id, workspace_id, schema_contract) "
+                "VALUES ('identity', :tenant_id, 'default', 'tenant-v1') "
+                "ON CONFLICT (singleton_key) DO NOTHING"
+            ),
+            {"tenant_id": uuid.UUID("0704e2f5-38f2-440d-9ef2-1d9e91a77508")},
+        )
 
     command.upgrade(alembic_config(), "head")
 

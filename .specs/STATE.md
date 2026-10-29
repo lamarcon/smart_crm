@@ -90,6 +90,14 @@
 - **Date**: 2026-10-22
 - **Status**: active
 
+### AD-012
+- **Decision**: Atualizações tenant no Windows serão executadas por uma tarefa temporária sob `SmartCRMService`, usando `FleetService` e os segredos DPAPI; o cutover da tarefa web ocorrerá somente após revisão e identidade do tenant serem confirmadas e o perfil central ser avançado.
+- **Reason**: O deploy v0.3.3 executou Alembic diretamente como Administrador, deixou `expected_tenant_revision` desatualizada e exigiu correção SQL manual; o processo administrativo não deve abrir segredos tenant vinculados à conta de serviço.
+- **Trade-off**: O coordenador de deploy passa a criar, observar e remover uma tarefa temporária e a manter evidência redigida, aumentando o código operacional em troca de migração multiempresa segura e repetível.
+- **Scope**: Migrações tenant, DPAPI, atualização do perfil central, cutover Windows e gates de release futuros.
+- **Date**: 2026-10-29
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: Histórico Operacional de Negócios e Empresas V1 / `.specs/features/deal-company-activity-history`
