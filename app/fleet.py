@@ -169,6 +169,10 @@ class FleetService:
             raise FleetOperationError("packaged tenant head is invalid")
         return head
 
+    def packaged_head(self) -> str:
+        """Return the single tenant migration head bundled with this release."""
+        return self._packaged_head()
+
     def _validate_target_revision(self, target_revision: str) -> str:
         if not target_revision:
             raise FleetOperationError("target revision is required")

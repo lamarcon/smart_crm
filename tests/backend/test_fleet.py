@@ -24,8 +24,8 @@ TEST_DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
-TENANT_HEAD = "f6b1d3a8c2e4"
-PREVIOUS_TENANT_HEAD = "c7f3a9d8e2b1"
+TENANT_HEAD = "a8d4e6f2b1c9"
+PREVIOUS_TENANT_HEAD = "f6b1d3a8c2e4"
 OLD_REVISION = "9f7a2c31d5e8"
 
 
@@ -343,6 +343,33 @@ def test_migration_continues_after_independent_tenant_failure(fleet_setup) -> No
         ("cliente-ready", True, "already_current"),
     ]
     assert "dsn=must-not-leak" not in repr(results)
+
+
+def test_already_current_retry_does_not_advance_profile_version(fleet_setup) -> None:  # noqa: ANN001
+    service, control, _secrets, tenant_ids, _urls = fleet_setup
+    with control.session_scope() as session:
+        before = session.get(ControlTenant, tenant_ids["ready"])
+        assert before is not None
+        profile_version_before = before.profile_version
+
+    first = service.migrate(
+        ["cliente-ready"],
+        target_revision=TENANT_HEAD,
+        backup_acknowledged=True,
+        confirmed=True,
+    )
+    second = service.migrate(
+        ["cliente-ready"],
+        target_revision=TENANT_HEAD,
+        backup_acknowledged=True,
+        confirmed=True,
+    )
+
+    with control.session_scope() as session:
+        after = session.get(ControlTenant, tenant_ids["ready"])
+        assert after is not None
+        assert after.profile_version == profile_version_before
+    assert [first[0].code, second[0].code] == ["already_current", "already_current"]
 
 
 def test_migration_invokes_only_explicitly_selected_tenants(fleet_setup) -> None:  # noqa: ANN001

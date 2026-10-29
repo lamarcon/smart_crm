@@ -132,11 +132,11 @@ O deploy v0.3.3 passou pelos testes de release, mas exigiu correções manuais e
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DEPLOY-01 | Migração tenant consistente | Design | Pending |
+| DEPLOY-01 | Migração tenant consistente | Execute | In Progress |
 | DEPLOY-02 | Reparação idempotente sob RLS | Execute | Verified |
 | DEPLOY-03 | Provisionamento de administrador completo | Execute | Verified |
 | DEPLOY-04 | Cutover Windows verificável | Design | Pending |
-| DEPLOY-05 | Gate de release contra regressões | Design | Pending |
+| DEPLOY-05 | Gate de release contra regressões | Execute | In Progress |
 
 **Coverage:** 5 total, 5 mapped to tasks, 0 unmapped.
 

@@ -125,6 +125,8 @@ T6 → T7 → T8
 
 ### T3: Expose explicit fleet migration CLI
 
+**Status**: Complete
+
 **What**: Add a non-web CLI that preflights and migrates explicitly selected tenants through `FleetService` with redacted output and deterministic exit codes.
 **Where**: `app/fleet_cli.py`
 **Depends on**: T2
@@ -138,16 +140,18 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Empty selection, missing backup acknowledgement or missing confirmation fails before tenant connection.
-- [ ] Successful results accept only `migrated` and `already_current` and return exit code 0.
-- [ ] Any tenant failure returns non-zero and identifies only slug/code, never DSN or secret.
-- [ ] Repeated current migration does not advance `profile_version` again.
-- [ ] Quick gate passes with no skipped or deleted tests.
+- [x] Empty selection, missing backup acknowledgement or missing confirmation fails before tenant connection.
+- [x] Successful results accept only `migrated` and `already_current` and return exit code 0.
+- [x] Any tenant failure returns non-zero and identifies only slug/code, never DSN or secret.
+- [x] Repeated current migration does not advance `profile_version` again.
+- [x] Fleet gate passes with no skipped or deleted tests (`40 passed`).
 
 **Tests**: unit/integration
 **Gate**: quick
 
 **Commit**: `feat(fleet): add explicit tenant migration cli`
+
+**Evidence**: `tests/backend/test_fleet_cli.py` and `tests/backend/test_fleet.py`; CLI contract, real selected-schema migration and repeated `already_current`, executed on 2026-10-29 (`40 passed in 15.52s`).
 
 ### T4: Harden Windows PowerShell deployment primitives
 
