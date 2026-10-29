@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.control_database import ControlDatabase, ControlRepository
 from app.models import CrmUser, TenantIdentity, Workspace
+from app.repositories.workspace import _packed
 from app.schemas import normalize_tenant_identifier
 from app.security.database_urls import (
     insecure_tenant_loopback_enabled,
@@ -170,6 +171,29 @@ class AdminService:
         )
 
     @staticmethod
+    def _admin_workspace_payload(admin: CrmUser) -> dict[str, object]:
+        name_parts = admin.name.split()
+        avatar = "".join(
+            part[0].upper()
+            for part in (name_parts[:1] + name_parts[-1:])
+            if part
+        )
+        if len(name_parts) == 1:
+            avatar = avatar[:1]
+        return _packed(
+            {
+                "id": admin.id,
+                "name": admin.name,
+                "email": admin.email,
+                "jobTitle": admin.job_title,
+                "role": admin.role,
+                "status": admin.status,
+                "avatar": avatar,
+            },
+            0,
+        )
+
+    @staticmethod
     def _commercial_counts(session: Session, workspace_id: str) -> dict[str, int]:
         return {
             table: int(
@@ -301,6 +325,7 @@ class AdminService:
                             status="Ativo",
                             payload={},
                         )
+                        admin.payload = self._admin_workspace_payload(admin)
                         tenant_session.add(admin)
                         tenant_session.flush()
                     elif tenant.status != "active":
@@ -311,6 +336,7 @@ class AdminService:
                         admin.auth_version += 1
                         admin.role = "Administrador"
                         admin.status = "Ativo"
+                        admin.payload = self._admin_workspace_payload(admin)
                         tenant_session.flush()
                     if (
                         admin.password_hash is None

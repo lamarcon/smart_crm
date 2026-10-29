@@ -242,13 +242,30 @@ def test_activate_default_binds_identity_and_first_admin_before_active(admin_set
         ).one()
         connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', false)"))
         admin = connection.execute(
-            text("SELECT normalized_email, role, auth_enabled, password_hash FROM crm_users")
+            text(
+                "SELECT id, normalized_email, role, status, auth_enabled, "
+                "password_hash, payload FROM crm_users"
+            )
         ).one()
     tenant_engine.dispose()
     assert tuple(identity) == (registered.tenant_id, "default")
-    assert tuple(admin) == (
-        "admin@cliente.test", "Administrador", True, "$argon2id$test$senha segura 123"
-    )
+    assert admin.normalized_email == "admin@cliente.test"
+    assert admin.role == "Administrador"
+    assert admin.status == "Ativo"
+    assert admin.auth_enabled is True
+    assert admin.password_hash == "$argon2id$test$senha segura 123"
+    assert admin.payload == {
+        "position": 0,
+        "record": {
+            "id": admin.id,
+            "name": "Administrador",
+            "email": "admin@cliente.test",
+            "jobTitle": "",
+            "role": "Administrador",
+            "status": "Ativo",
+            "avatar": "A",
+        },
+    }
     with control_database.session_scope() as session:
         tenant = ControlRepository(session).get_tenant(registered.tenant_id)
         assert tenant is not None
@@ -320,8 +337,24 @@ def test_resume_after_partial_failure_is_idempotent_and_does_not_duplicate_admin
         slug="cliente-a", admin_email="admin@cliente.test", admin_name="Administrador",
         password="senha segura 123",
     )
+    with service.control_database.session_scope() as session:
+        tenant = ControlRepository(session).get_tenant(registered.tenant_id, for_update=True)
+        assert tenant is not None
+        tenant.status = "provisioning"
+        tenant.provisioning_checkpoint = "tenant_verified"
+    engine = create_engine(tenant_url)
+    with engine.begin() as connection:
+        connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+        connection.execute(
+            text(
+                "UPDATE crm_users SET payload = "
+                "'{\"position\": 7, \"record\": {\"legacy\": true}}'::jsonb"
+            )
+        )
+    engine.dispose()
     second = service.resume_provisioning(
-        slug="cliente-a", admin_email="admin@cliente.test", admin_name="Administrador",
+        slug="cliente-a", admin_email="admin@cliente.test",
+        admin_name="Administrador Atualizado",
         password="senha segura 123",
     )
 
@@ -331,7 +364,23 @@ def test_resume_after_partial_failure_is_idempotent_and_does_not_duplicate_admin
         connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', false)"))
         assert connection.scalar(text("SELECT count(*) FROM crm_users")) == 1
         assert connection.scalar(text("SELECT count(*) FROM tenant_identity")) == 1
+        admin = connection.execute(
+            text("SELECT id, payload, auth_version FROM crm_users")
+        ).one()
     engine.dispose()
+    assert admin.auth_version == 2
+    assert admin.payload == {
+        "position": 0,
+        "record": {
+            "id": admin.id,
+            "name": "Administrador Atualizado",
+            "email": "admin@cliente.test",
+            "jobTitle": "",
+            "role": "Administrador",
+            "status": "Ativo",
+            "avatar": "AA",
+        },
+    }
 
 
 def test_identity_bound_to_another_tenant_never_activates(admin_setup) -> None:  # noqa: ANN001

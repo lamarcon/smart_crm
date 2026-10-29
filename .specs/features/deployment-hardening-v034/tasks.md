@@ -95,6 +95,8 @@ T6 → T7 → T8
 
 ### T2: Persist canonical first-administrator payloads
 
+**Status**: Complete
+
 **What**: Make administrator creation and provisioning resume write the packed workspace payload from canonical columns in the same transaction.
 **Where**: `app/admin_cli.py`
 **Depends on**: T1
@@ -108,16 +110,18 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] First activation stores exact `position` and `record` fields for id, name, email, job title, role, status and avatar.
-- [ ] Resume synchronizes those fields without duplicating the user.
-- [ ] Password and password hash are absent from every payload level.
-- [ ] Existing provisioning preservation assertions remain green.
-- [ ] Quick gate passes with no skipped or deleted tests.
+- [x] First activation stores exact `position` and `record` fields for id, name, email, job title, role, status and avatar.
+- [x] Resume synchronizes those fields without duplicating the user.
+- [x] Password and password hash are absent from every payload level.
+- [x] Existing provisioning preservation assertions remain green.
+- [x] Administrative gate passes with no skipped or deleted tests (`25 passed`).
 
 **Tests**: integration
 **Gate**: quick
 
 **Commit**: `fix(admin): persist canonical workspace user payload`
+
+**Evidence**: `tests/backend/test_admin.py`; creation and partial-failure resume scenarios plus the full administrative suite, executed on 2026-10-29 (`25 passed in 12.23s`).
 
 ### T3: Expose explicit fleet migration CLI
 
