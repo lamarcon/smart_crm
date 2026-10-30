@@ -98,13 +98,21 @@
 - **Date**: 2026-10-29
 - **Status**: active
 
+### AD-013
+- **Decision**: Convites e redefinições de senha serão tokens de ação de uso único armazenados somente como digest no banco tenant; o plano central manterá apenas resolução do tenant, limites, auditoria e sessões, e a credencial SMTP será protegida por DPAPI sob `SmartCRMService`.
+- **Reason**: Contas e credenciais pertencem ao banco exclusivo da empresa, enquanto os controles transversais já são centrais; essa divisão preserva isolamento, permite cancelamento/reenvio e evita tokens recuperáveis ou senha SMTP em texto aberto.
+- **Trade-off**: Os fluxos coordenam banco tenant, SMTP e plano central sem transação distribuída e precisam de estado explícito de entrega, `auth_version`, operações idempotentes e tratamento de falha parcial.
+- **Scope**: Convites, aceite, recuperação de senha, tokens de ação, SMTP, auditoria, throttling, sessões e configuração Windows de todas as empresas.
+- **Date**: 2026-10-30
+- **Status**: active
+
 ## Handoff
 
-- **Feature**: Histórico Operacional de Negócios e Empresas V1 / `.specs/features/deal-company-activity-history`
-- **Phase / Task**: Execute autorizado; baseline anterior à T1 em andamento
-- **Completed**: especificação, arquitetura, tarefas, ferramentas e execução em lotes aprovadas; validadores de spec/tasks com 0 erros e 0 avisos
-- **In-progress** (file:line): `.specs/features/deal-company-activity-history/tasks.md`
-- **Next step**: recapturar baseline, registrar o plano aprovado e iniciar o lote da Fase 1 (T1–T4)
+- **Feature**: Convites de usuários e recuperação de senha / `.specs/features/user-invitations-password-recovery`
+- **Phase / Task**: Execute autorizado com subagentes; preparando baseline e lote T1–T5
+- **Completed**: contexto e especificação confirmados; primeira arquitetura tenant-local aprovada; design e 14 tarefas aprovados; validadores de spec/tasks em 0 erros e 0 avisos
+- **In-progress** (file:line): `.specs/features/user-invitations-password-recovery/tasks.md`
+- **Next step**: registrar o plano aprovado, capturar baseline e despachar o subagente do lote T1–T5
 - **Blockers**: none
-- **Uncommitted files**: novos documentos em `.specs/features/deal-company-activity-history/` e atualização de `.specs/STATE.md`; preservar demais alterações preexistentes do workspace
-- **Branch**: main
+- **Uncommitted files**: novos documentos em `.specs/features/user-invitations-password-recovery/` e atualização de `.specs/STATE.md`; preservar `.specs/LESSONS.md` e `.specs/lessons.json` preexistentes
+- **Branch**: `codex/deploy-hardening-v0.3.4`
