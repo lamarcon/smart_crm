@@ -215,6 +215,8 @@ T6 → T7 → T8
 
 ### T6: Coordinate the temporary migration task
 
+**Status**: Complete
+
 **What**: Add the administrative script that registers, starts, waits for and always removes the one-shot `SmartCRMService` migration task.
 **Where**: `deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1`
 **Depends on**: T5
@@ -228,16 +230,18 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Only a qualified `SmartCRMService` credential can register the temporary task.
-- [ ] Unique task/evidence names are scoped to the release and tenant.
-- [ ] Success requires exit code 0 and matching evidence tenant/release/result.
-- [ ] Timeout, malformed evidence and task failure stop/remove the temporary task in `finally`.
-- [ ] Full gate passes with no skipped or deleted tests.
+- [x] Only a qualified `SmartCRMService` credential can register the temporary task.
+- [x] Unique task/evidence names are scoped to the release and tenant.
+- [x] Success requires exit code 0 and matching evidence tenant/release/result.
+- [x] Timeout, malformed evidence and task failure stop/remove the temporary task in `finally`.
+- [x] Full gate passes with no skipped or deleted tests.
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(deploy): coordinate one-shot fleet migration task`
+
+**Evidence**: `invoke-fleet-migration-task.ps1` validates the qualified service identity, creates a release/tenant/operation-scoped evidence directory with a restricted writable ACL, registers a finite one-shot task, requires a fresh zero exit result plus matching redacted evidence, and stops/unregisters the task in `finally`. Simulated Windows PowerShell 5.1 tests cover success, timeout, malformed evidence, task failure and wrong identity; the full backend deployment gate passed with local PostgreSQL (`123 passed in 54.04s`) on 2026-10-29.
 
 ### T7: Replace direct tenant Alembic with verified cutover
 

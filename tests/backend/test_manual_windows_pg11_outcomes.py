@@ -8,12 +8,15 @@ import subprocess
 import zipfile
 from pathlib import Path
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 POWERSHELL = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
 POLICY = PROJECT_ROOT / "deploy/manual-windows-pg11/deployment-policy.ps1"
 START = PROJECT_ROOT / "deploy/manual-windows-pg11/start-smart-crm.ps1"
 FLEET_RUNNER = PROJECT_ROOT / "deploy/manual-windows-pg11/run-fleet-migration.ps1"
+FLEET_TASK_INVOKER = PROJECT_ROOT / "deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1"
 ENV_EXAMPLE = PROJECT_ROOT / "deploy/manual-windows-pg11/server.env.example"
 
 SHARED_POSTGRES_HBA = """\
@@ -161,6 +164,150 @@ def run_fleet_runner(
             "Bypass",
             "-Command",
             command,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def run_fleet_task_invoker(tmp_path: Path, scenario: str) -> subprocess.CompletedProcess[str]:
+    app_root = tmp_path / "smart-crm-v0.3.4"
+    runner = app_root / "deploy/manual-windows-pg11/run-fleet-migration.ps1"
+    python = app_root / ".venv/Scripts/python.exe"
+    runner.parent.mkdir(parents=True)
+    python.parent.mkdir(parents=True)
+    runner.write_text("# fixture\n", encoding="utf-8")
+    python.write_bytes(b"")
+    env_file = tmp_path / "server.env"
+    env_file.write_text("SMART_CRM_DB_NAME=smartcrm\n", encoding="utf-8")
+    evidence_dir = tmp_path / "evidence"
+    harness = tmp_path / "invoke-harness.ps1"
+    harness.write_text(
+        rf"""
+$ErrorActionPreference = "Stop"
+$global:scenario = {powershell_literal(scenario)}
+$global:started = $false
+$global:registered = $false
+$global:unregistered = $false
+$global:stopped = $false
+$global:action = $null
+$global:taskName = $null
+
+function New-ScheduledTaskAction {{
+    param($Execute, $Argument, $WorkingDirectory)
+    return [pscustomobject]@{{Execute=$Execute;Arguments=$Argument;WorkingDirectory=$WorkingDirectory}}
+}}
+function New-ScheduledTaskSettingsSet {{
+    param([switch]$StartWhenAvailable, $ExecutionTimeLimit, $MultipleInstances)
+    return [pscustomobject]@{{ExecutionTimeLimit=$ExecutionTimeLimit}}
+}}
+function Register-ScheduledTask {{
+    param($TaskName, $Action, $Settings, $User, $Password, $RunLevel, $Description, [switch]$Force)
+    $global:registered = $true
+    $global:action = $Action
+    $global:taskName = $TaskName
+    $global:registeredUser = $User
+}}
+function Start-ScheduledTask {{
+    param($TaskName)
+    $global:started = $true
+    if ($global:scenario -eq 'timeout') {{ return }}
+    $arguments = $global:action.Arguments
+    if ($arguments -notmatch '-EvidencePath\s+"([^"]+)"') {{ throw 'evidence path missing' }}
+    $path = $Matches[1]
+    if ($global:scenario -eq 'malformed') {{
+        [IO.File]::WriteAllText($path, '{{bad json', (New-Object Text.UTF8Encoding($false)))
+        return
+    }}
+    $arguments -match '-AppRoot\s+"([^"]+)"' | Out-Null
+    $release = $Matches[1]
+    $arguments -match '-TenantSlug\s+"([^"]+)"' | Out-Null
+    $tenant = $Matches[1]
+    $failed = $global:scenario -eq 'failure'
+    $payload = [ordered]@{{
+        schemaVersion=1
+        releasePath=$release
+        targetRevision='a8d4e6f2b1c9'
+        tenants=@([ordered]@{{
+            slug=$tenant
+            succeeded=(-not $failed)
+            code=$(if ($failed) {{'migration_failed'}} else {{'migrated'}})
+        }})
+        exitCode=$(if ($failed) {{7}} else {{0}})
+    }}
+    [IO.File]::WriteAllText(
+        $path,
+        ($payload | ConvertTo-Json -Depth 4),
+        (New-Object Text.UTF8Encoding($false))
+    )
+}}
+function Get-ScheduledTask {{
+    param($TaskName)
+    if ($global:scenario -eq 'timeout' -and $global:started) {{
+        return [pscustomobject]@{{State='Running'}}
+    }}
+    return [pscustomobject]@{{State='Ready'}}
+}}
+function Get-ScheduledTaskInfo {{
+    param($TaskName)
+    if (-not $global:started) {{
+        return [pscustomobject]@{{LastRunTime=[datetime]::MinValue;LastTaskResult=267011}}
+    }}
+    $result = if ($global:scenario -eq 'failure') {{7}} else {{0}}
+    return [pscustomobject]@{{LastRunTime=[datetime]::UtcNow;LastTaskResult=$result}}
+}}
+function Stop-ScheduledTask {{ param($TaskName); $global:stopped = $true }}
+function Unregister-ScheduledTask {{
+    param($TaskName, [switch]$Confirm)
+    $global:unregistered = $true
+}}
+function icacls {{ $global:LASTEXITCODE = 0 }}
+
+$secure = New-Object Security.SecureString
+foreach ($character in 'fixture-only'.ToCharArray()) {{ $secure.AppendChar($character) }}
+$secure.MakeReadOnly()
+$user = if ($global:scenario -eq 'wrong_user') {{'HOST\Other'}} else {{'HOST\SmartCRMService'}}
+$credential = New-Object Management.Automation.PSCredential($user, $secure)
+$threw = $false
+try {{
+    & {powershell_literal(str(FLEET_TASK_INVOKER))} `
+        -AppRoot {powershell_literal(str(app_root))} `
+        -EnvFile {powershell_literal(str(env_file))} `
+        -TenantSlug 'brbots' `
+        -EvidenceDirectory {powershell_literal(str(evidence_dir))} `
+        -ServiceCredential $credential `
+        -BackupAcknowledged `
+        -TimeoutSeconds 0.03 `
+        -PollMilliseconds 1
+}}
+catch {{
+    $threw = $true
+}}
+
+if ($global:scenario -eq 'success') {{
+    if ($threw -or -not $global:registered -or -not $global:unregistered) {{ exit 41 }}
+    if ($global:registeredUser -ne 'HOST\SmartCRMService') {{ exit 42 }}
+    exit 0
+}}
+if ($global:scenario -eq 'wrong_user') {{
+    if (-not $threw -or $global:registered) {{ exit 43 }}
+    exit 9
+}}
+if (-not $threw -or -not $global:registered -or -not $global:unregistered) {{ exit 44 }}
+if ($global:scenario -eq 'timeout' -and -not $global:stopped) {{ exit 45 }}
+exit 9
+""",
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        [
+            str(POWERSHELL),
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(harness),
         ],
         text=True,
         capture_output=True,
@@ -711,6 +858,53 @@ def test_fleet_runner_contract_has_no_plaintext_credential_parameter():
     assert "finally" in runner
     assert "Move-Item" in runner
     assert "ConvertTo-Json" in runner
+
+
+def test_fleet_task_invoker_registers_validates_and_removes_one_shot_task(
+    tmp_path: Path,
+):
+    result = run_fleet_task_invoker(tmp_path, "success")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    evidence_files = list((tmp_path / "evidence").rglob("*.json"))
+    assert len(evidence_files) == 1
+    payload = json.loads(evidence_files[0].read_text(encoding="utf-8-sig"))
+    assert payload["releasePath"] == str(tmp_path / "smart-crm-v0.3.4")
+    assert payload["tenants"] == [
+        {"slug": "brbots", "succeeded": True, "code": "migrated"}
+    ]
+
+
+@pytest.mark.parametrize("scenario", ["timeout", "malformed", "failure"])
+def test_fleet_task_invoker_failure_paths_cleanup_and_fail(
+    tmp_path: Path, scenario: str
+):
+    result = run_fleet_task_invoker(tmp_path, scenario)
+
+    assert result.returncode == 9, result.stdout + result.stderr
+
+
+def test_fleet_task_invoker_rejects_non_service_identity_before_registration(
+    tmp_path: Path,
+):
+    result = run_fleet_task_invoker(tmp_path, "wrong_user")
+
+    assert result.returncode == 9, result.stdout + result.stderr
+
+
+def test_fleet_task_invoker_contract_is_unique_finite_and_secret_free():
+    invoker = FLEET_TASK_INVOKER.read_text(encoding="utf-8")
+
+    assert "[PSCredential]$ServiceCredential" in invoker
+    assert '"SmartCRMService"' in invoker
+    assert "[guid]::NewGuid" in invoker
+    assert "run-fleet-migration.ps1" in invoker
+    assert "Get-ScheduledTaskInfo" in invoker
+    assert "TimeoutSeconds" in invoker
+    assert "Unregister-ScheduledTask" in invoker
+    assert "finally" in invoker
+    assert "icacls" in invoker
+    assert "SMART_CRM_DB_PASSWORD" not in invoker
 
 
 def test_start_script_uses_the_powershell_51_safe_logged_process_helper():
