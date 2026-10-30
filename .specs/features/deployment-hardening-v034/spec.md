@@ -6,10 +6,10 @@ O deploy v0.3.3 passou pelos testes de release, mas exigiu correções manuais e
 
 ## Goals
 
-- [ ] Atualizar uma release Windows lado a lado sem edição manual de banco, arquivo de ambiente ou tarefa agendada.
-- [ ] Manter banco tenant, plano de controle e metadados de roteamento na mesma revisão confirmada.
-- [ ] Reparar, de forma idempotente, tenants afetados pelo seed vazio e usuários administrativos sem payload de interface.
-- [ ] Impedir a publicação de uma release quando migração, processo ativo, saúde ou versão não puderem ser comprovados.
+- [x] Atualizar uma release Windows lado a lado sem edição manual de banco, arquivo de ambiente ou tarefa agendada.
+- [x] Manter banco tenant, plano de controle e metadados de roteamento na mesma revisão confirmada.
+- [x] Reparar, de forma idempotente, tenants afetados pelo seed vazio e usuários administrativos sem payload de interface.
+- [x] Impedir a publicação de uma release quando migração, processo ativo, saúde ou versão não puderem ser comprovados.
 
 ## Out of Scope
 
@@ -136,7 +136,7 @@ O deploy v0.3.3 passou pelos testes de release, mas exigiu correções manuais e
 | DEPLOY-02 | Reparação idempotente sob RLS | Execute | Verified |
 | DEPLOY-03 | Provisionamento de administrador completo | Execute | Verified |
 | DEPLOY-04 | Cutover Windows verificável | Execute | Verified |
-| DEPLOY-05 | Gate de release contra regressões | Execute | In Progress |
+| DEPLOY-05 | Gate de release contra regressões | Execute | Verified |
 
 **Coverage:** 5 total, 5 mapped to tasks, 0 unmapped.
 

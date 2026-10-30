@@ -234,6 +234,7 @@ def test_release_job_waits_for_quality_and_runs_windows_only_contracts() -> None
     assert "tests/backend/test_github_release_delivery.py" in workflow
     assert "tests/backend/test_manual_windows_pg11_deployment.py" in workflow
     assert "tests/backend/test_manual_windows_pg11_outcomes.py" in workflow
+    assert "tests/backend/test_windows_multitenant_bundle.py" in workflow
     assert workflow.index("Run Windows deployment tests") < workflow.index(
         "Build and verify the offline bundle"
     )

@@ -277,6 +277,8 @@ T6 → T7 → T8
 
 ### T8: Package and gate the hardened deploy path
 
+**Status**: Complete
+
 **What**: Include the CLI and both migration scripts in the offline bundle and extend release contracts so missing or regressed deploy components block packaging.
 **Where**: `scripts/build_manual_windows_pg11_bundle.py`
 **Depends on**: T7
@@ -290,16 +292,18 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Bundle contains `app/fleet_cli.py`, repair migration and both service-account migration scripts.
-- [ ] Internal manifest covers every new file and integrity verification passes.
-- [ ] Windows release tests execute all deployment regression tests before bundle creation.
-- [ ] Full backend and UI gates pass without skipped/deleted tests.
-- [ ] No `APP_VERSION`, tag, push, GitHub release or production state is changed.
+- [x] Bundle contains `app/fleet_cli.py`, repair migration and both service-account migration scripts.
+- [x] Internal manifest covers every new file and integrity verification passes.
+- [x] Windows release tests execute all deployment regression tests before bundle creation.
+- [x] Full backend and UI gates pass without skipped/deleted tests.
+- [x] No `APP_VERSION`, tag, push, GitHub release or production state is changed.
 
 **Tests**: integration
 **Gate**: build
 
 **Commit**: `build(release): package hardened windows deploy path`
+
+**Evidence**: The bundle builder rejects a missing hardened component; bundle tests require `app/fleet_cli.py`, revision `a8d4e6f2b1c9` and both service-account scripts in the ZIP and manifest; the Windows release job runs deployment, outcome and bundle contracts before packaging. Focused release tests passed (`51 passed`) and the build gate passed (`859` backend plus `122` UI tests) on 2026-10-29 without changing `APP_VERSION` or any remote state.
 
 ---
 

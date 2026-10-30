@@ -39,7 +39,12 @@ def test_runtime_collection_contains_both_lineages_and_admin_fleet_modules() -> 
     assert "migrations_control/env.py" in files
     assert "alembic.ini" in files
     assert "alembic-control.ini" in files
-    assert {"app/admin_cli.py", "app/fleet.py", "app/server.py"} <= files
+    assert {"app/admin_cli.py", "app/fleet.py", "app/fleet_cli.py", "app/server.py"} <= files
+    assert {
+        "migrations/versions/a8d4e6f2b1c9_repair_tenant_deploy_state.py",
+        "deploy/manual-windows-pg11/run-fleet-migration.ps1",
+        "deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1",
+    } <= files
 
 
 def test_runtime_collection_excludes_real_secrets_and_local_state() -> None:
@@ -47,6 +52,20 @@ def test_runtime_collection_excludes_real_secrets_and_local_state() -> None:
 
     assert not any(path.endswith(("server.env", ".bin", ".key")) for path in files)
     assert not any(path.startswith((".git/", ".specs/", ".venv/", "tests/")) for path in files)
+
+
+def test_runtime_collection_rejects_missing_hardened_component(monkeypatch) -> None:
+    monkeypatch.setattr(
+        builder,
+        "REQUIRED_DEPLOYMENT_FILES",
+        (
+            Path("app/fleet_cli.py"),
+            Path("deploy/manual-windows-pg11/missing-required-script.ps1"),
+        ),
+    )
+
+    with pytest.raises(FileNotFoundError, match="missing-required-script.ps1"):
+        builder.collect_runtime_files(PROJECT_ROOT)
 
 
 def test_wheel_contract_accepts_argon2_cp311_windows_x64_set(tmp_path: Path) -> None:
@@ -117,6 +136,7 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
             "alembic-control.ini",
             "app/admin_cli.py",
             "app/fleet.py",
+            "app/fleet_cli.py",
             "app/repositories/activity.py",
             "app/server.py",
             "app/services/activity.py",
@@ -126,6 +146,9 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
             "migrations/versions/c7f3a9d8e2b1_add_customizable_deal_pipeline.py",
             "migrations/versions/e1c4a7b9d2f6_add_crm_activity_events.py",
             "migrations/versions/f6b1d3a8c2e4_repair_custom_field_history_redaction.py",
+            "migrations/versions/a8d4e6f2b1c9_repair_tenant_deploy_state.py",
+            "deploy/manual-windows-pg11/run-fleet-migration.ps1",
+            "deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1",
         } <= names
         assert not any(name.endswith(("server.env", ".bin", ".key")) for name in names)
         manifest = bundle.read("MANIFEST.sha256").decode("utf-8")
@@ -133,6 +156,9 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
         assert "migrations/versions/c7f3a9d8e2b1_add_customizable_deal_pipeline.py" in manifest
         assert "migrations/versions/e1c4a7b9d2f6_add_crm_activity_events.py" in manifest
         assert "migrations/versions/f6b1d3a8c2e4_repair_custom_field_history_redaction.py" in manifest
+        assert "migrations/versions/a8d4e6f2b1c9_repair_tenant_deploy_state.py" in manifest
+        assert "deploy/manual-windows-pg11/run-fleet-migration.ps1" in manifest
+        assert "deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1" in manifest
         assert "app/repositories/activity.py" in manifest
         assert "app/services/activity.py" in manifest
         assert "app/services/deal_automation.py" in manifest
@@ -140,6 +166,7 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
         assert "app/version.py" in manifest
         assert b'APP_VERSION = "0.3.3"' in bundle.read("app/version.py")
         assert "app/fleet.py" in manifest
+        assert "app/fleet_cli.py" in manifest
         assert "argon2_cffi_bindings-25.1.0-cp39-abi3-win_amd64.whl" in manifest
     assert digest_file.read_text(encoding="ascii") == f"{builder.sha256(archive)}  {archive.name}\n"
 

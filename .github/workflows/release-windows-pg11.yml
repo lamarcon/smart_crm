@@ -114,6 +114,7 @@ jobs:
           tests/backend/test_github_release_delivery.py
           tests/backend/test_manual_windows_pg11_deployment.py
           tests/backend/test_manual_windows_pg11_outcomes.py
+          tests/backend/test_windows_multitenant_bundle.py
 
       - name: Build and verify the offline bundle
         shell: pwsh
