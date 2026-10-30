@@ -397,3 +397,45 @@ function Assert-SmartCrmReleaseReadiness {
         throw "A versao ativa diverge da release esperada."
     }
 }
+
+function Wait-SmartCrmReleaseReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedVersion,
+        [double]$TimeoutSeconds = 30,
+        [int]$PollMilliseconds = 500,
+        [scriptblock]$Request
+    )
+    if ($TimeoutSeconds -le 0 -or $PollMilliseconds -lt 1) {
+        throw "Parametros de espera da release sao invalidos."
+    }
+    if ($null -eq $Request) {
+        $Request = {
+            param($Uri)
+            Invoke-RestMethod -Uri $Uri -TimeoutSec 3
+        }
+    }
+
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+        try {
+            $health = & $Request "http://127.0.0.1:8080/health"
+            $version = & $Request "http://127.0.0.1:8080/api/version"
+            Assert-SmartCrmReleaseReadiness `
+                -Health $health `
+                -Version $version `
+                -ExpectedVersion $ExpectedVersion
+            return [pscustomobject]@{
+                Health = $health
+                Version = $version
+            }
+        }
+        catch {
+            if ($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+                break
+            }
+            Start-Sleep -Milliseconds $PollMilliseconds
+        }
+    }
+    throw "A release esperada $ExpectedVersion nao ficou pronta dentro do limite."
+}

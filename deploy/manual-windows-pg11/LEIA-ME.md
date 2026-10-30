@@ -199,10 +199,10 @@ Se o arquivo existente ainda nao tiver `SMART_CRM_CONTROL_DATABASE_URL`, preserv
 $envPath = "C:\ProgramData\SmartCRM\server.env"
 $nextEnv = "C:\ProgramData\SmartCRM\server.env.next"
 $backupEnv = "C:\ProgramData\SmartCRM\server.env.pre-multitenant"
-$legacy = Get-Content -LiteralPath $envPath |
-    Where-Object { $_ -and -not $_.StartsWith('#') } |
-    Out-String | ConvertFrom-StringData
 . "$releaseRoot\deploy\manual-windows-pg11\deployment-policy.ps1"
+$legacy = Read-SmartCrmEnvironment `
+    -Path $envPath `
+    -AllowedKeys @(Get-SmartCrmEnvironmentAllowedKeys)
 
 $bytes = New-Object byte[] 32
 $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
@@ -229,9 +229,10 @@ O literal `SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1` autoriza somente o Postgr
 Carregue a configuracao sem exibir valores e copie temporariamente a senha de controle:
 
 ```powershell
-$settings = Get-Content C:\ProgramData\SmartCRM\server.env |
-    Where-Object { $_ -and -not $_.StartsWith('#') } |
-    Out-String | ConvertFrom-StringData
+. "$releaseRoot\deploy\manual-windows-pg11\deployment-policy.ps1"
+$settings = Read-SmartCrmEnvironment `
+    -Path C:\ProgramData\SmartCRM\server.env `
+    -AllowedKeys @(Get-SmartCrmEnvironmentAllowedKeys)
 $controlUri = [Uri]($settings.SMART_CRM_CONTROL_DATABASE_URL -replace '^postgresql\+psycopg', 'postgresql')
 $controlUserInfo = $controlUri.UserInfo -split ':', 2
 $controlPassword = [Uri]::UnescapeDataString($controlUserInfo[1])
@@ -289,36 +290,43 @@ Este passo altera os dois schemas e troca a tarefa que atende a porta 8080. Exec
 $serviceCredential = Get-Credential `
     -UserName $serviceAccount `
     -Message "Credencial da conta dedicada do Smart CRM"
-Export-ScheduledTask -TaskName SmartCRM |
-    Set-Content C:\ProgramData\SmartCRM\SmartCRM-task.pre-multitenant.xml
-Stop-ScheduledTask -TaskName SmartCRM -ErrorAction SilentlyContinue
+$expectedVersion = (& "$releaseRoot\.venv\Scripts\python.exe" `
+    -c "from app.version import APP_VERSION; print(APP_VERSION)").Trim()
 
 & "$releaseRoot\deploy\manual-windows-pg11\initialize-and-test.ps1" `
     -AppRoot $releaseRoot `
     -EnvFile C:\ProgramData\SmartCRM\server.env `
     -SharedPostgres `
     -PgHbaPath $pgHbaPath `
+    -TenantSlug brbots `
+    -ExpectedVersion $expectedVersion `
+    -BackupAcknowledged `
     -ServiceCredential $serviceCredential
 ```
 
 O inicializador executa, nesta ordem:
 
 1. `alembic-control.ini` ate `c01a5d8e4f20` e confirma exatamente esse head;
-2. `alembic.ini` no database existente `smartcrm` de `c7f3a9d8e2b1` ate `f6b1d3a8c2e4` e confirma exatamente esse head;
-3. registra a tarefa `SmartCRM` na nova release usando `SmartCRMService`;
-4. valida `http://127.0.0.1:8080/health`.
+2. executa a migracao tenant ate `a8d4e6f2b1c9` por uma tarefa temporaria sob `SmartCRMService`, usando `FleetService` e os segredos DPAPI;
+3. exige evidencia de que o tenant e o perfil central chegaram ao mesmo head antes de alterar a tarefa web;
+4. exporta a tarefa anterior para a pasta de recuperacao, para a tarefa e confirma que a porta 8080 foi liberada;
+5. registra a tarefa `SmartCRM` na release imutavel usando `SmartCRMService`;
+6. aceita sucesso somente quando a tarefa, `http://127.0.0.1:8080/health` e `/api/version` comprovam a release esperada.
 
-A linhagem tenant passa por `e1c4a7b9d2f6` e termina na revisao corretiva
-`f6b1d3a8c2e4`. A revisao final repara de forma idempotente bancos que ja foram
-marcados com o head anterior sem a coluna de redacao do historico.
+A linhagem tenant termina na revisao corretiva `a8d4e6f2b1c9`. Ela repara de forma
+idempotente funil e payloads incompletos sob FORCE RLS, sem SQL manual. Nao execute
+`alembic.ini` diretamente e nao altere `expected_tenant_revision` manualmente.
 
-Qualquer falha para antes da publicacao. O startup web nunca executa Alembic. O Apache permanece inalterado.
+Qualquer falha antes da troca deixa a tarefa atual intacta. Se uma falha ocorrer
+depois da troca, o inicializador restaura e reinicia a tarefa anterior; se a
+restauracao automatica falhar, a mensagem informa o XML preservado para recuperacao.
+O startup web nunca executa Alembic. O Apache permanece inalterado.
 
 O resultado obrigatorio e:
 
 ```text
-{"status":"ok","database":"ok"}
-LOCAL GATE: PASS. O Apache pode ser configurado.
+{"status":"ok"}
+LOCAL GATE: PASS release=<VERSAO> tenant=brbots
 ```
 
 ## 7. Registrar a BRBots e criar o primeiro administrador
@@ -328,9 +336,10 @@ DPAPI e vinculado a conta Windows. Abra PowerShell interativo como `SmartCRMServ
 ```powershell
 $releaseRoot = "C:\brbots\apps\smart-crm-<SHA>"
 Set-Location $releaseRoot
-$settings = Get-Content C:\ProgramData\SmartCRM\server.env |
-    Where-Object { $_ -and -not $_.StartsWith('#') } |
-    Out-String | ConvertFrom-StringData
+. "$releaseRoot\deploy\manual-windows-pg11\deployment-policy.ps1"
+$settings = Read-SmartCrmEnvironment `
+    -Path C:\ProgramData\SmartCRM\server.env `
+    -AllowedKeys @(Get-SmartCrmEnvironmentAllowedKeys)
 $env:SMART_CRM_CONTROL_DATABASE_URL = $settings.SMART_CRM_CONTROL_DATABASE_URL
 $env:SMART_CRM_SECRET_STORE = $settings.SMART_CRM_TENANT_SECRET_STORE
 $env:SMART_CRM_TENANT_SECRET_STORE = $settings.SMART_CRM_TENANT_SECRET_STORE
@@ -340,7 +349,7 @@ $tenantDsn = "postgresql+psycopg://smartcrm:$($settings.SMART_CRM_DB_PASSWORD)@1
 Set-Clipboard -Value $tenantDsn
 & .\.venv\Scripts\python.exe -m app.admin_cli `
     register-tenant brbots --display-name "brbots" `
-    --secret-ref brbots-db --expected-revision f6b1d3a8c2e4
+    --secret-ref brbots-db --expected-revision a8d4e6f2b1c9
 Set-Clipboard -Value ""
 Remove-Variable tenantDsn -ErrorAction SilentlyContinue
 
@@ -398,4 +407,4 @@ Nao use `git reset --hard`, nao execute downgrade Alembic improvisado e nao apag
 
 ## 10. Proximas empresas
 
-Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `f6b1d3a8c2e4`, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.
+Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `a8d4e6f2b1c9` pelo fluxo de frota, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.

@@ -48,13 +48,17 @@ def verify_source(root: Path) -> set[str]:
     _require("--no-index" in install and "--find-links" in install, "MPG-06", "offline-only pip flags missing", passed)
     _require(all(token in env_example for token in ("SMART_CRM_DB_NAME=smartcrm", "SMART_CRM_DB_USER=smartcrm", "SMART_CRM_DB_HOST=127.0.0.1", "SMART_CRM_DB_PORT=5432", "REPLACE_WITH_64_HEX_CHARACTERS")) and '"C:\\ProgramData\\SmartCRM"' in install and "New-SmartCrmEnvironmentLines" in install, "MPG-07", "database environment or external-secret contract mismatch", passed)
     _require(not re.search(r"(?i)\b(?:Stop|Restart|Set|Remove)-Service\b|ALTER\s+SYSTEM|pg_ctl", scripts), "MPG-08", "PG11 service mutation command found", passed)
-    _require(all(token in policy for token in (
-        '"alembic-control.ini", "upgrade", "c01a5d8e4f20"',
-        '"alembic.ini", "upgrade", "f6b1d3a8c2e4"',
-    )) and all(token in initialize for token in (
+    _require('"alembic-control.ini", "upgrade", "c01a5d8e4f20"' in policy
+        and all(token in initialize for token in (
         "Get-SmartCrmControlAlembicUpgradeArguments",
-        "Get-SmartCrmTenantAlembicUpgradeArguments",
-    )) and "CREATE TABLE" not in scripts, "MPG-09", "separate Alembic-only schema migration contract missing", passed)
+        "invoke-fleet-migration-task.ps1",
+        "-TenantSlug $TenantSlug",
+        "-BackupAcknowledged",
+    ))
+        and "Get-SmartCrmTenantAlembicUpgradeArguments" not in initialize
+        and "Get-SmartCrmTenantAlembicCurrentArguments" not in initialize
+        and "CREATE TABLE" not in scripts,
+        "MPG-09", "fleet-aware schema migration contract missing", passed)
     _require(
         '"--host", "127.0.0.1", "--port", "8080"' in policy
         and "Get-SmartCrmUvicornArguments" in start
@@ -71,7 +75,8 @@ def verify_source(root: Path) -> set[str]:
             "function Assert-SmartCrmReleaseReadiness",
             "$versionProperty.Value -cne $ExpectedVersion",
         ))
-        and "Test-SmartCrmHealth -Health $health" in initialize
+        and "Wait-SmartCrmReleaseReady" in initialize
+        and "-ExpectedVersion $ExpectedVersion" in initialize
         and "LOCAL GATE: PASS" in initialize,
         "MPG-11",
         "health and exact-version release readiness policy missing",
@@ -79,14 +84,21 @@ def verify_source(root: Path) -> set[str]:
     )
     _require('$_.LocalAddress -eq "127.0.0.1"' in policy and "$ipv4Loopback.Count -eq 0" in policy and "Assert-SmartCrmPostgresListeners -Listeners $listeners" in install, "MPG-12", "exact IPv4 PostgreSQL listener gate missing", passed)
     _require("\\du smartcrm" in readme and "\\l smartcrm" in readme and "nao a recrie nem apague" in readme, "MPG-13", "existing role/database validation guidance missing", passed)
-    _require("Assert-SmartCrmCommandSucceeded" in initialize and initialize.index("Assert-SmartCrmCommandSucceeded") < initialize.index("install-scheduled-task.ps1") and not re.search(r"(?i)httpd\.exe|apache.*restart", initialize), "MPG-14", "migration failure does not block publication", passed)
+    _require("Assert-SmartCrmCommandSucceeded" in initialize
+        and initialize.index("Assert-SmartCrmCommandSucceeded") < initialize.index("invoke-fleet-migration-task.ps1")
+        and initialize.index("invoke-fleet-migration-task.ps1") < initialize.index("install-scheduled-task.ps1")
+        and not re.search(r"(?i)httpd\.exe|apache.*restart", initialize),
+        "MPG-14", "migration failure does not block publication", passed)
     _require(all(token in initialize for token in (
         "Get-SmartCrmControlAlembicCurrentArguments",
-        "Get-SmartCrmTenantAlembicCurrentArguments",
+        "invoke-fleet-migration-task.ps1",
         "Assert-SmartCrmAlembicRevision",
         "c01a5d8e4f20",
-        "f6b1d3a8c2e4",
-    )) and "alembic" not in start.lower(), "MPG-15", "exact revisions are not verified separately before publication or web startup runs migrations", passed)
+    ))
+        and "Get-SmartCrmTenantAlembicCurrentArguments" not in initialize
+        and "a8d4e6f2b1c9" in readme
+        and "alembic" not in start.lower(),
+        "MPG-15", "control and fleet revisions are not verified before publication or web startup runs migrations", passed)
     _require(all(token in readme for token in (
         "smart-crm-<SHA>",
         "Nao sobrescreva a release ativa",

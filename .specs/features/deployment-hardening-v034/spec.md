@@ -132,10 +132,10 @@ O deploy v0.3.3 passou pelos testes de release, mas exigiu correções manuais e
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DEPLOY-01 | Migração tenant consistente | Execute | In Progress |
+| DEPLOY-01 | Migração tenant consistente | Execute | Verified |
 | DEPLOY-02 | Reparação idempotente sob RLS | Execute | Verified |
 | DEPLOY-03 | Provisionamento de administrador completo | Execute | Verified |
-| DEPLOY-04 | Cutover Windows verificável | Execute | In Progress |
+| DEPLOY-04 | Cutover Windows verificável | Execute | Verified |
 | DEPLOY-05 | Gate de release contra regressões | Execute | In Progress |
 
 **Coverage:** 5 total, 5 mapped to tasks, 0 unmapped.
@@ -144,8 +144,8 @@ O deploy v0.3.3 passou pelos testes de release, mas exigiu correções manuais e
 
 ## Success Criteria
 
-- [ ] O caminho de upgrade de v0.3.3 para a próxima revisão conclui sem SQL manual e deixa tenant e plano de controle na mesma revisão.
-- [ ] Um tenant afetado termina com 1 funil, 9 etapas e usuários visíveis nos seletores, sem duplicação em retry.
-- [ ] O inicializador em PowerShell 5.1 não falha por barras invertidas nem por stderr informativo.
-- [ ] O gate confirma simultaneamente tarefa, porta, health e versão alvo antes de declarar sucesso.
+- [x] O caminho de upgrade de v0.3.3 para a próxima revisão conclui sem SQL manual e deixa tenant e plano de controle na mesma revisão.
+- [x] Um tenant afetado termina com 1 funil, 9 etapas e usuários visíveis nos seletores, sem duplicação em retry.
+- [x] O inicializador em PowerShell 5.1 não falha por barras invertidas nem por stderr informativo.
+- [x] O gate confirma simultaneamente tarefa, porta, health e versão alvo antes de declarar sucesso.
 - [ ] Todos os testes locais e o validador independente terminam com PASS antes de qualquer push ou deploy.

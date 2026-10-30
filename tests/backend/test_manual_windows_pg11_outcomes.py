@@ -558,16 +558,22 @@ def test_policy_emits_separate_exact_alembic_and_loopback_uvicorn_commands():
     assert json.loads(uvicorn.stdout) == ["-m", "uvicorn", "app.server:create_central_app", "--factory", "--host", "127.0.0.1", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
 
 
-def test_initializer_migrates_and_verifies_control_then_selected_tenant_before_publish():
+def test_initializer_uses_fleet_then_verified_cutover_without_direct_tenant_alembic():
     deployment = PROJECT_ROOT / "deploy/manual-windows-pg11"
     initialize = (deployment / "initialize-and-test.ps1").read_text(encoding="utf-8")
     start = (deployment / "start-smart-crm.ps1").read_text(encoding="utf-8")
+    readme = (deployment / "LEIA-ME.md").read_text(encoding="utf-8")
     ordered_tokens = [
         "Get-SmartCrmControlAlembicUpgradeArguments",
         "Get-SmartCrmControlAlembicCurrentArguments",
-        "Get-SmartCrmTenantAlembicUpgradeArguments",
-        "Get-SmartCrmTenantAlembicCurrentArguments",
+        "invoke-fleet-migration-task.ps1",
+        "Export-ScheduledTask",
+        "Stop-ScheduledTask",
+        "Wait-SmartCrmPortReleased",
         "install-scheduled-task.ps1",
+        "Assert-SmartCrmScheduledTaskTarget",
+        "Wait-SmartCrmReleaseReady",
+        "LOCAL GATE: PASS",
     ]
 
     assert all(token in initialize for token in ordered_tokens)
@@ -575,10 +581,25 @@ def test_initializer_migrates_and_verifies_control_then_selected_tenant_before_p
         initialize.index(token) for token in ordered_tokens
     )
     assert "$env:SMART_CRM_CONTROL_DATABASE_URL" in initialize
-    assert "$env:SMART_CRM_DATABASE_URL" in initialize
     assert "Assert-SmartCrmAlembicRevision" in initialize
     assert "c01a5d8e4f20" in initialize
-    assert "f6b1d3a8c2e4" in initialize
+    assert "Get-SmartCrmTenantAlembicUpgradeArguments" not in initialize
+    assert "Get-SmartCrmTenantAlembicCurrentArguments" not in initialize
+    assert "SMART_CRM_DATABASE_URL" not in initialize
+    assert "ConvertFrom-StringData" not in initialize
+    assert "[string]$TenantSlug" in initialize
+    assert "[string]$ExpectedVersion" in initialize
+    assert "[switch]$BackupAcknowledged" in initialize
+    assert "Register-ScheduledTask" in initialize
+    assert "-Xml" in initialize
+    assert "recovery" in initialize.lower()
+    assert "$previousTaskXml" in initialize
+    assert "Start-ScheduledTask -TaskName $TaskName" in initialize
+    assert "a tarefa anterior foi restaurada" in initialize
+    assert "Use o XML preservado em $recoveryPath" in initialize
+    assert readme.count("initialize-and-test.ps1") == 1
+    assert "UPDATE control_tenants" not in readme
+    assert "nao altere `expected_tenant_revision` manualmente" in readme
     assert "alembic" not in start.lower()
 
 
@@ -593,7 +614,7 @@ def test_pipeline_release_preserves_side_by_side_identity_hba_and_rollback_contr
     assert "host smartcrm,smartcrm_control all 0.0.0.0/0 reject" in policy
     assert "restaure a tarefa anterior" in readme
     assert "Rollback de um tenant nunca redireciona para o banco de outro tenant." in readme
-    assert "f6b1d3a8c2e4" in readme
+    assert "a8d4e6f2b1c9" in readme
 
 
 def test_alembic_revision_gate_rejects_wrong_or_unheaded_revision():
@@ -702,6 +723,27 @@ def test_release_readiness_requires_health_ok_and_exact_version():
     assert bad_health.returncode != 0
     assert wrong_version.returncode != 0
     assert missing_version.returncode != 0
+
+
+def test_release_readiness_wait_covers_success_and_timeout():
+    success = run_policy(
+        "$script:calls=0; $request={ param($uri) $script:calls += 1; "
+        "if ($uri -like '*/health') { return [pscustomobject]@{status='ok'} }; "
+        "return [pscustomobject]@{version='0.3.4'} }; "
+        "Wait-SmartCrmReleaseReady -ExpectedVersion '0.3.4' "
+        "-TimeoutSeconds 1 -PollMilliseconds 1 -Request $request"
+    )
+    wrong_version = run_policy(
+        "$request={ param($uri) if ($uri -like '*/health') { "
+        "return [pscustomobject]@{status='ok'} }; "
+        "return [pscustomobject]@{version='0.3.3'} }; "
+        "Wait-SmartCrmReleaseReady -ExpectedVersion '0.3.4' "
+        "-TimeoutSeconds 0.02 -PollMilliseconds 1 -Request $request"
+    )
+
+    assert success.returncode == 0, success.stdout + success.stderr
+    assert wrong_version.returncode != 0
+    assert "0.3.4" in wrong_version.stdout + wrong_version.stderr
 
 
 def test_port_release_helper_covers_release_and_timeout():

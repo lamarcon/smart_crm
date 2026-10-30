@@ -245,6 +245,8 @@ T6 → T7 → T8
 
 ### T7: Replace direct tenant Alembic with verified cutover
 
+**Status**: Complete
+
 **What**: Make the initializer use the temporary fleet task, stop the old runtime, verify port release, register the new task, validate exact version and restore the previous task on cutover failure.
 **Where**: `deploy/manual-windows-pg11/initialize-and-test.ps1`
 **Depends on**: T6
@@ -258,18 +260,20 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Initializer contains no direct tenant Alembic command and requires tenant, expected version and backup acknowledgement.
-- [ ] Control migration and fleet evidence complete before the runtime task changes.
-- [ ] Existing task is exported, stopped and the port is confirmed free before new registration.
-- [ ] PASS requires service user, immutable AppRoot action, health `ok` and exact expected version.
-- [ ] Failure after task replacement restores/starts the exported previous task or reports the preserved recovery artifact.
-- [ ] Runbook shows the single activation command and omits manual tenant SQL repair.
-- [ ] Build gate passes with no skipped or deleted tests.
+- [x] Initializer contains no direct tenant Alembic command and requires tenant, expected version and backup acknowledgement.
+- [x] Control migration and fleet evidence complete before the runtime task changes.
+- [x] Existing task is exported, stopped and the port is confirmed free before new registration.
+- [x] PASS requires service user, immutable AppRoot action, health `ok` and exact expected version.
+- [x] Failure after task replacement restores/starts the exported previous task or reports the preserved recovery artifact.
+- [x] Runbook shows the single activation command and omits manual tenant SQL repair.
+- [x] Build gate passes with no skipped or deleted tests.
 
 **Tests**: integration
 **Gate**: build
 
 **Commit**: `fix(deploy): make windows cutover fleet-aware and verifiable`
+
+**Evidence**: `initialize-and-test.ps1` validates the control head, requires successful one-shot fleet evidence before exporting or stopping the web task, waits for port 8080, validates the scheduled-task identity/action plus exact health/version, and restores the exported XML on cutover failure. PowerShell/runbook tests passed (`47 passed`), the source verifier passed (`19/19 requirements`), and the build gate passed (`858` backend plus `122` UI tests) on 2026-10-29.
 
 ### T8: Package and gate the hardened deploy path
 
