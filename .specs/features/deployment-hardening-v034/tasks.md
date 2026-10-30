@@ -307,7 +307,7 @@ T6 → T7 → T8 → T9
 
 ### T9: Isolate the repair migration seed contract
 
-**Status**: In Progress
+**Status**: Complete
 
 **What**: Ensure the deployment-repair integration test begins with no pipeline or stages, so only revision `a8d4e6f2b1c9` can satisfy the required `1 / 9` final state.
 **Where**: `tests/backend/test_deployment_repair_migration.py`

@@ -148,4 +148,4 @@ O deploy v0.3.3 passou pelos testes de release, mas exigiu correções manuais e
 - [x] Um tenant afetado termina com 1 funil, 9 etapas e usuários visíveis nos seletores, sem duplicação em retry.
 - [x] O inicializador em PowerShell 5.1 não falha por barras invertidas nem por stderr informativo.
 - [x] O gate confirma simultaneamente tarefa, porta, health e versão alvo antes de declarar sucesso.
-- [ ] Todos os testes locais e o validador independente terminam com PASS antes de qualquer push ou deploy.
+- [x] Todos os testes locais e o validador independente terminam com PASS antes de qualquer push ou deploy.
