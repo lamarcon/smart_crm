@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 POWERSHELL = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
 POLICY = PROJECT_ROOT / "deploy/manual-windows-pg11/deployment-policy.ps1"
 START = PROJECT_ROOT / "deploy/manual-windows-pg11/start-smart-crm.ps1"
+FLEET_RUNNER = PROJECT_ROOT / "deploy/manual-windows-pg11/run-fleet-migration.ps1"
 ENV_EXAMPLE = PROJECT_ROOT / "deploy/manual-windows-pg11/server.env.example"
 
 SHARED_POSTGRES_HBA = """\
@@ -91,6 +92,75 @@ def run_start_validation(
             "-EnvFile",
             str(env_file),
             "-ValidateOnly",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def write_fleet_runner_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
+    app_root = tmp_path / "smart-crm-v0.3.4"
+    python = app_root / ".venv/Scripts/python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"")
+    env_file = tmp_path / "server.env"
+    env_file.write_text(
+        "SMART_CRM_DB_NAME=smartcrm\n"
+        "SMART_CRM_CONTROL_DATABASE_URL="
+        "postgresql+psycopg://control:must-not-leak@127.0.0.1/control\n"
+        r"SMART_CRM_TENANT_SECRET_STORE=C:\ProgramData\SmartCRM\tenant-secrets"
+        "\nSMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1\n",
+        encoding="utf-8",
+    )
+    return app_root, env_file, tmp_path / "evidence.json"
+
+
+def run_fleet_runner(
+    app_root: Path,
+    env_file: Path,
+    evidence: Path,
+    *,
+    migration_exit_code: int,
+    migration_output: str,
+    migration_error: str = "",
+) -> subprocess.CompletedProcess[str]:
+    invoker = (
+        "$invoker={ param($FilePath,$ArgumentList,$WorkingDirectory) "
+        "if ($ArgumentList[-1] -eq 'heads') { "
+        "return [pscustomobject]@{ExitCode=0;StdOut='a8d4e6f2b1c9 (head)';StdErr=''} }; "
+        "if (-not $env:SMART_CRM_CONTROL_DATABASE_URL -or "
+        "-not $env:SMART_CRM_TENANT_SECRET_STORE -or "
+        "$env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK -ne '1') { "
+        "throw 'runtime environment missing' }; "
+        f"return [pscustomobject]@{{ExitCode={migration_exit_code};"
+        f"StdOut={powershell_literal(migration_output)};"
+        f"StdErr={powershell_literal(migration_error)}}} }}; "
+    )
+    command = (
+        "$env:SMART_CRM_CONTROL_DATABASE_URL='parent-control'; "
+        "$env:SMART_CRM_TENANT_SECRET_STORE='parent-store'; "
+        "$env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK='parent-loopback'; "
+        + invoker
+        + f"& {powershell_literal(str(FLEET_RUNNER))} "
+        f"-AppRoot {powershell_literal(str(app_root))} "
+        f"-EnvFile {powershell_literal(str(env_file))} "
+        "-TenantSlug 'brbots' "
+        f"-EvidencePath {powershell_literal(str(evidence))} "
+        "-BackupAcknowledged -NativeProcessInvoker $invoker; "
+        "if ($env:SMART_CRM_CONTROL_DATABASE_URL -ne 'parent-control' -or "
+        "$env:SMART_CRM_TENANT_SECRET_STORE -ne 'parent-store' -or "
+        "$env:SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK -ne 'parent-loopback') { "
+        "throw 'runner environment leaked' }"
+    )
+    return subprocess.run(
+        [
+            str(POWERSHELL),
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
         ],
         text=True,
         capture_output=True,
@@ -574,6 +644,73 @@ def test_native_process_capture_uses_exit_code_instead_of_stderr():
     assert "informational" in success_payload["StdErr"]
     assert failure_payload["ExitCode"] == 7
     assert "failed" in failure_payload["StdErr"]
+
+
+def test_fleet_runner_writes_atomic_redacted_success_evidence(tmp_path: Path):
+    app_root, env_file, evidence = write_fleet_runner_fixture(tmp_path)
+
+    result = run_fleet_runner(
+        app_root,
+        env_file,
+        evidence,
+        migration_exit_code=0,
+        migration_output="brbots code=migrated",
+        migration_error="informational stderr",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(evidence.read_text(encoding="utf-8-sig"))
+    assert payload == {
+        "schemaVersion": 1,
+        "releasePath": str(app_root),
+        "targetRevision": "a8d4e6f2b1c9",
+        "tenants": [
+            {"slug": "brbots", "succeeded": True, "code": "migrated"}
+        ],
+        "exitCode": 0,
+    }
+    assert "must-not-leak" not in evidence.read_text(encoding="utf-8-sig")
+    assert list(tmp_path.glob("evidence.json.*.tmp")) == []
+
+
+def test_fleet_runner_failure_is_nonzero_with_valid_redacted_evidence(tmp_path: Path):
+    app_root, env_file, evidence = write_fleet_runner_fixture(tmp_path)
+
+    result = run_fleet_runner(
+        app_root,
+        env_file,
+        evidence,
+        migration_exit_code=7,
+        migration_output="brbots code=migration_failed",
+        migration_error="postgresql://user:plain-secret@host/database",
+    )
+
+    assert result.returncode != 0
+    payload = json.loads(evidence.read_text(encoding="utf-8-sig"))
+    assert payload["releasePath"] == str(app_root)
+    assert payload["targetRevision"] == "a8d4e6f2b1c9"
+    assert payload["tenants"] == [
+        {"slug": "brbots", "succeeded": False, "code": "migration_failed"}
+    ]
+    assert payload["exitCode"] == 7
+    combined = evidence.read_text(encoding="utf-8-sig") + result.stdout + result.stderr
+    assert "plain-secret" not in combined
+    assert "must-not-leak" not in combined
+    assert list(tmp_path.glob("evidence.json.*.tmp")) == []
+
+
+def test_fleet_runner_contract_has_no_plaintext_credential_parameter():
+    runner = FLEET_RUNNER.read_text(encoding="utf-8")
+
+    assert "[PSCredential]" not in runner
+    assert "Password" not in runner
+    assert "Read-SmartCrmEnvironment" in runner
+    assert "SMART_CRM_CONTROL_DATABASE_URL" in runner
+    assert "SMART_CRM_TENANT_SECRET_STORE" in runner
+    assert "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK" in runner
+    assert "finally" in runner
+    assert "Move-Item" in runner
+    assert "ConvertTo-Json" in runner
 
 
 def test_start_script_uses_the_powershell_51_safe_logged_process_helper():

@@ -100,6 +100,20 @@ function New-SmartCrmEnvironmentLines {
     )
 }
 
+function Get-SmartCrmEnvironmentAllowedKeys {
+    return @(
+        "SMART_CRM_DB_NAME", "SMART_CRM_DB_USER", "SMART_CRM_DB_PASSWORD",
+        "SMART_CRM_DB_HOST", "SMART_CRM_DB_PORT", "SMART_CRM_BIND_IP",
+        "SMART_CRM_PORT", "SMART_CRM_CONTROL_DATABASE_URL",
+        "SMART_CRM_TENANT_SECRET_STORE", "SMART_CRM_EXPECTED_ORIGIN",
+        "SMART_CRM_TENANT_MAX_CACHED_ENGINES", "SMART_CRM_TENANT_POOL_SIZE",
+        "SMART_CRM_TENANT_MAX_OVERFLOW",
+        "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS",
+        "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
+        "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK"
+    )
+}
+
 function Read-SmartCrmEnvironment {
     param(
         [Parameter(Mandatory = $true)]

@@ -185,6 +185,8 @@ T6 → T7 → T8
 
 ### T5: Run fleet migration inside the service identity
 
+**Status**: Complete
+
 **What**: Add the finite service-account script that loads validated runtime settings, calls the fleet CLI and writes redacted atomic evidence.
 **Where**: `deploy/manual-windows-pg11/run-fleet-migration.ps1`
 **Depends on**: T4
@@ -198,16 +200,18 @@ T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Script accepts explicit tenant/release/evidence paths and no plaintext credential parameter.
-- [ ] Required runtime variables exist only for the child process and are cleared in `finally`.
-- [ ] Evidence is atomically promoted only after a complete result and contains no secret material.
-- [ ] CLI failure returns non-zero and leaves a valid redacted failure result.
-- [ ] Full gate passes with no skipped or deleted tests.
+- [x] Script accepts explicit tenant/release/evidence paths and no plaintext credential parameter.
+- [x] Required runtime variables exist only for the child process and are cleared in `finally`.
+- [x] Evidence is atomically promoted only after a complete result and contains no secret material.
+- [x] CLI failure returns non-zero and leaves a valid redacted failure result.
+- [x] Full gate passes with no skipped or deleted tests.
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(deploy): run fleet migration as service account`
+
+**Evidence**: `run-fleet-migration.ps1` loads the complete literal environment allowlist, exports only the control URL, DPAPI store and approved loopback flag at process scope, restores prior values in `finally`, executes the packaged-head and explicit fleet CLI commands through the native-process adapter, and atomically promotes redacted JSON evidence. Focused PowerShell deployment tests passed (`40 passed`) and the full backend deployment gate passed with local PostgreSQL (`117 passed in 48.80s`) on 2026-10-29.
 
 ### T6: Coordinate the temporary migration task
 
