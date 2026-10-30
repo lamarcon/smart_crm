@@ -59,6 +59,22 @@ def _prepare_affected_tenant(connection, config: Config) -> None:  # noqa: ANN00
     )
     connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', false)"))
     connection.execute(
+        text("ALTER TABLE deal_pipelines ALTER COLUMN default_stage_id DROP NOT NULL")
+    )
+    connection.execute(
+        text(
+            "UPDATE deal_pipelines SET default_stage_id = NULL "
+            "WHERE workspace_id = 'default'"
+        )
+    )
+    connection.execute(
+        text("DELETE FROM deal_pipeline_stages WHERE workspace_id = 'default'")
+    )
+    connection.execute(text("DELETE FROM deal_pipelines WHERE workspace_id = 'default'"))
+    connection.execute(
+        text("ALTER TABLE deal_pipelines ALTER COLUMN default_stage_id SET NOT NULL")
+    )
+    connection.execute(
         text(
             "INSERT INTO crm_users "
             "(id, workspace_id, name, email, normalized_email, password_hash, "
@@ -111,6 +127,8 @@ def test_repair_seeds_pipeline_and_canonical_user_payload_under_force_rls(
         )
     )
     assert forced_tables == 3
+    assert connection.scalar(text("SELECT count(*) FROM deal_pipelines")) == 0
+    assert connection.scalar(text("SELECT count(*) FROM deal_pipeline_stages")) == 0
 
     command.upgrade(config, REPAIR_HEAD)
 

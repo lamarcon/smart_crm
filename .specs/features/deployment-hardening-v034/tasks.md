@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/deployment-hardening-v034/design.md`
-**Status**: In Progress
+**Status**: Complete
 
 ---
 
@@ -56,7 +56,7 @@ T3 → T4 → T5 → T6
 ### Phase 3: Verified cutover and package
 
 ```
-T6 → T7 → T8
+T6 → T7 → T8 → T9
 ```
 
 ---
@@ -305,6 +305,30 @@ T6 → T7 → T8
 
 **Evidence**: The bundle builder rejects a missing hardened component; bundle tests require `app/fleet_cli.py`, revision `a8d4e6f2b1c9` and both service-account scripts in the ZIP and manifest; the Windows release job runs deployment, outcome and bundle contracts before packaging. Focused release tests passed (`51 passed`) and the build gate passed (`859` backend plus `122` UI tests) on 2026-10-29 without changing `APP_VERSION` or any remote state.
 
+### T9: Isolate the repair migration seed contract
+
+**Status**: In Progress
+
+**What**: Ensure the deployment-repair integration test begins with no pipeline or stages, so only revision `a8d4e6f2b1c9` can satisfy the required `1 / 9` final state.
+**Where**: `tests/backend/test_deployment_repair_migration.py`
+**Depends on**: T8
+**Reuses**: PostgreSQL migration fixture and FORCE RLS assertions.
+**Requirement**: DEPLOY-02, DEPLOY-05
+
+**Done when**:
+
+- [x] The affected-tenant fixture explicitly reaches zero pipelines and zero stages before the repair revision runs.
+- [x] The real repair migration creates one default pipeline with exactly nine active stages.
+- [x] A mutation that removes one repair stage is rejected by the focused migration test.
+- [x] The build gate passes without skipped or deleted tests.
+
+**Tests**: integration
+**Gate**: build
+
+**Commit**: `test(migrations): isolate repair pipeline seed contract`
+
+**Evidence**: The affected-tenant fixture now removes any seed inherited from earlier revisions and asserts the pre-repair `0 / 0` state. The real migration passed (`4 passed`); deleting one stage from `LEGACY_STAGES` produced two focused failures (`8 != 9`); after restoration the build gate passed with `859` backend and `122` UI tests on 2026-10-30.
+
 ---
 
 ## Phase Execution Map
@@ -314,7 +338,7 @@ Phase 1 → Phase 2 → Phase 3
 
 Phase 1: T1 → T2 → T3
 Phase 2:             T3 → T4 → T5 → T6
-Phase 3:                                  T6 → T7 → T8
+Phase 3:                                  T6 → T7 → T8 → T9
 ```
 
 Execution is strictly sequential.
@@ -331,6 +355,7 @@ Execution is strictly sequential.
 | T6 | One temporary-task coordinator | ✅ Granular |
 | T7 | One cutover coordinator | ✅ Granular |
 | T8 | One bundle contract | ✅ Granular |
+| T9 | One isolated migration regression test | ✅ Granular |
 
 ## Diagram-Definition Cross-Check
 
@@ -344,6 +369,7 @@ Execution is strictly sequential.
 | T6 | T5 | T5 → T6 | ✅ Match |
 | T7 | T6 | T6 → T7 | ✅ Match |
 | T8 | T7 | T7 → T8 | ✅ Match |
+| T9 | T8 | T8 → T9 | ✅ Match |
 
 ## Test Co-location Validation
 
@@ -357,3 +383,4 @@ Execution is strictly sequential.
 | T6 | Task Scheduler coordinator | integration | integration | ✅ OK |
 | T7 | Cutover coordinator | integration | integration | ✅ OK |
 | T8 | Offline bundle contract | integration | integration | ✅ OK |
+| T9 | Migration repair regression test | integration | integration | ✅ OK |
