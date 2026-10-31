@@ -142,16 +142,18 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Creating a token invalidates the applicable predecessor under a row lock.
-- [ ] Lookup accepts only matching purpose, unexpired and unterminated records.
-- [ ] Concurrent consumption permits exactly one winner.
-- [ ] Delivery failure invalidates the undelivered token while preserving audit metadata.
-- [ ] Repository integration tests cover issue, resend, cancel, expiry, replay, cross-purpose and concurrent consume.
-- [ ] Quick gate passes with no test deletion.
+- [x] Creating a token invalidates the applicable predecessor under a row lock.
+- [x] Lookup accepts only matching purpose, unexpired and unterminated records.
+- [x] Concurrent consumption permits exactly one winner.
+- [x] Delivery failure invalidates the undelivered token while preserving audit metadata.
+- [x] Repository integration tests cover issue, resend, cancel, expiry, replay, cross-purpose and concurrent consume.
+- [x] Quick gate passes with no test deletion.
 
 **Tests**: integration — create `tests/backend/test_account_action_repository.py`.  
 **Gate**: quick  
 **Commit**: `feat(auth): add tenant account action repository`
+
+**Evidence**: 6 focused repository integration tests and the 868-test backend gate passed. Concurrent issue and consume tests prove the row-lock and single-use outcomes; no test was deleted, weakened or skipped.
 
 ---
 
