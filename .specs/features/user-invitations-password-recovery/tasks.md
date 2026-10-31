@@ -201,16 +201,18 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Adapter supports only `starttls` and `implicit_tls` and rejects unencrypted transport.
-- [ ] Invitation and reset messages include company identity, plain-text and HTML bodies, and a single action link.
-- [ ] Exceptions expose stable failure codes without SMTP credentials, token or message body.
-- [ ] An in-memory sender supports deterministic service and route tests.
-- [ ] Unit tests cover success, both TLS modes, authentication rejection, recipient rejection, timeout and escaping.
-- [ ] Quick gate passes with no test deletion.
+- [x] Adapter supports only `starttls` and `implicit_tls` and rejects unencrypted transport.
+- [x] Invitation and reset messages include company identity, plain-text and HTML bodies, and a single action link.
+- [x] Exceptions expose stable failure codes without SMTP credentials, token or message body.
+- [x] An in-memory sender supports deterministic service and route tests.
+- [x] Unit tests cover success, both TLS modes, authentication rejection, recipient rejection, timeout and escaping.
+- [x] Quick gate passes with no test deletion.
 
 **Tests**: unit — create `tests/backend/test_mail.py`.  
 **Gate**: quick  
 **Commit**: `feat(mail): add secure smtp delivery adapter`
+
+**Evidence**: 10 focused unit tests and the 886-test backend gate passed. The tests exercise STARTTLS ordering, implicit TLS, TLS-only configuration, fixed invitation/reset alternatives, HTML and header injection defenses, password-redacted configuration, deterministic capture, and stable redacted authentication, recipient and timeout failures; no test was deleted, weakened or skipped.
 
 ---
 
