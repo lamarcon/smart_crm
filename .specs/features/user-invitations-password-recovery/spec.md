@@ -176,7 +176,7 @@ A tela de usuários simula convites alterando apenas o snapshot do navegador. O 
 | INV-01 | P1: Gerenciar convites | Tasks | Mapped to T3, T5, T6, T9–T12, T14 |
 | ACCEPT-01 | P1: Aceitar convite | Tasks | Mapped to T3, T7, T10, T11, T13 |
 | RESET-01 | P1: Recuperar senha | Tasks | Mapped to T3–T5, T8, T10, T11, T13, T14 |
-| SEC-01 | P1: Segurança | Tasks | Mapped to T1–T9, T13, T14 |
+| SEC-01 | P1: Segurança | Execute | T1–T2 complete; T3–T9, T13, T14 pending |
 | INVUI-01 | P1: Interface real | Tasks | Mapped to T9, T10, T12, T13 |
 
 **Coverage:** 5 requirement groups, 5 mapped to tasks, 0 pending design.

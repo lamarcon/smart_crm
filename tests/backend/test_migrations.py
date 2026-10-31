@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import DBAPIError
 
 from app.models import Base
 
@@ -18,7 +20,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 ACTIVITY_HEAD = "e1c4a7b9d2f6"
-TENANT_HEAD = "a8d4e6f2b1c9"
+TENANT_HEAD = "b4e2c9a7d6f1"
 
 
 def alembic_config(connection=None) -> Config:  # noqa: ANN001
@@ -26,6 +28,26 @@ def alembic_config(connection=None) -> Config:  # noqa: ANN001
     if connection is not None:
         config.attributes["connection"] = connection
     return config
+
+
+@contextmanager
+def runtime_role(connection, schema):  # noqa: ANN001
+    role = f"smartcrm_runtime_{uuid.uuid4().hex}"
+    connection.execute(text(f'CREATE ROLE "{role}" NOLOGIN'))
+    connection.execute(text(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"'))
+    connection.execute(
+        text(
+            f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" '
+            f'TO "{role}"'
+        )
+    )
+    connection.execute(text(f'SET ROLE "{role}"'))
+    try:
+        yield
+    finally:
+        connection.execute(text("RESET ROLE"))
+        connection.execute(text(f'DROP OWNED BY "{role}"'))
+        connection.execute(text(f'DROP ROLE "{role}"'))
 
 
 @pytest.fixture
@@ -87,6 +109,141 @@ def test_repeated_upgrade_is_idempotent(isolated_migration) -> None:
 
     assert connection.scalar(text("SELECT count(*) FROM workspaces")) == 1
     assert connection.scalar(text("SELECT version FROM workspaces WHERE id='default'")) == 0
+
+
+def test_account_action_token_migration_enforces_constraints_indexes_and_rls(
+    isolated_migration,
+) -> None:
+    connection, schema, config = isolated_migration
+    command.upgrade(config, "head")
+    inspector = inspect(connection)
+    columns = {item["name"]: item for item in inspector.get_columns(
+        "account_action_tokens", schema=schema
+    )}
+    checks = {
+        item["name"]: item["sqltext"]
+        for item in inspector.get_check_constraints(
+            "account_action_tokens", schema=schema
+        )
+    }
+    foreign_keys = {
+        (
+            tuple(item["constrained_columns"]),
+            item["referred_table"],
+            tuple(item["referred_columns"]),
+            item["options"].get("ondelete"),
+        )
+        for item in inspector.get_foreign_keys("account_action_tokens", schema=schema)
+    }
+    indexes = {
+        item["name"]: item
+        for item in inspector.get_indexes("account_action_tokens", schema=schema)
+    }
+
+    assert set(columns) == set(Base.metadata.tables["account_action_tokens"].c.keys())
+    assert columns["token_digest"]["nullable"] is False
+    assert str(columns["token_digest"]["type"]) == "CHAR(64)"
+    assert columns["expires_at"]["type"].timezone is True
+    assert "purpose::text = ANY" in checks["ck_account_action_tokens_valid_purpose"]
+    assert "delivery_status::text = ANY" in checks[
+        "ck_account_action_tokens_valid_delivery_status"
+    ]
+    assert "char_length(token_digest) = 64" in checks[
+        "ck_account_action_tokens_digest_length"
+    ]
+    assert "consumed_at IS NOT NULL AND invalidated_at IS NOT NULL" in checks[
+        "ck_account_action_tokens_single_terminal_state"
+    ]
+    assert (("workspace_id",), "workspaces", ("id",), "RESTRICT") in foreign_keys
+    assert (("user_id",), "crm_users", ("id",), "RESTRICT") in foreign_keys
+    assert (
+        ("created_by_user_id",),
+        "crm_users",
+        ("id",),
+        "SET NULL",
+    ) in foreign_keys
+    index_definition = connection.scalar(
+        text(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = :schema "
+            "AND indexname = 'ix_account_action_tokens_user_purpose_created'"
+        ),
+        {"schema": schema},
+    )
+    assert "(workspace_id, user_id, purpose, created_at DESC)" in index_definition
+    assert indexes["uq_account_action_tokens_token_digest"]["unique"] is True
+
+    connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+    connection.execute(
+        text(
+            "INSERT INTO crm_users "
+            "(id, workspace_id, name, email, normalized_email, auth_enabled, "
+            "auth_version, job_title, role, status, payload) VALUES "
+            "('user-default', 'default', 'Default', 'default@example.test', "
+            "'default@example.test', false, 0, '', 'Vendedor', 'Pendente', '{}'::jsonb)"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO account_action_tokens "
+            "(id, workspace_id, user_id, purpose, token_digest, expires_at) VALUES "
+            "(:id, 'default', 'user-default', 'invitation', :digest, now() + interval '1 hour')"
+        ),
+        {"id": uuid.uuid4(), "digest": "a" * 64},
+    )
+
+    connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'other', true)"))
+    connection.execute(text("INSERT INTO workspaces (id, version) VALUES ('other', 0)"))
+    connection.execute(
+        text(
+            "INSERT INTO crm_users "
+            "(id, workspace_id, name, email, normalized_email, auth_enabled, "
+            "auth_version, job_title, role, status, payload) VALUES "
+            "('user-other', 'other', 'Other', 'other@example.test', "
+            "'other@example.test', false, 0, '', 'Vendedor', 'Pendente', '{}'::jsonb)"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO account_action_tokens "
+            "(id, workspace_id, user_id, purpose, token_digest, expires_at) VALUES "
+            "(:id, 'other', 'user-other', 'password_reset', :digest, now() + interval '1 hour')"
+        ),
+        {"id": uuid.uuid4(), "digest": "b" * 64},
+    )
+
+    with runtime_role(connection, schema):
+        connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+        assert connection.execute(
+            text("SELECT token_digest FROM account_action_tokens ORDER BY token_digest")
+        ).scalars().all() == ["a" * 64]
+        with pytest.raises(DBAPIError) as exc_info:
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        "INSERT INTO account_action_tokens "
+                        "(id, workspace_id, user_id, purpose, token_digest, expires_at) VALUES "
+                        "(:id, 'other', 'user-other', 'invitation', :digest, "
+                        "now() + interval '1 hour')"
+                    ),
+                    {"id": uuid.uuid4(), "digest": "c" * 64},
+                )
+        assert exc_info.value.orig.sqlstate == "42501"
+
+    policy = connection.execute(
+        text(
+            "SELECT polcmd, polpermissive FROM pg_policy "
+            "WHERE polrelid = 'account_action_tokens'::regclass "
+            "AND polname = 'smartcrm_workspace_scope'"
+        )
+    ).one()
+    rls_flags = connection.execute(
+        text(
+            "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+            "WHERE oid = 'account_action_tokens'::regclass"
+        )
+    ).one()
+    assert tuple(policy) == ("*", True)
+    assert tuple(rls_flags) == (True, True)
 
 
 def test_upgrade_repairs_activity_head_missing_history_redaction_column(

@@ -31,6 +31,7 @@ EXPECTED_TABLES = {
     "deal_pipeline_stages",
     "deal_pipeline_audit_events",
     "crm_activity_events",
+    "account_action_tokens",
 }
 
 
@@ -147,6 +148,76 @@ def test_normalized_email_is_unique_inside_workspace() -> None:
     }
 
     assert ("workspace_id", "normalized_email") in unique_columns
+
+
+def test_account_action_tokens_store_only_digest_and_terminal_metadata() -> None:
+    table = Base.metadata.tables["account_action_tokens"]
+
+    assert set(table.c.keys()) == {
+        "id",
+        "workspace_id",
+        "user_id",
+        "purpose",
+        "token_digest",
+        "expires_at",
+        "consumed_at",
+        "invalidated_at",
+        "invalidation_reason",
+        "delivery_status",
+        "delivery_attempted_at",
+        "delivery_failure_code",
+        "created_by_user_id",
+        "created_at",
+        "updated_at",
+    }
+    assert "token" not in table.c
+    assert "password" not in table.c
+    assert isinstance(table.c.id.type, UUID)
+    assert isinstance(table.c.expires_at.type, DateTime)
+    assert table.c.expires_at.type.timezone is True
+    assert table.c.workspace_id.nullable is False
+    assert table.c.user_id.nullable is False
+    assert table.c.token_digest.nullable is False
+
+
+def test_account_action_tokens_constrain_purpose_delivery_and_replay_state() -> None:
+    table = Base.metadata.tables["account_action_tokens"]
+    checks = {
+        constraint.name: str(constraint.sqltext)
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    unique_columns = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    foreign_keys = {
+        (foreign_key.parent.name, foreign_key.target_fullname, foreign_key.ondelete)
+        for foreign_key in table.foreign_keys
+    }
+    index_names = {index.name for index in table.indexes}
+
+    assert "purpose IN ('invitation', 'password_reset')" in checks[
+        "ck_account_action_tokens_valid_purpose"
+    ]
+    assert "delivery_status IN ('pending', 'sent', 'failed')" in checks[
+        "ck_account_action_tokens_valid_delivery_status"
+    ]
+    assert "char_length(token_digest) = 64" in checks[
+        "ck_account_action_tokens_digest_length"
+    ]
+    assert "NOT (consumed_at IS NOT NULL AND invalidated_at IS NOT NULL)" in checks[
+        "ck_account_action_tokens_single_terminal_state"
+    ]
+    assert ("token_digest",) in unique_columns
+    assert ("workspace_id", "workspaces.id", "RESTRICT") in foreign_keys
+    assert ("user_id", "crm_users.id", "RESTRICT") in foreign_keys
+    assert ("created_by_user_id", "crm_users.id", "SET NULL") in foreign_keys
+    assert "ix_account_action_tokens_user_purpose_created" in index_names
+    assert str(next(iter(table.indexes)).expressions[-1]) == (
+        "account_action_tokens.created_at DESC"
+    )
 
 
 def test_all_direct_child_tables_carry_required_workspace_scope() -> None:

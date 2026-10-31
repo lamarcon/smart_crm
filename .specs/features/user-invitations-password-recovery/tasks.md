@@ -87,10 +87,10 @@ T13 → T14
 
 **Done when**:
 
-- [ ] `AccountActionToken` contains purpose, digest, expiry, consumption, invalidation and delivery state from the approved design.
-- [ ] Database constraints reject unsupported purpose/delivery states and the entity contains no raw token or password field.
-- [ ] Existing model imports and metadata load successfully and metadata assertions cover every designed invariant.
-- [ ] Quick gate passes without reducing the 859-test backend baseline.
+- [x] `AccountActionToken` contains purpose, digest, expiry, consumption, invalidation and delivery state from the approved design.
+- [x] Database constraints reject unsupported purpose/delivery states and the entity contains no raw token or password field.
+- [x] Existing model imports and metadata load successfully and metadata assertions cover every designed invariant.
+- [x] Quick gate passes without reducing the 859-test backend baseline.
 
 **Tests**: unit — extend `tests/backend/test_models.py` with metadata and no-secret-field assertions.  
 **Gate**: quick  
@@ -113,15 +113,17 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Upgrade from the current tenant head creates the exact schema designed in T1.
-- [ ] RLS permits only the transaction workspace and prevents cross-workspace reads/writes.
-- [ ] Digest uniqueness, user lookup indexes and valid state constraints are verified against PostgreSQL.
-- [ ] Migration integration tests pass and the expected tenant head is updated only through the migration contract.
-- [ ] Quick gate passes with no test deletion.
+- [x] Upgrade from the current tenant head creates the exact schema designed in T1.
+- [x] RLS permits only the transaction workspace and prevents cross-workspace reads/writes.
+- [x] Digest uniqueness, user lookup indexes and valid state constraints are verified against PostgreSQL.
+- [x] Migration integration tests pass and the expected tenant head is updated only through the migration contract.
+- [x] Quick gate passes with no test deletion.
 
 **Tests**: integration — update migration tests under `tests/backend/test_migrations.py` for upgrade, constraints and RLS.  
 **Gate**: quick  
 **Commit**: `feat(migrations): persist tenant account action tokens`
+
+**Execution record**: T1 and T2 were merged into one atomic commit under the task merge-forward rule. Adding the model to `Base.metadata` made the existing migration metadata assertion require the corresponding Alembic table, so neither half had an independently green gate. The combined gate passed with 862 backend tests; no existing assertion was weakened, deleted or skipped.
 
 ---
 

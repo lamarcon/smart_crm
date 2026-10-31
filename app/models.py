@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
+    CHAR,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -231,6 +232,59 @@ class CrmUser(Base, TimestampMixin, SoftDeleteMixin):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="Ativo")
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class AccountActionToken(Base, TimestampMixin):
+    __tablename__ = "account_action_tokens"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('invitation', 'password_reset')",
+            name="valid_purpose",
+        ),
+        CheckConstraint(
+            "delivery_status IN ('pending', 'sent', 'failed')",
+            name="valid_delivery_status",
+        ),
+        CheckConstraint("char_length(token_digest) = 64", name="digest_length"),
+        CheckConstraint(
+            "NOT (consumed_at IS NOT NULL AND invalidated_at IS NOT NULL)",
+            name="single_terminal_state",
+        ),
+        UniqueConstraint("token_digest"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("crm_users.id", ondelete="RESTRICT"), nullable=False
+    )
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidation_reason: Mapped[str | None] = mapped_column(String(64))
+    delivery_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    delivery_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_failure_code: Mapped[str | None] = mapped_column(String(64))
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("crm_users.id", ondelete="SET NULL")
+    )
+
+
+Index(
+    "ix_account_action_tokens_user_purpose_created",
+    AccountActionToken.workspace_id,
+    AccountActionToken.user_id,
+    AccountActionToken.purpose,
+    AccountActionToken.created_at.desc(),
+)
 
 
 class Lead(Base, TimestampMixin, SoftDeleteMixin):
