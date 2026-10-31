@@ -90,7 +90,17 @@ def test_throttle_bucket_types_and_nonnegative_count_are_constrained() -> None:
         if isinstance(constraint, CheckConstraint)
     )
 
-    assert "account" in checks and "ip" in checks
+    assert all(
+        bucket in checks
+        for bucket in (
+            "account",
+            "ip",
+            "invite_account",
+            "invite_ip",
+            "reset_account",
+            "reset_ip",
+        )
+    )
     assert "failure_count >= 0" in checks
 
 

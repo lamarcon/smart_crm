@@ -42,6 +42,7 @@ def test_runtime_collection_contains_both_lineages_and_admin_fleet_modules() -> 
     assert {"app/admin_cli.py", "app/fleet.py", "app/fleet_cli.py", "app/server.py"} <= files
     assert {
         "migrations/versions/a8d4e6f2b1c9_repair_tenant_deploy_state.py",
+        "migrations_control/versions/d5f0a8c3e7b2_expand_account_action_throttle_buckets.py",
         "deploy/manual-windows-pg11/run-fleet-migration.ps1",
         "deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1",
     } <= files
@@ -147,6 +148,7 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
             "migrations/versions/e1c4a7b9d2f6_add_crm_activity_events.py",
             "migrations/versions/f6b1d3a8c2e4_repair_custom_field_history_redaction.py",
             "migrations/versions/a8d4e6f2b1c9_repair_tenant_deploy_state.py",
+            "migrations_control/versions/d5f0a8c3e7b2_expand_account_action_throttle_buckets.py",
             "deploy/manual-windows-pg11/run-fleet-migration.ps1",
             "deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1",
         } <= names
@@ -157,6 +159,7 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
         assert "migrations/versions/e1c4a7b9d2f6_add_crm_activity_events.py" in manifest
         assert "migrations/versions/f6b1d3a8c2e4_repair_custom_field_history_redaction.py" in manifest
         assert "migrations/versions/a8d4e6f2b1c9_repair_tenant_deploy_state.py" in manifest
+        assert "migrations_control/versions/d5f0a8c3e7b2_expand_account_action_throttle_buckets.py" in manifest
         assert "deploy/manual-windows-pg11/run-fleet-migration.ps1" in manifest
         assert "deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1" in manifest
         assert "app/repositories/activity.py" in manifest

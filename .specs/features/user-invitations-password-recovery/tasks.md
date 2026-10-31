@@ -160,7 +160,7 @@ T13 → T14
 ### T4: Generalize central throttling and security events
 
 **What**: Extend the control repository and audit service with generic request buckets and redacted event types for invitation and password recovery.  
-**Where**: `app/control_database.py`  
+**Where**: `app/control_database.py`, `app/control_models.py`, `migrations_control/versions/d5f0a8c3e7b2_expand_account_action_throttle_buckets.py`, packaged control-head wiring and their tests
 **Depends on**: T3  
 **Reuses**: `LoginThrottle`, `SecurityEvent`, existing login failure limits and correlation digests  
 **Requirement**: SEC-02, SEC-03, SEC-04, SEC-05, RESET-01
@@ -172,15 +172,17 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Existing login throttling remains backward compatible.
-- [ ] Account buckets block at 5/15 minutes and IP buckets at 30/15 minutes with atomic increments.
-- [ ] Audit interfaces accept only sanitized codes and digests and never accept token/password fields.
-- [ ] Tests cover window reset, active block, concurrent increments and separate bucket namespaces.
-- [ ] Quick gate passes with no test deletion.
+- [x] Existing login throttling remains backward compatible.
+- [x] Account buckets block at 5/15 minutes and IP buckets at 30/15 minutes with atomic increments.
+- [x] Audit interfaces accept only sanitized codes and digests and never accept token/password fields.
+- [x] Tests cover window reset, active block, concurrent increments and separate bucket namespaces.
+- [x] Quick gate passes with no test deletion.
 
-**Tests**: integration — extend `tests/backend/test_control_database.py` and `tests/backend/test_auth_service.py`.  
+**Tests**: integration — extend `tests/backend/test_control_repository.py`, `tests/backend/test_control_models.py`, `tests/backend/test_control_migrations.py`, `tests/backend/test_auth_service.py` and packaged control-head tests.
 **Gate**: quick  
 **Commit**: `feat(security): generalize account action throttling`
+
+**Execution record**: The implementation surface expanded from the planned repository-only change because the existing `LoginThrottle` database CHECK allowed only `account` and `ip`; the designed `invite_*` and `reset_*` namespaces could not be persisted faithfully without a model and control migration change. The correction preserves both login bucket types, advances and packages the control head, and keeps namespaces explicit rather than encoding them into opaque digests. Focused model, migration, repository, audit and packaging tests passed; the full backend gate passed with 876 tests and no deletion, weakening or skip.
 
 ---
 

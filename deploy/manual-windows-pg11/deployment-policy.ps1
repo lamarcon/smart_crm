@@ -160,7 +160,7 @@ function Read-SmartCrmEnvironment {
 }
 
 function Get-SmartCrmControlAlembicUpgradeArguments {
-    return @("-m", "alembic", "-c", "alembic-control.ini", "upgrade", "c01a5d8e4f20")
+    return @("-m", "alembic", "-c", "alembic-control.ini", "upgrade", "d5f0a8c3e7b2")
 }
 
 function Get-SmartCrmControlAlembicCurrentArguments {

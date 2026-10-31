@@ -38,7 +38,7 @@ def test_local_setup_names_exactly_one_control_and_two_tenant_databases() -> Non
 def test_readme_documents_both_migration_lineages_with_exact_revisions() -> None:
     text = read_readme()
 
-    assert "python -m alembic -c alembic-control.ini upgrade c01a5d8e4f20" in text
+    assert "python -m alembic -c alembic-control.ini upgrade d5f0a8c3e7b2" in text
     assert "python -m alembic -c alembic.ini upgrade a4c9d2e7f1b6" in text
     assert "$env:SMART_CRM_CONTROL_DATABASE_URL = $controlUrl" in text
     assert "$env:SMART_CRM_DATABASE_URL = $tenantAUrl" in text
@@ -49,7 +49,7 @@ def test_runtime_startup_never_runs_migrations_automatically() -> None:
     text = read_readme()
 
     assert "O runtime nunca executa upgrade no startup nem durante requests." in text
-    assert "current deve confirmar c01a5d8e4f20" in text
+    assert "current deve confirmar d5f0a8c3e7b2" in text
     assert "current deve confirmar a4c9d2e7f1b6" in text
     assert "app.server:create_central_app --factory --host 127.0.0.1 --port 8080" in text
 

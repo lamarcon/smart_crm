@@ -709,7 +709,7 @@ assinado pelo operador e pelo DBA. Cada linha representa exatamente um banco e c
 | `tenant_id` / `slug` | Vazios somente para `control_database`; explícitos para cada tenant |
 | `database_fingerprint` | Hash aprovado da identidade host/porta/nome, nunca a DSN |
 | `secret_ref` | secret_ref opaco existente no plano de controle; nunca o segredo |
-| `expected_revision` | `c01a5d8e4f20` para controle ou `f6b1d3a8c2e4` para tenant |
+| `expected_revision` | `d5f0a8c3e7b2` para controle ou `f6b1d3a8c2e4` para tenant |
 | `change_ticket` / `authorized_by` | Mudança, operador e DBA que autorizaram aquele banco |
 | `backup_sha256` | Hash da evidência de backup daquele banco |
 | `restore_rehearsal` | Deve ser exatamente `restore_rehearsal=passed` |
@@ -760,7 +760,7 @@ usa credenciais de migração temporárias e processa uma linhagem por vez:
 
 1. parar a aplicação central e manter o Apache/Basic Auth como barreira de homologação;
 2. aplicar somente `alembic-control.ini` ao `control_database`;
-3. confirmar exatamente `c01a5d8e4f20` em `alembic_control_version`;
+3. confirmar exatamente `d5f0a8c3e7b2` em `alembic_control_version`;
 4. executar preflight redigido com seletores explícitos para os tenants do manifesto;
 5. para cada tenant, aplicar a linhagem `alembic.ini` somente ao banco daquela linha;
 6. confirmar exatamente `f6b1d3a8c2e4`, identidade, contagens e RLS antes de avançar;

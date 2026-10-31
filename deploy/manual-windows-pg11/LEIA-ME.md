@@ -306,7 +306,7 @@ $expectedVersion = (& "$releaseRoot\.venv\Scripts\python.exe" `
 
 O inicializador executa, nesta ordem:
 
-1. `alembic-control.ini` ate `c01a5d8e4f20` e confirma exatamente esse head;
+1. `alembic-control.ini` ate `d5f0a8c3e7b2` e confirma exatamente esse head;
 2. executa a migracao tenant ate `a8d4e6f2b1c9` por uma tarefa temporaria sob `SmartCRMService`, usando `FleetService` e os segredos DPAPI;
 3. exige evidencia de que o tenant e o perfil central chegaram ao mesmo head antes de alterar a tarefa web;
 4. exporta a tarefa anterior para a pasta de recuperacao, para a tarefa e confirma que a porta 8080 foi liberada;

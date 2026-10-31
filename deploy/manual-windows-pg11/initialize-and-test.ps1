@@ -104,7 +104,7 @@ try {
         -FailureMessage "Nao foi possivel confirmar a revisao do banco de controle."
     Assert-SmartCrmAlembicRevision `
         -Output @($controlCurrentResult.StdOut, $controlCurrentResult.StdErr) `
-        -ExpectedRevision "c01a5d8e4f20" `
+        -ExpectedRevision "d5f0a8c3e7b2" `
         -DatabaseLabel "controle"
 
     & (Join-Path $PSScriptRoot "invoke-fleet-migration-task.ps1") `

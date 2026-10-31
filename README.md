@@ -78,7 +78,7 @@ Existem duas linhagens Alembic independentes. O runtime nunca executa upgrade no
 
 ```powershell
 $env:SMART_CRM_CONTROL_DATABASE_URL = $controlUrl
-python -m alembic -c alembic-control.ini upgrade c01a5d8e4f20
+python -m alembic -c alembic-control.ini upgrade d5f0a8c3e7b2
 python -m alembic -c alembic-control.ini current
 
 $env:SMART_CRM_DATABASE_URL = $tenantAUrl
@@ -94,7 +94,7 @@ python -m alembic -c alembic.ini upgrade c7f3a9d8e2b1
 python -m alembic -c alembic.ini current
 ```
 
-No controle, current deve confirmar c01a5d8e4f20. Em cada tenant, o primeiro `current deve confirmar a4c9d2e7f1b6` é o checkpoint da release multiempresa já publicada; o `current` final deve confirmar `c7f3a9d8e2b1`, head local do funil personalizável. Pare se qualquer revisão divergir; não use `stamp`, downgrade ou migração automática para contornar drift.
+No controle, current deve confirmar d5f0a8c3e7b2. Em cada tenant, o primeiro `current deve confirmar a4c9d2e7f1b6` é o checkpoint da release multiempresa já publicada; o `current` final deve confirmar `c7f3a9d8e2b1`, head local do funil personalizável. Pare se qualquer revisão divergir; não use `stamp`, downgrade ou migração automática para contornar drift.
 
 ### Provisionamento administrativo local
 

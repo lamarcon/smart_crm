@@ -55,7 +55,7 @@ def test_evidence_and_fleet_output_are_redacted() -> None:
 def test_control_and_tenant_migration_lineages_are_separate_and_ordered() -> None:
     text = read_runbook()
 
-    assert "c01a5d8e4f20" in text
+    assert "d5f0a8c3e7b2" in text
     assert "c7f3a9d8e2b1" in text
     assert "f6b1d3a8c2e4" in text
     assert "A linhagem tenant desta release avança da revisão do funil personalizável" in text

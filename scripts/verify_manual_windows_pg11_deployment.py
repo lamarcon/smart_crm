@@ -48,7 +48,7 @@ def verify_source(root: Path) -> set[str]:
     _require("--no-index" in install and "--find-links" in install, "MPG-06", "offline-only pip flags missing", passed)
     _require(all(token in env_example for token in ("SMART_CRM_DB_NAME=smartcrm", "SMART_CRM_DB_USER=smartcrm", "SMART_CRM_DB_HOST=127.0.0.1", "SMART_CRM_DB_PORT=5432", "REPLACE_WITH_64_HEX_CHARACTERS")) and '"C:\\ProgramData\\SmartCRM"' in install and "New-SmartCrmEnvironmentLines" in install, "MPG-07", "database environment or external-secret contract mismatch", passed)
     _require(not re.search(r"(?i)\b(?:Stop|Restart|Set|Remove)-Service\b|ALTER\s+SYSTEM|pg_ctl", scripts), "MPG-08", "PG11 service mutation command found", passed)
-    _require('"alembic-control.ini", "upgrade", "c01a5d8e4f20"' in policy
+    _require('"alembic-control.ini", "upgrade", "d5f0a8c3e7b2"' in policy
         and all(token in initialize for token in (
         "Get-SmartCrmControlAlembicUpgradeArguments",
         "invoke-fleet-migration-task.ps1",
@@ -93,7 +93,7 @@ def verify_source(root: Path) -> set[str]:
         "Get-SmartCrmControlAlembicCurrentArguments",
         "invoke-fleet-migration-task.ps1",
         "Assert-SmartCrmAlembicRevision",
-        "c01a5d8e4f20",
+        "d5f0a8c3e7b2",
     ))
         and "Get-SmartCrmTenantAlembicCurrentArguments" not in initialize
         and "a8d4e6f2b1c9" in readme

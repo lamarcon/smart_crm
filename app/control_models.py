@@ -93,7 +93,13 @@ class AuthSession(ControlBase):
 class LoginThrottle(ControlBase):
     __tablename__ = "login_throttles"
     __table_args__ = (
-        CheckConstraint("bucket_type IN ('account', 'ip')", name="valid_bucket_type"),
+        CheckConstraint(
+            "bucket_type IN ("
+            "'account', 'ip', 'invite_account', 'invite_ip', "
+            "'reset_account', 'reset_ip'"
+            ")",
+            name="valid_bucket_type",
+        ),
         CheckConstraint("failure_count >= 0", name="failure_count_nonnegative"),
         Index("ix_login_throttles_blocked_until", "blocked_until"),
     )

@@ -23,7 +23,7 @@ from app.tenant_database import (
 )
 
 
-CONTROL_SCHEMA_REVISION = "c01a5d8e4f20"
+CONTROL_SCHEMA_REVISION = "d5f0a8c3e7b2"
 
 
 class RuntimeBootstrapError(RuntimeError):

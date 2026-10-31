@@ -236,6 +236,97 @@ def test_throttle_window_resets_after_expiry(control_database: ControlDatabase) 
         assert result.blocked is False
 
 
+@pytest.mark.parametrize(
+    ("bucket_type", "limit"),
+    [
+        ("invite_account", 5),
+        ("reset_account", 5),
+        ("invite_ip", 30),
+        ("reset_ip", 30),
+    ],
+)
+def test_account_action_buckets_block_at_the_approved_limits(
+    control_database: ControlDatabase,
+    bucket_type: str,
+    limit: int,
+) -> None:
+    with control_database.session_scope() as session:
+        repository = ControlRepository(session)
+        results = [
+            repository.record_account_action_request(
+                bucket_type,
+                "1" * 64,
+                now=NOW,
+            )
+            for _ in range(limit)
+        ]
+
+    assert all(result.blocked is False for result in results[:-1])
+    assert results[-1].failure_count == limit
+    assert results[-1].blocked is True
+    assert results[-1].blocked_until == NOW + timedelta(minutes=15)
+
+
+def test_account_action_bucket_namespaces_are_independent(
+    control_database: ControlDatabase,
+) -> None:
+    with control_database.session_scope() as session:
+        repository = ControlRepository(session)
+        invite = repository.record_account_action_request(
+            "invite_account", "2" * 64, now=NOW
+        )
+        reset = repository.record_account_action_request(
+            "reset_account", "2" * 64, now=NOW
+        )
+
+    assert invite.failure_count == 1
+    assert reset.failure_count == 1
+
+
+def test_account_action_window_resets_after_expiry(
+    control_database: ControlDatabase,
+) -> None:
+    with control_database.session_scope() as session:
+        ControlRepository(session).record_account_action_request(
+            "invite_account", "3" * 64, now=NOW
+        )
+
+    with control_database.session_scope() as session:
+        result = ControlRepository(session).record_account_action_request(
+            "invite_account", "3" * 64, now=NOW + timedelta(minutes=16)
+        )
+
+    assert result.failure_count == 1
+    assert result.blocked is False
+    assert result.blocked_until is None
+
+
+def test_concurrent_account_action_updates_are_atomic(
+    control_database: ControlDatabase,
+) -> None:
+    workers = 6
+    barrier = Barrier(workers)
+
+    def request() -> bool:
+        barrier.wait()
+        with control_database.session_scope() as session:
+            return ControlRepository(session).record_account_action_request(
+                "reset_account", "4" * 64, now=NOW
+            ).blocked
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        blocked = list(executor.map(lambda _index: request(), range(workers)))
+
+    with control_database.session_scope() as session:
+        throttle = session.get(
+            LoginThrottle,
+            {"bucket_type": "reset_account", "subject_digest": "4" * 64},
+        )
+        assert throttle is not None
+        assert throttle.failure_count == 5
+        assert sum(blocked) == 2
+
+
 def test_security_event_accepts_only_redacted_codes(control_database: ControlDatabase) -> None:
     with control_database.session_scope() as session:
         repository = ControlRepository(session)

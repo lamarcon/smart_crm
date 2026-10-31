@@ -20,6 +20,13 @@ from app.control_models import AuthSession, ControlTenant, LoginThrottle, Securi
 
 
 _AUDIT_CODE = re.compile(r"[a-z0-9_.-]{1,128}\Z")
+_ACTION_BUCKET_LIMITS = {
+    "invite_account": 5,
+    "invite_ip": 30,
+    "reset_account": 5,
+    "reset_ip": 30,
+}
+_ACTION_REQUEST_WINDOW = timedelta(minutes=15)
 
 
 class ControlConfigurationError(RuntimeError):
@@ -272,7 +279,7 @@ class ControlRepository:
         )
         return int(result.rowcount or 0)
 
-    def record_login_failure(
+    def record_request(
         self,
         bucket_type: str,
         subject_digest: str,
@@ -332,6 +339,45 @@ class ControlRepository:
             failure_count=throttle.failure_count,
             blocked=throttle.blocked_until is not None and throttle.blocked_until > now,
             blocked_until=throttle.blocked_until,
+        )
+
+    def record_login_failure(
+        self,
+        bucket_type: str,
+        subject_digest: str,
+        *,
+        now: datetime,
+        limit: int,
+        window: timedelta,
+        block_for: timedelta,
+    ) -> ThrottleResult:
+        return self.record_request(
+            bucket_type,
+            subject_digest,
+            now=now,
+            limit=limit,
+            window=window,
+            block_for=block_for,
+        )
+
+    def record_account_action_request(
+        self,
+        bucket_type: str,
+        subject_digest: str,
+        *,
+        now: datetime,
+    ) -> ThrottleResult:
+        try:
+            limit = _ACTION_BUCKET_LIMITS[bucket_type]
+        except KeyError as error:
+            raise ValueError("unsupported account action throttle bucket") from error
+        return self.record_request(
+            bucket_type,
+            subject_digest,
+            now=now,
+            limit=limit,
+            window=_ACTION_REQUEST_WINDOW,
+            block_for=_ACTION_REQUEST_WINDOW,
         )
 
     def clear_login_throttle(self, bucket_type: str, subject_digest: str) -> bool:

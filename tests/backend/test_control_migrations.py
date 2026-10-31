@@ -17,7 +17,7 @@ TEST_DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
-CONTROL_HEAD = "c01a5d8e4f20"
+CONTROL_HEAD = "d5f0a8c3e7b2"
 
 
 def control_config(connection=None) -> Config:  # noqa: ANN001
@@ -69,6 +69,25 @@ def test_control_migration_creates_named_constraints(isolated_control_migration)
         "ck_control_tenants_valid_status",
     }
     assert {item["name"] for item in tenant_uniques} == {"uq_control_tenants_slug"}
+
+    throttle_checks = {
+        item["name"]: item["sqltext"]
+        for item in database_inspector.get_check_constraints(
+            "login_throttles", schema=schema
+        )
+    }
+    bucket_check = throttle_checks["ck_login_throttles_valid_bucket_type"]
+    assert all(
+        bucket in bucket_check
+        for bucket in (
+            "account",
+            "ip",
+            "invite_account",
+            "invite_ip",
+            "reset_account",
+            "reset_ip",
+        )
+    )
 
 
 def test_control_upgrade_is_idempotent(isolated_control_migration) -> None:

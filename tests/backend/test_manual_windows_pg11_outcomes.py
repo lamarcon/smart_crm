@@ -544,7 +544,7 @@ def test_policy_emits_separate_exact_alembic_and_loopback_uvicorn_commands():
     uvicorn = run_policy("@(Get-SmartCrmUvicornArguments) | ConvertTo-Json -Compress")
 
     assert json.loads(control_upgrade.stdout) == [
-        "-m", "alembic", "-c", "alembic-control.ini", "upgrade", "c01a5d8e4f20"
+        "-m", "alembic", "-c", "alembic-control.ini", "upgrade", "d5f0a8c3e7b2"
     ]
     assert json.loads(control_current.stdout) == [
         "-m", "alembic", "-c", "alembic-control.ini", "current"
@@ -582,7 +582,7 @@ def test_initializer_uses_fleet_then_verified_cutover_without_direct_tenant_alem
     )
     assert "$env:SMART_CRM_CONTROL_DATABASE_URL" in initialize
     assert "Assert-SmartCrmAlembicRevision" in initialize
-    assert "c01a5d8e4f20" in initialize
+    assert "d5f0a8c3e7b2" in initialize
     assert "Get-SmartCrmTenantAlembicUpgradeArguments" not in initialize
     assert "Get-SmartCrmTenantAlembicCurrentArguments" not in initialize
     assert "SMART_CRM_DATABASE_URL" not in initialize
@@ -619,16 +619,16 @@ def test_pipeline_release_preserves_side_by_side_identity_hba_and_rollback_contr
 
 def test_alembic_revision_gate_rejects_wrong_or_unheaded_revision():
     valid = run_policy(
-        "Assert-SmartCrmAlembicRevision -Output @('c01a5d8e4f20 (head)') "
-        "-ExpectedRevision 'c01a5d8e4f20' -DatabaseLabel 'controle'"
+        "Assert-SmartCrmAlembicRevision -Output @('d5f0a8c3e7b2 (head)') "
+        "-ExpectedRevision 'd5f0a8c3e7b2' -DatabaseLabel 'controle'"
     )
     wrong = run_policy(
         "Assert-SmartCrmAlembicRevision -Output @('revision-errada (head)') "
-        "-ExpectedRevision 'c01a5d8e4f20' -DatabaseLabel 'controle'"
+        "-ExpectedRevision 'd5f0a8c3e7b2' -DatabaseLabel 'controle'"
     )
     unheaded = run_policy(
-        "Assert-SmartCrmAlembicRevision -Output @('c01a5d8e4f20') "
-        "-ExpectedRevision 'c01a5d8e4f20' -DatabaseLabel 'controle'"
+        "Assert-SmartCrmAlembicRevision -Output @('d5f0a8c3e7b2') "
+        "-ExpectedRevision 'd5f0a8c3e7b2' -DatabaseLabel 'controle'"
     )
 
     assert valid.returncode == 0

@@ -26,6 +26,7 @@ RUNTIME_PATHS = (
 REQUIRED_DEPLOYMENT_FILES = (
     Path("app/fleet_cli.py"),
     Path("migrations/versions/a8d4e6f2b1c9_repair_tenant_deploy_state.py"),
+    Path("migrations_control/versions/d5f0a8c3e7b2_expand_account_action_throttle_buckets.py"),
     Path("deploy/manual-windows-pg11/run-fleet-migration.ps1"),
     Path("deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1"),
 )

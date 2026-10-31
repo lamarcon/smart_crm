@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -16,12 +17,33 @@ from app.services.auth import (
     AuthenticationError,
     AuthService,
     SessionContext,
+    SecurityAuditService,
     TenantUserIdentity,
 )
 from app.tenant_database import TenantUnavailableError
 
 
 NOW = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
+
+
+def test_security_audit_interface_accepts_only_redacted_fields_and_digest() -> None:
+    parameters = set(inspect.signature(SecurityAuditService.record).parameters)
+    digest = SecurityAuditService.correlation_digest(
+        "invite.created", "tenant-id", "user-id"
+    )
+
+    assert parameters == {
+        "self",
+        "event_type",
+        "tenant_id",
+        "user_id",
+        "correlation_digest",
+        "outcome_code",
+        "occurred_at",
+    }
+    assert parameters.isdisjoint({"token", "raw_token", "password", "password_hash"})
+    assert len(digest) == 64
+    assert all(character in "0123456789abcdef" for character in digest)
 
 
 class FakeControlDatabase:
