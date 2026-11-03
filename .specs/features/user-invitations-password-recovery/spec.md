@@ -174,9 +174,9 @@ A tela de usuários simula convites alterando apenas o snapshot do navegador. O 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
 | INV-01 | P1: Gerenciar convites | Execute | T3, T5 and T6 complete; T9–T12, T14 pending |
-| ACCEPT-01 | P1: Aceitar convite | Execute | T3 complete; T7, T10, T11, T13 pending |
+| ACCEPT-01 | P1: Aceitar convite | Execute | T3 and T7 complete; T10, T11, T13 pending |
 | RESET-01 | P1: Recuperar senha | Execute | T3–T5 complete; T8, T10, T11, T13, T14 pending |
-| SEC-01 | P1: Segurança | Execute | T1–T6 complete; T7–T9, T13, T14 pending |
+| SEC-01 | P1: Segurança | Execute | T1–T7 complete; T8, T9, T13, T14 pending |
 | INVUI-01 | P1: Interface real | Tasks | Mapped to T9, T10, T12, T13 |
 
 **Coverage:** 5 requirement groups, 5 mapped to tasks, 0 pending design.

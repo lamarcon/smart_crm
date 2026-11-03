@@ -15,18 +15,32 @@ from sqlalchemy.orm import Session
 
 from app.control_database import ControlDatabase, ControlRepository
 from app.mail import MailDeliveryError, MailSender, render_invitation_email
-from app.models import CrmUser
+from app.models import AccountActionToken, CrmUser
 from app.policies import Action, CURRENT_ROLES, PrincipalScope, can_perform_action
 from app.repositories.account_actions import AccountActionRepository
+from app.security.passwords import (
+    MAX_PASSWORD_LENGTH,
+    MIN_PASSWORD_LENGTH,
+    hash_password,
+)
 from app.services.auth import SecurityAuditService
-from app.tenant_database import TenantDatabaseRouter
+from app.tenant_database import TenantDatabaseRouter, TenantUnavailableError
 
 
 INVITATION_TTL = timedelta(hours=48)
+MAX_RAW_TOKEN_LENGTH = 512
+INVALID_ACTION_LINK_MESSAGE = "Este link é inválido ou expirou."
 
 
 class AccountAccessError(RuntimeError):
     pass
+
+
+class AccountActionLinkInvalidError(AccountAccessError):
+    """Single public failure for every unusable invitation or reset link."""
+
+    def __init__(self) -> None:
+        super().__init__(INVALID_ACTION_LINK_MESSAGE)
 
 
 class AccountAccessAuthorizationError(AccountAccessError):
@@ -39,6 +53,12 @@ class AccountAccessTenantUnavailableError(AccountAccessError):
 
 class AccountAccessValidationError(AccountAccessError):
     pass
+
+
+class AccountPasswordPolicyError(AccountAccessValidationError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 class AccountAlreadyActiveError(AccountAccessError):
@@ -74,6 +94,12 @@ class InvitationResult:
 class UserAccessResult:
     user_id: str
     status: str
+
+
+@dataclass(frozen=True)
+class PublicActionView:
+    company_name: str
+    email: str
 
 
 @dataclass(frozen=True)
@@ -176,8 +202,8 @@ class AccountAccessService:
         self,
         *,
         event_type: str,
-        tenant_id: UUID,
-        user_id: str,
+        tenant_id: UUID | None,
+        user_id: str | None,
         correlation_parts: tuple[object, ...],
         outcome_code: str,
         occurred_at: datetime,
@@ -459,3 +485,172 @@ class AccountAccessService:
         )
         return UserAccessResult(user_id=user_id, status="Cancelado")
 
+
+    # Public invitation inspection and acceptance -----------------------------
+
+    def _public_tenant(self, slug: str):  # noqa: ANN202
+        if not isinstance(slug, str) or not slug:
+            return None
+        with self._control_database.session_scope() as session:
+            tenant = self._control_repository_factory(session).find_tenant_by_slug(slug)
+            if tenant is None or tenant.status != "active":
+                return None
+            return tenant
+
+    @staticmethod
+    def _public_workspace_id(session: Session) -> str:
+        workspace_id = session.scalar(
+            text("SELECT current_setting('smartcrm.workspace_id', true)")
+        )
+        if not workspace_id:
+            raise TenantUnavailableError("tenant database unavailable")
+        return str(workspace_id)
+
+    @staticmethod
+    def _usable_raw_token(raw_token: object) -> bool:
+        return isinstance(raw_token, str) and 0 < len(raw_token) <= MAX_RAW_TOKEN_LENGTH
+
+    @staticmethod
+    def _validate_new_password(password: object, confirmation: object) -> None:
+        if (
+            not isinstance(password, str)
+            or not isinstance(confirmation, str)
+            or password != confirmation
+        ):
+            raise AccountPasswordPolicyError("password_mismatch")
+        if not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
+            raise AccountPasswordPolicyError("password_length")
+
+    @staticmethod
+    def _pending_invitee(
+        session: Session,
+        workspace_id: str,
+        token_digest: str,
+        now: datetime,
+        *,
+        lock: bool,
+    ) -> CrmUser | None:
+        token_user_id = session.scalar(
+            select(AccountActionToken.user_id).where(
+                AccountActionToken.workspace_id == workspace_id,
+                AccountActionToken.purpose == "invitation",
+                AccountActionToken.token_digest == token_digest,
+                AccountActionToken.expires_at > now,
+                AccountActionToken.consumed_at.is_(None),
+                AccountActionToken.invalidated_at.is_(None),
+            )
+        )
+        if token_user_id is None:
+            return None
+        statement = select(CrmUser).where(
+            CrmUser.workspace_id == workspace_id,
+            CrmUser.id == token_user_id,
+            CrmUser.deleted_at.is_(None),
+        )
+        if lock:
+            # Same order as invite/resend/cancel (user, then token) to avoid deadlocks.
+            statement = statement.with_for_update()
+        user = session.scalar(statement)
+        if user is None or user.status != "Pendente":
+            return None
+        return user
+
+    def inspect_action(self, slug: str, purpose: str, raw_token: str) -> PublicActionView:
+        if purpose != "invitation" or not self._usable_raw_token(raw_token):
+            raise AccountActionLinkInvalidError()
+        tenant = self._public_tenant(slug)
+        if tenant is None:
+            raise AccountActionLinkInvalidError()
+        token_digest = self._token_digest(purpose, raw_token)
+        now = self._clock()
+        email = None
+        try:
+            with self._router.tenant_session_scope(tenant.id) as session:
+                workspace_id = self._public_workspace_id(session)
+                user = self._pending_invitee(
+                    session, workspace_id, token_digest, now, lock=False
+                )
+                if user is not None:
+                    email = user.normalized_email or user.email.lower()
+        except TenantUnavailableError:
+            raise AccountActionLinkInvalidError() from None
+        if email is None:
+            raise AccountActionLinkInvalidError()
+        return PublicActionView(company_name=tenant.display_name, email=email)
+
+    def _reject_acceptance(
+        self,
+        *,
+        tenant_id: UUID | None,
+        correlation_parts: tuple[object, ...],
+        occurred_at: datetime,
+    ) -> None:
+        self._record(
+            event_type="invitation.accept_failed",
+            tenant_id=tenant_id,
+            user_id=None,
+            correlation_parts=correlation_parts,
+            outcome_code="invalid_token",
+            occurred_at=occurred_at,
+        )
+        raise AccountActionLinkInvalidError()
+
+    def accept_invitation(
+        self,
+        slug: str,
+        raw_token: str,
+        password: str,
+        confirmation: str,
+        source_ip: str,
+    ) -> None:
+        self._validate_new_password(password, confirmation)
+        now = self._clock()
+        tenant = self._public_tenant(slug) if self._usable_raw_token(raw_token) else None
+        if tenant is None:
+            self._reject_acceptance(
+                tenant_id=None,
+                correlation_parts=("invitation-accept", slug, source_ip),
+                occurred_at=now,
+            )
+        token_digest = self._token_digest("invitation", raw_token)
+        correlation_parts = ("invitation-accept", tenant.id, token_digest, source_ip)
+        # Argon2id is deliberately slow: hash before taking any row lock.
+        password_hash = hash_password(password)
+
+        accepted_user_id = None
+        try:
+            with self._router.tenant_session_scope(tenant.id) as session:
+                workspace_id = self._public_workspace_id(session)
+                user = self._pending_invitee(
+                    session, workspace_id, token_digest, now, lock=True
+                )
+                if user is not None:
+                    token = self._account_action_repository_factory(
+                        session, workspace_id
+                    ).consume_token("invitation", token_digest, now)
+                    if token is not None:
+                        if token.user_id != user.id:
+                            raise AccountActionLinkInvalidError()
+                        user.password_hash = password_hash
+                        user.auth_enabled = True
+                        user.status = "Ativo"
+                        user.auth_version = user.auth_version + 1
+                        session.flush()
+                        accepted_user_id = user.id
+        except (TenantUnavailableError, AccountActionLinkInvalidError):
+            accepted_user_id = None
+
+        if accepted_user_id is None:
+            self._reject_acceptance(
+                tenant_id=tenant.id,
+                correlation_parts=correlation_parts,
+                occurred_at=now,
+            )
+        self._record(
+            event_type="invitation.accepted",
+            tenant_id=tenant.id,
+            user_id=accepted_user_id,
+            correlation_parts=correlation_parts,
+            outcome_code="accepted",
+            occurred_at=now,
+        )

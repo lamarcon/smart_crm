@@ -262,17 +262,19 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Inspection exposes only company and invited email for a valid token and creates no session.
-- [ ] Acceptance atomically consumes the token, stores Argon2id, activates authentication and increments `auth_version` once.
-- [ ] Invalid password leaves the token usable until its natural end.
-- [ ] Invalid, expired, replaced, cancelled, replayed and wrong-tenant tokens share one public failure.
-- [ ] Concurrent acceptance has exactly one success.
-- [ ] Integration tests map 1:1 to ACCEPT-01 through ACCEPT-06.
-- [ ] Quick gate passes with no test deletion.
+- [x] Inspection exposes only company and invited email for a valid token and creates no session.
+- [x] Acceptance atomically consumes the token, stores Argon2id, activates authentication and increments `auth_version` once.
+- [x] Invalid password leaves the token usable until its natural end.
+- [x] Invalid, expired, replaced, cancelled, replayed and wrong-tenant tokens share one public failure.
+- [x] Concurrent acceptance has exactly one success.
+- [x] Integration tests map 1:1 to ACCEPT-01 through ACCEPT-06.
+- [x] Quick gate passes with no test deletion.
 
 **Tests**: integration — extend `tests/backend/test_account_access_service.py` with acceptance scenarios.  
 **Gate**: quick  
 **Commit**: `feat(auth): implement invitation acceptance`
+
+**Evidence**: 12 new PostgreSQL integration tests (23 focused tests in total) and the backend gate passed: 909 tests, 857 passed; the only 52 failures are the pre-existing Windows PowerShell suites (`test_github_release_delivery.py`, `test_manual_windows_pg11_outcomes.py`), identical to the 897-test baseline on the same Linux/PostgreSQL 16 runner and requiring the Windows gate. The suite proves inspection returns only company and e-mail without consuming or auditing, acceptance stores Argon2id, activates, consumes once and increments `auth_version` exactly once (including a reused cancelled account), no session is created and the invitee then signs in through login, absent/unknown/expired/used/cancelled-while-open/replaced/unknown-tenant tokens share one public failure without changing the account, wrong-tenant links open only the presented tenant, invalid passwords are rejected before any tenant access and keep the token usable, four concurrent acceptances have exactly one winner, and acceptance locks user before token like cancel/resend. Mutation checks on version increment, user lock, pending-state check, consumption and authentication enablement were all detected. Password bounds reuse `MIN_PASSWORD_LENGTH`/`MAX_PASSWORD_LENGTH`; the 12→8 change and the exact 8-character boundary remain owned by T10. ACCEPT-03 redirection is UI and is completed in T13. No test was deleted, weakened or skipped.
 
 ---
 

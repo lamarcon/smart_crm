@@ -21,11 +21,15 @@ from app.mail import InMemoryMailSender, MailDeliveryError
 from app.models import AccountActionToken, CrmUser
 from app.policies import PrincipalScope
 from app.services.account_access import (
+    INVALID_ACTION_LINK_MESSAGE,
     AccountAccessAuthorizationError,
     AccountAccessService,
+    AccountActionLinkInvalidError,
     AccountAlreadyActiveError,
+    AccountPasswordPolicyError,
     AccountRequiresReactivationError,
     InvitationCommand,
+    PublicActionView,
 )
 
 
@@ -50,7 +54,16 @@ def _tenant_config(connection) -> Config:  # noqa: ANN001
 
 @pytest.fixture(scope="module")
 def account_access_database_url() -> str:
-    database_name = f"account_access_service_{uuid.uuid4().hex}"
+    yield from _migrated_tenant_database("account_access_service")
+
+
+@pytest.fixture(scope="module")
+def other_tenant_database_url() -> str:
+    yield from _migrated_tenant_database("account_access_other_tenant")
+
+
+def _migrated_tenant_database(prefix: str):  # noqa: ANN202
+    database_name = f"{prefix}_{uuid.uuid4().hex}"
     admin_url = make_url(TEST_DATABASE_URL).set(database="postgres")
     tenant_url = make_url(TEST_DATABASE_URL).set(database=database_name)
     admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT", poolclass=NullPool)
@@ -126,6 +139,14 @@ class ControlRepositoryStub:
             display_name="BRBots",
             status="active",
         )
+
+    def find_tenant_by_slug(self, slug: str):  # noqa: ANN201
+        if slug != "brbots":
+            return None
+        return self.get_tenant(TENANT_ID)
+
+    def create_session(self, **_values) -> None:  # noqa: ANN003
+        raise AssertionError("account access must never create an authenticated session")
 
 
 class RecordingAudit:
@@ -759,3 +780,503 @@ def test_pending_and_cancelled_invitees_cannot_log_in_even_with_a_valid_hash(
 
     user = _read_user(account_access_database_url, email)
     assert (user.status, user.auth_enabled) == ("Cancelado", False)
+
+
+# --- T7: invitation inspection and acceptance -------------------------------
+
+OTHER_TENANT_ID = uuid.UUID("5a0f3c2e-9d41-4b7a-8c6e-2f1d0b9a7c53")
+INVITEE_PASSWORD = "senha-do-convidado-2026"
+
+
+def _seed_admin(database_url: str) -> str:
+    actor_id = f"admin-{uuid.uuid4().hex}"
+    _seed_user(
+        database_url,
+        user_id=actor_id,
+        email=f"{actor_id}@example.test",
+        role="Administrador",
+        status="Ativo",
+        auth_enabled=True,
+    )
+    return actor_id
+
+
+def _link_token(message) -> str:  # noqa: ANN001
+    return message.action_link.split("#token=", 1)[1]
+
+
+def _invite(
+    service: AccountAccessService,
+    mail: InMemoryMailSender,
+    actor_id: str,
+    email: str,
+) -> tuple[str, str]:
+    result = service.invite(TENANT_ID, _principal(actor_id), _command(email), "203.0.113.30")
+    return result.user_id, _link_token(mail.messages[-1])
+
+
+def _account_state(database_url: str, email: str) -> tuple[object, ...]:
+    user = _read_user(database_url, email)
+    return (user.status, user.auth_enabled, user.auth_version, user.password_hash)
+
+
+def _live_tokens(database_url: str, user_id: str) -> list[AccountActionToken]:
+    return [
+        token
+        for token in _read_tokens(database_url, user_id)
+        if token.invalidated_at is None and token.consumed_at is None
+    ]
+
+
+def _assert_public_link_failure(action) -> None:  # noqa: ANN001
+    with pytest.raises(AccountActionLinkInvalidError) as failure:
+        action()
+    assert str(failure.value) == INVALID_ACTION_LINK_MESSAGE
+
+
+def test_inspect_valid_invitation_exposes_only_company_and_email_without_consuming(
+    account_access_database_url: str,
+) -> None:
+    import dataclasses
+
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"inspect-{uuid.uuid4().hex}@example.test"
+    mail = InMemoryMailSender()
+    service, _router, audit = _service(account_access_database_url, mail)
+    user_id, raw_token = _invite(service, mail, actor_id, email)
+    events_before = len(audit.events)
+
+    first = service.inspect_action("brbots", "invitation", raw_token)
+    second = service.inspect_action("brbots", "invitation", raw_token)
+
+    assert first == second == PublicActionView(company_name="BRBots", email=email)
+    assert {field.name for field in dataclasses.fields(PublicActionView)} == {
+        "company_name",
+        "email",
+    }
+    assert _account_state(account_access_database_url, email) == (
+        "Pendente",
+        False,
+        0,
+        None,
+    )
+    assert len(_live_tokens(account_access_database_url, user_id)) == 1
+    assert len(audit.events) == events_before
+
+
+def test_accept_stores_argon2id_activates_consumes_and_increments_auth_version_once(
+    account_access_database_url: str,
+) -> None:
+    from app.security.passwords import verify_password
+
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"accept-{uuid.uuid4().hex}@example.test"
+    mail = InMemoryMailSender()
+    service, _router, audit = _service(account_access_database_url, mail)
+    user_id, raw_token = _invite(service, mail, actor_id, email)
+
+    service.accept_invitation(
+        "brbots", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.31"
+    )
+
+    user = _read_user(account_access_database_url, email)
+    token = _read_tokens(account_access_database_url, user_id)[-1]
+    assert (user.status, user.auth_enabled, user.auth_version) == ("Ativo", True, 1)
+    assert user.password_hash.startswith("$argon2id$")
+    assert INVITEE_PASSWORD not in user.password_hash
+    assert verify_password(user.password_hash, INVITEE_PASSWORD)
+    assert (token.consumed_at, token.invalidated_at) == (NOW, None)
+    assert audit.events[-1]["event_type"] == "invitation.accepted"
+    assert audit.events[-1]["outcome_code"] == "accepted"
+    assert audit.events[-1]["user_id"] == user_id
+    assert audit.events[-1]["tenant_id"] == TENANT_ID
+    assert raw_token not in repr(audit.events)
+    assert INVITEE_PASSWORD not in repr(audit.events)
+    assert user.password_hash not in repr(audit.events)
+
+
+class RecordingLoginRepository:
+    sessions: list[dict[str, object]] = []
+
+    def __init__(self, _session: object) -> None:
+        self.session = SimpleNamespace(get=lambda *_args, **_kwargs: None)
+
+    def find_tenant_by_slug(self, slug: str):  # noqa: ANN201
+        return ControlRepositoryStub(None).find_tenant_by_slug(slug)
+
+    def record_login_failure(self, *_args, **_kwargs) -> None:  # noqa: ANN002, ANN003
+        return None
+
+    def clear_login_throttle(self, *_args) -> None:  # noqa: ANN002
+        return None
+
+    def create_session(self, **values) -> None:  # noqa: ANN003
+        type(self).sessions.append(values)
+
+    def append_security_event(self, **_values):  # noqa: ANN003, ANN201
+        return SimpleNamespace(id=uuid.uuid4())
+
+
+def test_accept_creates_no_session_and_the_invitee_then_signs_in_through_login(
+    account_access_database_url: str,
+) -> None:
+    from app.services.auth import AuthService
+
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"accept-login-{uuid.uuid4().hex}@example.test"
+    mail = InMemoryMailSender()
+    service, _router, _audit = _service(account_access_database_url, mail)
+    user_id, raw_token = _invite(service, mail, actor_id, email)
+    RecordingLoginRepository.sessions = []
+
+    outcome = service.accept_invitation(
+        "brbots", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.32"
+    )
+
+    assert outcome is None
+    assert RecordingLoginRepository.sessions == []
+    auth = AuthService(
+        ControlDatabaseStub(),
+        TenantRouter(account_access_database_url),
+        repository_factory=RecordingLoginRepository,
+        security_audit=RecordingAudit(),
+    )
+    login = auth.login("brbots", email, INVITEE_PASSWORD, "203.0.113.32", now=NOW)
+    assert login.context.principal.user_id == user_id
+    assert login.context.principal.auth_version == 1
+    assert len(RecordingLoginRepository.sessions) == 1
+
+
+def test_every_absent_expired_used_cancelled_or_replaced_token_shares_one_public_failure(
+    account_access_database_url: str,
+) -> None:
+    actor_id = _seed_admin(account_access_database_url)
+    mail = InMemoryMailSender()
+    service, router, audit = _service(account_access_database_url, mail)
+    later = AccountAccessService(
+        ControlDatabaseStub(),
+        router,
+        mail,
+        public_origin="https://crm.example.test",
+        control_repository_factory=ControlRepositoryStub,
+        security_audit=audit,
+        clock=lambda: NOW + timedelta(hours=48, seconds=1),
+    )
+
+    expired_email = f"expired-{uuid.uuid4().hex}@example.test"
+    _expired_id, expired_token = _invite(service, mail, actor_id, expired_email)
+
+    used_email = f"used-{uuid.uuid4().hex}@example.test"
+    _used_id, used_token = _invite(service, mail, actor_id, used_email)
+    service.accept_invitation(
+        "brbots", used_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.33"
+    )
+
+    cancelled_email = f"cancelled-open-page-{uuid.uuid4().hex}@example.test"
+    cancelled_id, cancelled_token = _invite(service, mail, actor_id, cancelled_email)
+    assert service.inspect_action("brbots", "invitation", cancelled_token).email == (
+        cancelled_email
+    )
+    service.cancel_invitation(TENANT_ID, _principal(actor_id), cancelled_id)
+
+    replaced_email = f"replaced-{uuid.uuid4().hex}@example.test"
+    replaced_id, replaced_token = _invite(service, mail, actor_id, replaced_email)
+    service.resend_invitation(TENANT_ID, _principal(actor_id), replaced_id, "203.0.113.33")
+
+    cases = [
+        (service, "brbots", "", None),
+        (service, "brbots", "token-que-nunca-existiu", None),
+        (later, "brbots", expired_token, expired_email),
+        (service, "brbots", used_token, used_email),
+        (service, "brbots", cancelled_token, cancelled_email),
+        (service, "brbots", replaced_token, replaced_email),
+        (service, "empresa-inexistente", replaced_token, replaced_email),
+    ]
+    for case_service, slug, raw_token, email in cases:
+        before = _account_state(account_access_database_url, email) if email else None
+        _assert_public_link_failure(
+            lambda: case_service.inspect_action(slug, "invitation", raw_token)
+        )
+        _assert_public_link_failure(
+            lambda: case_service.accept_invitation(
+                slug, raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.33"
+            )
+        )
+        if email:
+            assert _account_state(account_access_database_url, email) == before
+
+    calls_before = router.calls
+    _assert_public_link_failure(
+        lambda: service.accept_invitation(
+            "empresa-inexistente",
+            replaced_token,
+            INVITEE_PASSWORD,
+            INVITEE_PASSWORD,
+            "203.0.113.33",
+        )
+    )
+    assert router.calls == calls_before
+    assert audit.events[-1]["event_type"] == "invitation.accept_failed"
+    assert audit.events[-1]["outcome_code"] == "invalid_token"
+    assert replaced_token not in repr(audit.events)
+    assert _account_state(account_access_database_url, used_email)[:3] == (
+        "Ativo",
+        True,
+        1,
+    )
+    assert _read_user(account_access_database_url, cancelled_email).status == "Cancelado"
+
+
+@pytest.mark.parametrize(
+    ("password", "confirmation"),
+    [
+        (INVITEE_PASSWORD, INVITEE_PASSWORD + "x"),
+        ("a" * 7, "a" * 7),
+        ("a" * 129, "a" * 129),
+    ],
+    ids=["confirmation-mismatch", "too-short", "too-long"],
+)
+def test_invalid_password_is_rejected_and_keeps_the_invitation_usable(
+    account_access_database_url: str,
+    password: str,
+    confirmation: str,
+) -> None:
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"bad-password-{uuid.uuid4().hex}@example.test"
+    mail = InMemoryMailSender()
+    service, router, _audit = _service(account_access_database_url, mail)
+    user_id, raw_token = _invite(service, mail, actor_id, email)
+    calls_before = router.calls
+
+    with pytest.raises(AccountPasswordPolicyError):
+        service.accept_invitation("brbots", raw_token, password, confirmation, "203.0.113.34")
+
+    assert router.calls == calls_before
+    assert _account_state(account_access_database_url, email) == ("Pendente", False, 0, None)
+    assert len(_live_tokens(account_access_database_url, user_id)) == 1
+    service.accept_invitation(
+        "brbots", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.34"
+    )
+    assert _account_state(account_access_database_url, email)[:3] == ("Ativo", True, 1)
+
+
+def test_concurrent_acceptances_have_exactly_one_winner_and_one_version_increment(
+    account_access_database_url: str,
+) -> None:
+    from app.security.passwords import verify_password
+
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"concurrent-accept-{uuid.uuid4().hex}@example.test"
+    mail = InMemoryMailSender()
+    service, _router, _audit = _service(account_access_database_url, mail)
+    user_id, raw_token = _invite(service, mail, actor_id, email)
+    passwords = [f"senha-concorrente-{index}-2026" for index in range(4)]
+    barrier = threading.Barrier(len(passwords))
+
+    def accept(password: str) -> str:
+        barrier.wait(timeout=10)
+        try:
+            service.accept_invitation("brbots", raw_token, password, password, "203.0.113.35")
+        except AccountActionLinkInvalidError:
+            return "rejected"
+        return "accepted"
+
+    with ThreadPoolExecutor(max_workers=len(passwords)) as executor:
+        outcomes = list(executor.map(accept, passwords))
+
+    user = _read_user(account_access_database_url, email)
+    winner = passwords[outcomes.index("accepted")]
+    assert sorted(outcomes) == ["accepted", "rejected", "rejected", "rejected"]
+    assert (user.status, user.auth_enabled, user.auth_version) == ("Ativo", True, 1)
+    assert [verify_password(user.password_hash, item) for item in passwords] == [
+        item == winner for item in passwords
+    ]
+    tokens = _read_tokens(account_access_database_url, user_id)
+    assert sum(token.consumed_at is not None for token in tokens) == 1
+
+
+class MultiTenantRouter:
+    def __init__(self, database_urls: dict[uuid.UUID, str]) -> None:
+        self.database_urls = database_urls
+        self.opened: list[uuid.UUID] = []
+        self._lock = threading.Lock()
+
+    @contextmanager
+    def tenant_session_scope(self, tenant_id: uuid.UUID):
+        with self._lock:
+            self.opened.append(tenant_id)
+        engine = create_engine(self.database_urls[tenant_id], poolclass=NullPool)
+        session = Session(bind=engine, expire_on_commit=False)
+        try:
+            with session.begin():
+                _set_workspace(session)
+                yield session
+        finally:
+            session.close()
+            engine.dispose()
+
+
+class TwoTenantControlRepository(ControlRepositoryStub):
+    def get_tenant(self, tenant_id: uuid.UUID):  # noqa: ANN201
+        if tenant_id == OTHER_TENANT_ID:
+            return SimpleNamespace(
+                id=OTHER_TENANT_ID,
+                slug="outra",
+                display_name="Outra Empresa",
+                status="active",
+            )
+        return super().get_tenant(tenant_id)
+
+    def find_tenant_by_slug(self, slug: str):  # noqa: ANN201
+        if slug == "outra":
+            return self.get_tenant(OTHER_TENANT_ID)
+        return super().find_tenant_by_slug(slug)
+
+
+def test_link_presented_to_another_tenant_fails_without_touching_either_tenant(
+    account_access_database_url: str,
+    other_tenant_database_url: str,
+) -> None:
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"wrong-tenant-{uuid.uuid4().hex}@example.test"
+    mail = InMemoryMailSender()
+    router = MultiTenantRouter(
+        {
+            TENANT_ID: account_access_database_url,
+            OTHER_TENANT_ID: other_tenant_database_url,
+        }
+    )
+    service = AccountAccessService(
+        ControlDatabaseStub(),
+        router,
+        mail,
+        public_origin="https://crm.example.test",
+        control_repository_factory=TwoTenantControlRepository,
+        security_audit=RecordingAudit(),
+        clock=lambda: NOW,
+    )
+    user_id, raw_token = _invite(service, mail, actor_id, email)
+    router.opened.clear()
+
+    _assert_public_link_failure(lambda: service.inspect_action("outra", "invitation", raw_token))
+    _assert_public_link_failure(
+        lambda: service.accept_invitation(
+            "outra", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.36"
+        )
+    )
+
+    assert set(router.opened) == {OTHER_TENANT_ID}
+    assert _read_user(other_tenant_database_url, email) is None
+    assert _account_state(account_access_database_url, email) == ("Pendente", False, 0, None)
+    assert len(_live_tokens(account_access_database_url, user_id)) == 1
+    service.accept_invitation(
+        "brbots", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.36"
+    )
+    assert _account_state(account_access_database_url, email)[:3] == ("Ativo", True, 1)
+
+
+def _update_user(database_url: str, user_id: str, **values: object) -> None:
+    engine = create_engine(database_url, poolclass=NullPool)
+    try:
+        with Session(bind=engine) as session, session.begin():
+            _set_workspace(session)
+            user = session.get(CrmUser, user_id)
+            for name, value in values.items():
+                setattr(user, name, value)
+    finally:
+        engine.dispose()
+
+
+def test_accept_of_a_reused_cancelled_account_increments_its_existing_version_once(
+    account_access_database_url: str,
+) -> None:
+    actor_id = _seed_admin(account_access_database_url)
+    target_id = f"reused-{uuid.uuid4().hex}"
+    email = f"{target_id}@example.test"
+    _seed_user(
+        account_access_database_url,
+        user_id=target_id,
+        email=email,
+        role="Vendedor",
+        status="Cancelado",
+        auth_enabled=False,
+    )
+    _update_user(account_access_database_url, target_id, auth_version=3)
+    mail = InMemoryMailSender()
+    service, _router, _audit = _service(account_access_database_url, mail)
+    _user_id, raw_token = _invite(service, mail, actor_id, email)
+
+    service.accept_invitation(
+        "brbots", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.37"
+    )
+
+    assert _account_state(account_access_database_url, email)[:3] == ("Ativo", True, 4)
+
+
+def test_live_invitation_of_an_account_that_left_pending_is_rejected_unchanged(
+    account_access_database_url: str,
+) -> None:
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"left-pending-{uuid.uuid4().hex}@example.test"
+    mail = InMemoryMailSender()
+    service, _router, _audit = _service(account_access_database_url, mail)
+    user_id, raw_token = _invite(service, mail, actor_id, email)
+    _update_user(account_access_database_url, user_id, status="Inativo")
+
+    _assert_public_link_failure(lambda: service.inspect_action("brbots", "invitation", raw_token))
+    _assert_public_link_failure(
+        lambda: service.accept_invitation(
+            "brbots", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.38"
+        )
+    )
+
+    assert _account_state(account_access_database_url, email) == ("Inativo", False, 0, None)
+    assert len(_live_tokens(account_access_database_url, user_id)) == 1
+
+
+def test_accept_locks_the_user_before_the_token_like_cancel_and_resend(
+    account_access_database_url: str,
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"lock-order-{uuid.uuid4().hex}@example.test"
+    mail = InMemoryMailSender()
+    service, _router, _audit = _service(account_access_database_url, mail)
+    user_id, raw_token = _invite(service, mail, actor_id, email)
+    token_id = _live_tokens(account_access_database_url, user_id)[0].id
+
+    engine = create_engine(account_access_database_url, poolclass=NullPool)
+    holder = Session(bind=engine)
+    try:
+        holder.begin()
+        _set_workspace(holder)
+        holder.execute(
+            select(CrmUser.id).where(CrmUser.id == user_id).with_for_update()
+        ).all()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending = executor.submit(
+                service.accept_invitation,
+                "brbots",
+                raw_token,
+                INVITEE_PASSWORD,
+                INVITEE_PASSWORD,
+                "203.0.113.39",
+            )
+            threading.Event().wait(2)
+            assert not pending.done()
+            try:
+                holder.execute(
+                    select(AccountActionToken.id)
+                    .where(AccountActionToken.id == token_id)
+                    .with_for_update(nowait=True)
+                ).all()
+            except OperationalError as error:  # pragma: no cover - failure path
+                raise AssertionError("accept locked the token before the user") from error
+            holder.rollback()
+            pending.result(timeout=30)
+    finally:
+        holder.close()
+        engine.dispose()
+
+    assert _account_state(account_access_database_url, email)[:3] == ("Ativo", True, 1)
