@@ -231,17 +231,19 @@ T13 → T14
 
 **Done when**:
 
-- [ ] State matrix for new, Pendente, Ativo, Cancelado and Inativo accounts matches the spec.
-- [ ] Two concurrent invitations for the same normalized email persist one user and at most one valid token.
-- [ ] SMTP is called only after the first transaction commits and failure returns `deliveryStatus=failed` with user still Pendente.
-- [ ] Cancel disables authentication and invalidates every live invitation.
-- [ ] Non-Administrator calls cause no database or SMTP side effect.
-- [ ] Integration tests map 1:1 to INV-01 through INV-10 and the invitation edge cases.
-- [ ] Quick gate passes with no test deletion.
+- [x] State matrix for new, Pendente, Ativo, Cancelado and Inativo accounts matches the spec.
+- [x] Two concurrent invitations for the same normalized email persist one user and at most one valid token.
+- [x] SMTP is called only after the first transaction commits and failure returns `deliveryStatus=failed` with user still Pendente.
+- [x] Cancel disables authentication and invalidates every live invitation.
+- [x] Non-Administrator calls cause no database or SMTP side effect.
+- [x] Integration tests map 1:1 to INV-01 through INV-10 and the invitation edge cases.
+- [x] Quick gate passes with no test deletion.
 
 **Tests**: integration — create `tests/backend/test_account_access_service.py` with invitation scenarios.  
 **Gate**: quick  
 **Commit**: `feat(users): implement invitation lifecycle`
+
+**Evidence**: 11 focused PostgreSQL integration tests and the 897-test backend gate passed. The suite proves the complete account-state matrix, delivery only after commit, redacted audit events, failed-delivery invalidation, one live token under concurrent invitations, cancellation, non-administrator zero side effects, administrator-role invitations, and login denial for pending/cancelled accounts. Assignment eligibility remains protected by the existing active-only selector and receives its persistence-boundary regression coverage in T9 and API/UI coverage in T12. No test was deleted, weakened or skipped.
 
 ---
 
