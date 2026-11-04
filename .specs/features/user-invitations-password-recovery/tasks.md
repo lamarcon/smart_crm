@@ -293,17 +293,21 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Existing/non-existing tenant, user state, SMTP failure and throttling have the same public request result.
-- [ ] Only active enabled users receive a reset token and a new request invalidates its predecessor.
-- [ ] Reset atomically changes Argon2id hash, consumes once and increments `auth_version` once.
-- [ ] All central sessions are revoked; `auth_version` independently rejects a stale session if cleanup fails.
-- [ ] Old password, stale session and replayed/wrong-tenant tokens fail after reset.
-- [ ] Integration tests map 1:1 to RESET-01 through RESET-06 and both rate limits.
-- [ ] Quick gate passes with no test deletion.
+- [x] Existing/non-existing tenant, user state, SMTP failure and throttling have the same public request result.
+- [x] Only active enabled users receive a reset token and a new request invalidates its predecessor.
+- [x] Reset atomically changes Argon2id hash, consumes once and increments `auth_version` once.
+- [x] All central sessions are revoked; `auth_version` independently rejects a stale session if cleanup fails.
+- [x] Old password, stale session and replayed/wrong-tenant tokens fail after reset.
+- [x] Integration tests map 1:1 to RESET-01 through RESET-06 and both rate limits.
+- [x] Quick gate passes with no test deletion.
 
 **Tests**: integration — extend `tests/backend/test_account_access_service.py` and `tests/backend/test_auth_service.py`.  
 **Gate**: quick  
 **Commit**: `feat(auth): implement password recovery`
+
+**Evidence**: 12 new PostgreSQL integration tests (35 focused tests in total) against a real control schema, so throttling, session creation and revocation run through `ControlRepository` and `AuthService`. They prove: unknown/unavailable tenant, unknown or malformed e-mail, Pendente/Inativo/Cancelado/auth-disabled accounts, SMTP failure and both rate limits all return the same `None` result, create no token or account and keep audit events free of e-mail and raw token (RESET-01, RESET-03); only an Ativo, enabled user receives a 48-hour `/{slug}/reset-password#token=` link and a new request replaces its predecessor (RESET-02); reset stores Argon2id, consumes once, increments `auth_version` once, revokes every central session, creates none, and old password, stale sessions and the replayed link then fail (RESET-04, RESET-05); when central revocation fails twice the reset still completes, the failure is audited and `AuthService.current_session` rejects the stale session through the version mismatch; absent, oversized, unknown, expired, used, replaced, undelivered, invitation-purpose, inactivated-after-request, unknown-tenant and unavailable-tenant links share one public failure without changes (RESET-06, SEC-06); a link presented to another tenant opens only that tenant (SEC-07); invalid passwords are rejected before any tenant access; four concurrent resets have one winner; the 6th request per account and the 31st per IP in 15 minutes are silently not sent, and the account bucket reopens after the window (SEC-03, SEC-04). Mutation checks on the version increment, session revocation, throttle check, account eligibility and revocation retry were all detected. Stale-session rejection is covered through `AuthService` from the account-access suite; `tests/backend/test_auth_service.py` already proves the version-mismatch revocation and needed no change. Delivery is synchronous, so SMTP latency remains observable at the service level; T11 must keep the public 202 independent of it. No test was deleted, weakened or skipped.
+
+**Windows gate**: full backend suite on Windows 11 with Docker PostgreSQL 17 passed with 921 tests (909 after T7 + 12 new), 6 pre-existing warnings, including the PowerShell packaging suites.
 
 ---
 

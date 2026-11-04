@@ -1280,3 +1280,668 @@ def test_accept_locks_the_user_before_the_token_like_cancel_and_resend(
         engine.dispose()
 
     assert _account_state(account_access_database_url, email)[:3] == ("Ativo", True, 1)
+
+
+# --- T8: password recovery and session invalidation -------------------------
+
+UNAVAILABLE_TENANT_ID = uuid.UUID("9c3d7e1a-2b4f-4c8d-9e0a-6f5b4a3c2d1e")
+OLD_PASSWORD = "senha-antiga-segura-2026"
+NEW_PASSWORD = "senha-nova-segura-2026"
+RESET_TTL = timedelta(hours=48)
+
+
+@pytest.fixture
+def recovery_control_database():
+    from app.control_database import ControlDatabase
+    from app.control_models import ControlBase, ControlTenant
+
+    admin_engine = create_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    schema = f"account_recovery_{uuid.uuid4().hex}"
+    with admin_engine.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_engine(
+        TEST_DATABASE_URL,
+        connect_args={"options": f"-csearch_path={schema}"},
+        pool_size=8,
+        max_overflow=4,
+    )
+    ControlBase.metadata.create_all(engine)
+    database = ControlDatabase(engine=engine)
+    with database.session_scope() as session:
+        for tenant_id, slug, display_name in (
+            (TENANT_ID, "brbots", "BRBots"),
+            (OTHER_TENANT_ID, "outra", "Outra Empresa"),
+            (UNAVAILABLE_TENANT_ID, "fora-do-ar", "Fora do Ar"),
+        ):
+            session.add(
+                ControlTenant(
+                    id=tenant_id,
+                    slug=slug,
+                    display_name=display_name,
+                    status="active",
+                    secret_ref=f"db-{slug}",
+                    expected_tenant_revision="tenant-head",
+                )
+            )
+    try:
+        yield database
+    finally:
+        database.dispose()
+        with admin_engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        admin_engine.dispose()
+
+
+class RecoveryRouter(MultiTenantRouter):
+    """Routes known tenants; any other tenant database is unavailable."""
+
+    @contextmanager
+    def tenant_session_scope(self, tenant_id: uuid.UUID):
+        from app.tenant_database import TenantUnavailableError
+
+        if tenant_id not in self.database_urls:
+            with self._lock:
+                self.opened.append(tenant_id)
+            raise TenantUnavailableError("tenant database unavailable")
+        with super().tenant_session_scope(tenant_id) as session:
+            yield session
+
+
+def _recovery_service(
+    control_database,  # noqa: ANN001
+    router: RecoveryRouter,
+    mail_sender,  # noqa: ANN001
+    *,
+    audit: RecordingAudit | None = None,
+    clock=None,  # noqa: ANN001
+    control_repository_factory=None,  # noqa: ANN001
+) -> AccountAccessService:
+    from app.control_database import ControlRepository
+
+    return AccountAccessService(
+        control_database,
+        router,
+        mail_sender,
+        public_origin="https://crm.example.test",
+        control_repository_factory=control_repository_factory or ControlRepository,
+        security_audit=audit or RecordingAudit(),
+        clock=clock or (lambda: NOW),
+    )
+
+
+def _recovery_auth(control_database, database_url: str):  # noqa: ANN001, ANN202
+    from app.services.auth import AuthService
+
+    return AuthService(
+        control_database,
+        RecoveryRouter({TENANT_ID: database_url}),
+        security_audit=RecordingAudit(),
+    )
+
+
+def _seed_active_member(database_url: str, *, password: str = OLD_PASSWORD) -> tuple[str, str]:
+    from app.security.passwords import hash_password
+
+    user_id = f"member-{uuid.uuid4().hex}"
+    email = f"{user_id}@example.test"
+    _seed_user(
+        database_url,
+        user_id=user_id,
+        email=email,
+        role="Vendedor",
+        status="Ativo",
+        auth_enabled=True,
+        password_hash=hash_password(password),
+    )
+    return user_id, email
+
+
+def _reset_tokens(database_url: str, user_id: str) -> list[AccountActionToken]:
+    return [
+        token
+        for token in _read_tokens(database_url, user_id)
+        if token.purpose == "password_reset"
+    ]
+
+
+def _sessions(control_database, user_id: str) -> list:  # noqa: ANN001
+    from app.control_models import AuthSession
+
+    with control_database.session_scope() as session:
+        rows = session.scalars(
+            select(AuthSession).where(AuthSession.user_id == user_id)
+        ).all()
+        session.expunge_all()
+        return list(rows)
+
+
+def _unique_ip() -> str:
+    return f"2001:db8::{uuid.uuid4().hex[:4]}"
+
+
+def test_reset_request_result_is_identical_for_every_tenant_account_and_smtp_outcome(
+    account_access_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+) -> None:
+    from app.services.account_access import PASSWORD_RESET_REQUEST_MESSAGE
+
+    assert PASSWORD_RESET_REQUEST_MESSAGE == "Se o e-mail existir, enviaremos as instruções."
+    database_url = account_access_database_url
+    _active_id, active_email = _seed_active_member(database_url)
+    _failing_id, failing_email = _seed_active_member(database_url)
+    states = {}
+    for status, enabled in (("Pendente", False), ("Inativo", False), ("Cancelado", False)):
+        user_id = f"{status.lower()}-{uuid.uuid4().hex}"
+        _seed_user(
+            database_url,
+            user_id=user_id,
+            email=f"{user_id}@example.test",
+            role="Vendedor",
+            status=status,
+            auth_enabled=enabled,
+        )
+        states[user_id] = f"{user_id}@example.test"
+    disabled_id, disabled_email = _seed_active_member(database_url)
+    _update_user(database_url, disabled_id, auth_enabled=False)
+    states[disabled_id] = disabled_email
+
+    router = RecoveryRouter({TENANT_ID: database_url})
+    mail = InMemoryMailSender()
+    failing = FailingMailSender("smtp_timeout")
+    audit = RecordingAudit()
+    service = _recovery_service(recovery_control_database, router, mail, audit=audit)
+    failing_service = _recovery_service(
+        recovery_control_database, router, failing, audit=audit
+    )
+
+    unknown_email = f"nobody-{uuid.uuid4().hex}@example.test"
+    cases = [
+        (service, "empresa-inexistente", active_email),
+        (service, "fora-do-ar", active_email),
+        (service, "brbots", unknown_email),
+        (service, "brbots", "sem-arroba"),
+        *[(service, "brbots", email) for email in states.values()],
+        (failing_service, "brbots", failing_email),
+        (service, "brbots", f"  {active_email.upper()} "),
+    ]
+    before = {
+        user_id: _account_state(database_url, email) for user_id, email in states.items()
+    }
+    outcomes = [
+        case_service.request_password_reset(slug, email, _unique_ip())
+        for case_service, slug, email in cases
+    ]
+
+    assert outcomes == [None] * len(cases)
+    assert [message.recipient for message in mail.messages] == [active_email]
+    assert mail.messages[0].action_link.startswith(
+        "https://crm.example.test/brbots/reset-password#token="
+    )
+    assert failing.attempts == 1
+    for user_id, email in states.items():
+        assert _account_state(database_url, email) == before[user_id]
+        assert _reset_tokens(database_url, user_id) == []
+    assert _read_user(database_url, unknown_email) is None
+    failed_tokens = _reset_tokens(database_url, _failing_id)
+    assert [(t.delivery_status, t.invalidation_reason) for t in failed_tokens] == [
+        ("failed", "delivery_failed")
+    ]
+    ignored = [
+        event["outcome_code"]
+        for event in audit.events
+        if event["event_type"] == "password_reset.request_ignored"
+    ]
+    assert ignored == [
+        "unknown_tenant",
+        "tenant_unavailable",
+        "no_eligible_account",
+        "no_eligible_account",
+        *["no_eligible_account"] * len(states),
+    ]
+    assert any(
+        event["event_type"] == "password_reset.delivery_failed"
+        and event["outcome_code"] == "smtp_timeout"
+        for event in audit.events
+    )
+    raw_token = _link_token(mail.messages[0])
+    rendered_events = repr(audit.events)
+    for secret in (raw_token, active_email, failing_email, unknown_email):
+        assert secret not in rendered_events
+
+
+def test_reset_request_for_active_user_sends_one_48h_link_and_replaces_previous_tokens(
+    account_access_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+) -> None:
+    database_url = account_access_database_url
+    user_id, email = _seed_active_member(database_url)
+    mail = InMemoryMailSender()
+    service = _recovery_service(
+        recovery_control_database, RecoveryRouter({TENANT_ID: database_url}), mail
+    )
+
+    service.request_password_reset("brbots", email, "198.51.100.10")
+    service.request_password_reset("brbots", email, "198.51.100.10")
+
+    first_token, second_token = (_link_token(message) for message in mail.messages)
+    assert [message.recipient for message in mail.messages] == [email, email]
+    tokens = _reset_tokens(database_url, user_id)
+    assert len(tokens) == 2
+    assert tokens[0].token_digest == AccountAccessService._token_digest(
+        "password_reset", first_token
+    )
+    assert (tokens[0].invalidated_at, tokens[0].invalidation_reason) == (NOW, "replaced")
+    live = tokens[1]
+    assert live.token_digest == AccountAccessService._token_digest(
+        "password_reset", second_token
+    )
+    assert (live.expires_at, live.consumed_at, live.invalidated_at) == (
+        NOW + RESET_TTL,
+        None,
+        None,
+    )
+    assert (live.created_by_user_id, live.delivery_status) == (None, "sent")
+    assert service.inspect_action("brbots", "password_reset", second_token) == (
+        PublicActionView(company_name="BRBots", email=email)
+    )
+    _assert_public_link_failure(
+        lambda: service.inspect_action("brbots", "password_reset", first_token)
+    )
+    _assert_public_link_failure(
+        lambda: service.inspect_action("brbots", "invitation", second_token)
+    )
+    assert _account_state(database_url, email)[:3] == ("Ativo", True, 1)
+
+
+def test_reset_replaces_argon2id_consumes_once_increments_version_and_revokes_sessions(
+    account_access_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+) -> None:
+    from app.security.passwords import verify_password
+    from app.services.auth import AuthenticationError
+
+    database_url = account_access_database_url
+    user_id, email = _seed_active_member(database_url)
+    auth = _recovery_auth(recovery_control_database, database_url)
+    first_login = auth.login("brbots", email, OLD_PASSWORD, "198.51.100.20", now=NOW)
+    second_login = auth.login("brbots", email, OLD_PASSWORD, "198.51.100.21", now=NOW)
+    mail = InMemoryMailSender()
+    audit = RecordingAudit()
+    service = _recovery_service(
+        recovery_control_database,
+        RecoveryRouter({TENANT_ID: database_url}),
+        mail,
+        audit=audit,
+    )
+    service.request_password_reset("brbots", email, "198.51.100.22")
+    raw_token = _link_token(mail.messages[-1])
+
+    outcome = service.reset_password(
+        "brbots", raw_token, NEW_PASSWORD, NEW_PASSWORD, "198.51.100.22"
+    )
+
+    assert outcome is None
+    user = _read_user(database_url, email)
+    assert (user.status, user.auth_enabled, user.auth_version) == ("Ativo", True, 2)
+    assert user.password_hash.startswith("$argon2id$")
+    assert verify_password(user.password_hash, NEW_PASSWORD)
+    assert not verify_password(user.password_hash, OLD_PASSWORD)
+    token = _reset_tokens(database_url, user_id)[-1]
+    assert (token.consumed_at, token.invalidated_at) == (NOW, None)
+    sessions = _sessions(recovery_control_database, user_id)
+    assert len(sessions) == 2
+    assert {(row.revoked_at, row.revocation_reason) for row in sessions} == {
+        (NOW, "password_reset")
+    }
+    for login in (first_login, second_login):
+        with pytest.raises(AuthenticationError):
+            auth.current_session(login.token, now=NOW + timedelta(seconds=1))
+    with pytest.raises(AuthenticationError):
+        auth.login("brbots", email, OLD_PASSWORD, "198.51.100.23", now=NOW)
+    fresh = auth.login("brbots", email, NEW_PASSWORD, "198.51.100.23", now=NOW)
+    assert fresh.context.principal.auth_version == 2
+    _assert_public_link_failure(
+        lambda: service.reset_password(
+            "brbots", raw_token, OLD_PASSWORD, OLD_PASSWORD, "198.51.100.22"
+        )
+    )
+    assert _read_user(database_url, email).auth_version == 2
+    event_types = [event["event_type"] for event in audit.events]
+    assert event_types[-3:] == [
+        "session.revoked",
+        "password_reset.completed",
+        "password_reset.failed",
+    ]
+    rendered = repr(audit.events)
+    for secret in (raw_token, NEW_PASSWORD, OLD_PASSWORD, user.password_hash, email):
+        assert secret not in rendered
+
+
+def test_reset_creates_no_session_and_stale_sessions_fail_even_if_revocation_fails(
+    account_access_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    from app.control_database import ControlRepository
+    from app.services.auth import AuthenticationError
+
+    class RevocationOutageRepository(ControlRepository):
+        attempts = 0
+
+        def create_session(self, **_values):  # noqa: ANN003, ANN201
+            raise AssertionError("password reset must never create a session")
+
+        def revoke_user_sessions(self, *_args, **_kwargs):  # noqa: ANN002, ANN003, ANN201
+            type(self).attempts += 1
+            raise OperationalError("UPDATE auth_sessions", {}, Exception("offline"))
+
+    database_url = account_access_database_url
+    user_id, email = _seed_active_member(database_url)
+    auth = _recovery_auth(recovery_control_database, database_url)
+    stale = auth.login("brbots", email, OLD_PASSWORD, "198.51.100.30", now=NOW)
+    mail = InMemoryMailSender()
+    audit = RecordingAudit()
+    service = _recovery_service(
+        recovery_control_database,
+        RecoveryRouter({TENANT_ID: database_url}),
+        mail,
+        audit=audit,
+        control_repository_factory=RevocationOutageRepository,
+    )
+    service.request_password_reset("brbots", email, "198.51.100.31")
+
+    service.reset_password(
+        "brbots",
+        _link_token(mail.messages[-1]),
+        NEW_PASSWORD,
+        NEW_PASSWORD,
+        "198.51.100.31",
+    )
+
+    assert RevocationOutageRepository.attempts == 2
+    assert audit.events[-2]["event_type"] == "password_reset.session_revocation_failed"
+    assert audit.events[-1]["event_type"] == "password_reset.completed"
+    assert _read_user(database_url, email).auth_version == 2
+    [row] = _sessions(recovery_control_database, user_id)
+    assert row.revoked_at is None and row.auth_version == 1
+    with pytest.raises(AuthenticationError):
+        auth.current_session(stale.token, now=NOW + timedelta(seconds=1))
+    [row] = _sessions(recovery_control_database, user_id)
+    assert row.revocation_reason == "auth_changed"
+
+
+def test_every_unusable_reset_token_shares_one_public_failure_without_changes(
+    account_access_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+) -> None:
+    database_url = account_access_database_url
+    router = RecoveryRouter({TENANT_ID: database_url})
+    mail = InMemoryMailSender()
+    audit = RecordingAudit()
+    service = _recovery_service(recovery_control_database, router, mail, audit=audit)
+    later = _recovery_service(
+        recovery_control_database,
+        router,
+        mail,
+        audit=audit,
+        clock=lambda: NOW + RESET_TTL + timedelta(seconds=1),
+    )
+
+    def requested(*, ip: str) -> tuple[str, str, str]:
+        user_id, email = _seed_active_member(database_url)
+        service.request_password_reset("brbots", email, ip)
+        return user_id, email, _link_token(mail.messages[-1])
+
+    _expired_id, expired_email, expired_token = requested(ip="198.51.100.40")
+    _used_id, used_email, used_token = requested(ip="198.51.100.41")
+    service.reset_password("brbots", used_token, NEW_PASSWORD, NEW_PASSWORD, "198.51.100.41")
+    replaced_id, replaced_email, replaced_token = requested(ip="198.51.100.42")
+    service.request_password_reset("brbots", replaced_email, "198.51.100.42")
+    inactive_id, inactive_email, inactive_token = requested(ip="198.51.100.43")
+    _update_user(database_url, inactive_id, status="Inativo", auth_enabled=False)
+
+    class CapturingFailingMail(InMemoryMailSender):
+        def send(self, message) -> None:  # noqa: ANN001
+            super().send(message)
+            raise MailDeliveryError("smtp_recipient_refused")
+
+    undelivered_mail = CapturingFailingMail()
+    failing = _recovery_service(
+        recovery_control_database, router, undelivered_mail, audit=audit
+    )
+    _undelivered_id, undelivered_email = _seed_active_member(database_url)
+    failing.request_password_reset("brbots", undelivered_email, "198.51.100.44")
+    undelivered_token = _link_token(undelivered_mail.messages[-1])
+    actor_id = _seed_admin(database_url)
+    invitee_email = f"invitee-{uuid.uuid4().hex}@example.test"
+    invite_service, _router, _audit = _service(database_url, mail)
+    _invitee_id, invitation_token = _invite(invite_service, mail, actor_id, invitee_email)
+
+    cases = [
+        (service, "brbots", "", None),
+        (service, "brbots", "x" * 513, None),
+        (service, "brbots", "token-que-nunca-existiu", None),
+        (later, "brbots", expired_token, expired_email),
+        (service, "brbots", used_token, used_email),
+        (service, "brbots", replaced_token, replaced_email),
+        (service, "brbots", inactive_token, inactive_email),
+        (service, "brbots", undelivered_token, undelivered_email),
+        (service, "brbots", invitation_token, invitee_email),
+        (service, "empresa-inexistente", replaced_token, replaced_email),
+        (service, "fora-do-ar", replaced_token, replaced_email),
+    ]
+    for case_service, slug, raw_token, email in cases:
+        before = _account_state(database_url, email) if email else None
+        _assert_public_link_failure(
+            lambda: case_service.inspect_action(slug, "password_reset", raw_token)
+        )
+        _assert_public_link_failure(
+            lambda: case_service.reset_password(
+                slug, raw_token, NEW_PASSWORD, NEW_PASSWORD, "198.51.100.45"
+            )
+        )
+        if email:
+            assert _account_state(database_url, email) == before
+
+    assert audit.events[-1]["event_type"] == "password_reset.failed"
+    assert audit.events[-1]["outcome_code"] == "invalid_token"
+    assert _account_state(database_url, used_email)[2] == 2
+    assert _account_state(database_url, replaced_email)[2] == 1
+    assert len(_live_tokens(database_url, replaced_id)) == 1
+    assert _account_state(database_url, invitee_email) == ("Pendente", False, 0, None)
+    rendered = repr(audit.events)
+    for secret in (
+        expired_token,
+        used_token,
+        replaced_token,
+        undelivered_token,
+        invitation_token,
+    ):
+        assert secret not in rendered
+
+
+def test_reset_link_presented_to_another_tenant_fails_without_touching_either_tenant(
+    account_access_database_url: str,
+    other_tenant_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+) -> None:
+    database_url = account_access_database_url
+    user_id, email = _seed_active_member(database_url)
+    router = RecoveryRouter(
+        {TENANT_ID: database_url, OTHER_TENANT_ID: other_tenant_database_url}
+    )
+    mail = InMemoryMailSender()
+    service = _recovery_service(recovery_control_database, router, mail)
+    service.request_password_reset("brbots", email, "198.51.100.50")
+    raw_token = _link_token(mail.messages[-1])
+    router.opened.clear()
+
+    _assert_public_link_failure(
+        lambda: service.inspect_action("outra", "password_reset", raw_token)
+    )
+    _assert_public_link_failure(
+        lambda: service.reset_password(
+            "outra", raw_token, NEW_PASSWORD, NEW_PASSWORD, "198.51.100.50"
+        )
+    )
+
+    assert set(router.opened) == {OTHER_TENANT_ID}
+    assert _read_user(other_tenant_database_url, email) is None
+    assert _account_state(database_url, email)[:3] == ("Ativo", True, 1)
+    assert len(_live_tokens(database_url, user_id)) == 1
+    service.reset_password("brbots", raw_token, NEW_PASSWORD, NEW_PASSWORD, "198.51.100.50")
+    assert _account_state(database_url, email)[:3] == ("Ativo", True, 2)
+
+
+@pytest.mark.parametrize(
+    ("password", "confirmation"),
+    [
+        (NEW_PASSWORD, NEW_PASSWORD + "x"),
+        ("a" * 7, "a" * 7),
+        ("a" * 129, "a" * 129),
+    ],
+    ids=["confirmation-mismatch", "too-short", "too-long"],
+)
+def test_invalid_new_password_is_rejected_and_keeps_the_reset_link_usable(
+    account_access_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+    password: str,
+    confirmation: str,
+) -> None:
+    from app.security.passwords import verify_password
+
+    database_url = account_access_database_url
+    user_id, email = _seed_active_member(database_url)
+    router = RecoveryRouter({TENANT_ID: database_url})
+    mail = InMemoryMailSender()
+    service = _recovery_service(recovery_control_database, router, mail)
+    service.request_password_reset("brbots", email, _unique_ip())
+    raw_token = _link_token(mail.messages[-1])
+    router.opened.clear()
+
+    with pytest.raises(AccountPasswordPolicyError):
+        service.reset_password("brbots", raw_token, password, confirmation, "198.51.100.60")
+
+    assert router.opened == []
+    user = _read_user(database_url, email)
+    assert user.auth_version == 1
+    assert verify_password(user.password_hash, OLD_PASSWORD)
+    assert len(_live_tokens(database_url, user_id)) == 1
+    service.reset_password("brbots", raw_token, NEW_PASSWORD, NEW_PASSWORD, "198.51.100.60")
+    assert _read_user(database_url, email).auth_version == 2
+
+
+def test_concurrent_resets_have_exactly_one_winner_and_one_version_increment(
+    account_access_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+) -> None:
+    from app.security.passwords import verify_password
+
+    database_url = account_access_database_url
+    user_id, email = _seed_active_member(database_url)
+    mail = InMemoryMailSender()
+    service = _recovery_service(
+        recovery_control_database, RecoveryRouter({TENANT_ID: database_url}), mail
+    )
+    service.request_password_reset("brbots", email, "198.51.100.70")
+    raw_token = _link_token(mail.messages[-1])
+    passwords = [f"senha-redefinida-{index}-2026" for index in range(4)]
+    barrier = threading.Barrier(len(passwords))
+
+    def reset(password: str) -> str:
+        barrier.wait(timeout=10)
+        try:
+            service.reset_password("brbots", raw_token, password, password, "198.51.100.70")
+        except AccountActionLinkInvalidError:
+            return "rejected"
+        return "reset"
+
+    with ThreadPoolExecutor(max_workers=len(passwords)) as executor:
+        outcomes = list(executor.map(reset, passwords))
+
+    user = _read_user(database_url, email)
+    winner = passwords[outcomes.index("reset")]
+    assert sorted(outcomes) == ["rejected", "rejected", "rejected", "reset"]
+    assert user.auth_version == 2
+    assert [verify_password(user.password_hash, item) for item in passwords] == [
+        item == winner for item in passwords
+    ]
+    assert sum(t.consumed_at is not None for t in _reset_tokens(database_url, user_id)) == 1
+
+
+def test_sixth_reset_request_for_one_account_in_15_minutes_is_silently_not_sent(
+    account_access_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+) -> None:
+    database_url = account_access_database_url
+    user_id, email = _seed_active_member(database_url)
+    router = RecoveryRouter({TENANT_ID: database_url})
+    mail = InMemoryMailSender()
+    audit = RecordingAudit()
+    service = _recovery_service(recovery_control_database, router, mail, audit=audit)
+    after_window = _recovery_service(
+        recovery_control_database,
+        router,
+        mail,
+        audit=audit,
+        clock=lambda: NOW + timedelta(minutes=15, seconds=1),
+    )
+
+    outcomes = [
+        service.request_password_reset("brbots", email, f"198.51.101.{index}")
+        for index in range(6)
+    ]
+
+    assert outcomes == [None] * 6
+    assert len(mail.messages) == 5
+    tokens = _reset_tokens(database_url, user_id)
+    assert len(tokens) == 5
+    [live] = _live_tokens(database_url, user_id)
+    assert live.token_digest == AccountAccessService._token_digest(
+        "password_reset", _link_token(mail.messages[-1])
+    )
+    assert audit.events[-1]["event_type"] == "password_reset.request_ignored"
+    assert audit.events[-1]["outcome_code"] == "rate_limited"
+    unknown = f"nobody-{uuid.uuid4().hex}@example.test"
+    for index in range(6):
+        assert service.request_password_reset("brbots", unknown, f"198.51.102.{index}") is None
+    assert audit.events[-1]["outcome_code"] == "rate_limited"
+    assert len(mail.messages) == 5
+
+    after_window.request_password_reset("brbots", email, "198.51.101.9")
+    assert len(mail.messages) == 6
+
+
+def test_thirty_first_reset_request_from_one_ip_in_15_minutes_is_silently_not_sent(
+    account_access_database_url: str,
+    recovery_control_database,  # noqa: ANN001
+) -> None:
+    database_url = account_access_database_url
+    _thirtieth_id, thirtieth_email = _seed_active_member(database_url)
+    blocked_id, blocked_email = _seed_active_member(database_url)
+    mail = InMemoryMailSender()
+    audit = RecordingAudit()
+    service = _recovery_service(
+        recovery_control_database,
+        RecoveryRouter({TENANT_ID: database_url}),
+        mail,
+        audit=audit,
+    )
+    ip = "203.0.113.200"
+
+    for index in range(29):
+        service.request_password_reset(
+            "brbots", f"nobody-{index}-{uuid.uuid4().hex}@example.test", ip
+        )
+    service.request_password_reset("brbots", thirtieth_email, ip)
+    assert service.request_password_reset("brbots", blocked_email, ip) is None
+
+    assert [message.recipient for message in mail.messages] == [thirtieth_email]
+    assert _reset_tokens(database_url, blocked_id) == []
+    assert audit.events[-1]["outcome_code"] == "rate_limited"
+    service.request_password_reset("brbots", blocked_email, "203.0.113.201")
+    assert [message.recipient for message in mail.messages] == [
+        thirtieth_email,
+        blocked_email,
+    ]

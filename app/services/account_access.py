@@ -10,11 +10,17 @@ from typing import Callable, Protocol
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.control_database import ControlDatabase, ControlRepository
-from app.mail import MailDeliveryError, MailSender, render_invitation_email
+from app.control_models import LoginThrottle
+from app.mail import (
+    MailDeliveryError,
+    MailSender,
+    render_invitation_email,
+    render_password_reset_email,
+)
 from app.models import AccountActionToken, CrmUser
 from app.policies import Action, CURRENT_ROLES, PrincipalScope, can_perform_action
 from app.repositories.account_actions import AccountActionRepository
@@ -23,11 +29,15 @@ from app.security.passwords import (
     MIN_PASSWORD_LENGTH,
     hash_password,
 )
-from app.services.auth import SecurityAuditService
+from app.services.auth import AuthService, SecurityAuditService
 from app.tenant_database import TenantDatabaseRouter, TenantUnavailableError
 
 
 INVITATION_TTL = timedelta(hours=48)
+PASSWORD_RESET_TTL = timedelta(hours=48)
+PASSWORD_RESET_REQUEST_MESSAGE = "Se o e-mail existir, enviaremos as instruções."
+RESET_THROTTLE_BUCKETS = ("reset_account", "reset_ip")
+PUBLIC_ACTION_PURPOSES = frozenset({"invitation", "password_reset"})
 MAX_RAW_TOKEN_LENGTH = 512
 INVALID_ACTION_LINK_MESSAGE = "Este link é inválido ou expirou."
 
@@ -109,6 +119,14 @@ class _PreparedInvitation:
     token_id: UUID
     raw_token: str
     action: str
+
+
+@dataclass(frozen=True)
+class _PreparedReset:
+    user_id: str
+    email: str
+    token_id: UUID
+    raw_token: str
 
 
 class TenantRouter(Protocol):
@@ -522,9 +540,17 @@ class AccountAccessService:
             raise AccountPasswordPolicyError("password_length")
 
     @staticmethod
-    def _pending_invitee(
+    def _eligible_holder(user: CrmUser, purpose: str) -> bool:
+        if purpose == "invitation":
+            return user.status == "Pendente"
+        return user.status == "Ativo" and bool(user.auth_enabled)
+
+    @classmethod
+    def _token_holder(
+        cls,
         session: Session,
         workspace_id: str,
+        purpose: str,
         token_digest: str,
         now: datetime,
         *,
@@ -533,7 +559,7 @@ class AccountAccessService:
         token_user_id = session.scalar(
             select(AccountActionToken.user_id).where(
                 AccountActionToken.workspace_id == workspace_id,
-                AccountActionToken.purpose == "invitation",
+                AccountActionToken.purpose == purpose,
                 AccountActionToken.token_digest == token_digest,
                 AccountActionToken.expires_at > now,
                 AccountActionToken.consumed_at.is_(None),
@@ -551,12 +577,12 @@ class AccountAccessService:
             # Same order as invite/resend/cancel (user, then token) to avoid deadlocks.
             statement = statement.with_for_update()
         user = session.scalar(statement)
-        if user is None or user.status != "Pendente":
+        if user is None or not cls._eligible_holder(user, purpose):
             return None
         return user
 
     def inspect_action(self, slug: str, purpose: str, raw_token: str) -> PublicActionView:
-        if purpose != "invitation" or not self._usable_raw_token(raw_token):
+        if purpose not in PUBLIC_ACTION_PURPOSES or not self._usable_raw_token(raw_token):
             raise AccountActionLinkInvalidError()
         tenant = self._public_tenant(slug)
         if tenant is None:
@@ -567,8 +593,8 @@ class AccountAccessService:
         try:
             with self._router.tenant_session_scope(tenant.id) as session:
                 workspace_id = self._public_workspace_id(session)
-                user = self._pending_invitee(
-                    session, workspace_id, token_digest, now, lock=False
+                user = self._token_holder(
+                    session, workspace_id, purpose, token_digest, now, lock=False
                 )
                 if user is not None:
                     email = user.normalized_email or user.email.lower()
@@ -621,8 +647,8 @@ class AccountAccessService:
         try:
             with self._router.tenant_session_scope(tenant.id) as session:
                 workspace_id = self._public_workspace_id(session)
-                user = self._pending_invitee(
-                    session, workspace_id, token_digest, now, lock=True
+                user = self._token_holder(
+                    session, workspace_id, "invitation", token_digest, now, lock=True
                 )
                 if user is not None:
                     token = self._account_action_repository_factory(
@@ -652,5 +678,309 @@ class AccountAccessService:
             user_id=accepted_user_id,
             correlation_parts=correlation_parts,
             outcome_code="accepted",
+            occurred_at=now,
+        )
+
+    # Public password recovery -------------------------------------------------
+
+    def _admit_reset_request(self, account_digest: str, ip_digest: str, now: datetime) -> bool:
+        """Count one recovery request; False when either bucket is already blocked.
+
+        A bucket blocks *after* its limit is reached, so the 5th account request
+        (30th per IP) is still sent and only later requests in the window are held.
+        Rows are locked in a fixed order (account, then IP) before the check.
+        """
+
+        subjects = tuple(zip(RESET_THROTTLE_BUCKETS, (account_digest, ip_digest)))
+        with self._control_database.session_scope() as session:
+            repository = self._control_repository_factory(session)
+            for bucket_type, subject_digest in subjects:
+                throttle = repository.session.scalar(
+                    select(LoginThrottle)
+                    .where(
+                        LoginThrottle.bucket_type == bucket_type,
+                        LoginThrottle.subject_digest == subject_digest,
+                    )
+                    .with_for_update()
+                )
+                if (
+                    throttle is not None
+                    and throttle.blocked_until is not None
+                    and throttle.blocked_until > now
+                ):
+                    return False
+            for bucket_type, subject_digest in subjects:
+                repository.record_account_action_request(
+                    bucket_type, subject_digest, now=now
+                )
+            return True
+
+    def _prepare_reset(
+        self,
+        tenant_id: UUID,
+        email: str,
+        raw_token: str,
+        now: datetime,
+    ) -> _PreparedReset | None:
+        with self._router.tenant_session_scope(tenant_id) as session:
+            workspace_id = self._public_workspace_id(session)
+            user = session.scalar(
+                select(CrmUser)
+                .where(
+                    CrmUser.workspace_id == workspace_id,
+                    CrmUser.normalized_email == email,
+                    CrmUser.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if user is None or not self._eligible_holder(user, "password_reset"):
+                return None
+            # create_token invalidates every live predecessor under the same user lock.
+            token = self._account_action_repository_factory(
+                session, workspace_id
+            ).create_token(
+                user_id=user.id,
+                purpose="password_reset",
+                token_digest=self._token_digest("password_reset", raw_token),
+                expires_at=now + PASSWORD_RESET_TTL,
+                created_by_user_id=None,
+                now=now,
+            )
+            return _PreparedReset(
+                user_id=user.id,
+                email=user.normalized_email,
+                token_id=token.id,
+                raw_token=raw_token,
+            )
+
+    def _deliver_reset(self, tenant, prepared: _PreparedReset) -> None:  # noqa: ANN001
+        message = render_password_reset_email(
+            tenant.display_name,
+            prepared.email,
+            (
+                f"{self._public_origin}/{tenant.slug}/reset-password"
+                f"#token={prepared.raw_token}"
+            ),
+        )
+        delivery_status = "sent"
+        failure_code = None
+        try:
+            self._mail_sender.send(message)
+        except MailDeliveryError as error:
+            delivery_status = "failed"
+            failure_code = error.code
+
+        delivered_at = self._clock()
+        try:
+            with self._router.tenant_session_scope(tenant.id) as session:
+                workspace_id = self._public_workspace_id(session)
+                self._account_action_repository_factory(
+                    session, workspace_id
+                ).mark_delivery(
+                    prepared.token_id,
+                    status=delivery_status,
+                    failure_code=failure_code,
+                    now=delivered_at,
+                )
+        except (TenantUnavailableError, SQLAlchemyError):
+            # The token stays "pending"; the next request replaces it.
+            failure_code = failure_code or "delivery_record_failed"
+        self._record(
+            event_type=(
+                "password_reset.sent"
+                if delivery_status == "sent"
+                else "password_reset.delivery_failed"
+            ),
+            tenant_id=tenant.id,
+            user_id=prepared.user_id,
+            correlation_parts=(
+                "password-reset-delivery",
+                prepared.token_id,
+                delivery_status,
+            ),
+            outcome_code=failure_code or "delivered",
+            occurred_at=delivered_at,
+        )
+
+    def request_password_reset(self, slug: str, email: str, source_ip: str) -> None:
+        """Start recovery without revealing tenant, account, SMTP or limit outcomes.
+
+        Every path returns ``None``; the public layer always answers with
+        ``PASSWORD_RESET_REQUEST_MESSAGE``. Outcomes are only audited.
+        """
+
+        now = self._clock()
+        slug_text = slug if isinstance(slug, str) else ""
+        email_text = email.strip().lower() if isinstance(email, str) else ""
+        ip_text = source_ip if isinstance(source_ip, str) else ""
+        account_digest, ip_digest = AuthService.login_subject_digests(
+            slug_text, email_text, ip_text
+        )
+        correlation_parts = ("password-reset-request", account_digest, ip_digest)
+        tenant_id = None
+
+        def ignored(outcome_code: str) -> None:
+            self._record(
+                event_type="password_reset.request_ignored",
+                tenant_id=tenant_id,
+                user_id=None,
+                correlation_parts=correlation_parts,
+                outcome_code=outcome_code,
+                occurred_at=now,
+            )
+
+        try:
+            admitted = self._admit_reset_request(account_digest, ip_digest, now)
+            tenant = self._public_tenant(slug_text) if admitted else None
+        except SQLAlchemyError:
+            # Fail closed: without a working limiter nothing is sent.
+            ignored("control_unavailable")
+            return
+        if not admitted:
+            ignored("rate_limited")
+            return
+        if tenant is None:
+            ignored("unknown_tenant")
+            return
+        tenant_id = tenant.id
+        if not email_text or "@" not in email_text:
+            ignored("no_eligible_account")
+            return
+
+        raw_token = self._token_factory()
+        if not raw_token:
+            ignored("token_generation_failed")
+            return
+        try:
+            prepared = self._prepare_reset(tenant.id, email_text, raw_token, now)
+        except (TenantUnavailableError, SQLAlchemyError):
+            ignored("tenant_unavailable")
+            return
+        if prepared is None:
+            ignored("no_eligible_account")
+            return
+
+        self._record(
+            event_type="password_reset.requested",
+            tenant_id=tenant.id,
+            user_id=prepared.user_id,
+            correlation_parts=("password-reset", prepared.token_id, ip_digest),
+            outcome_code="pending_delivery",
+            occurred_at=now,
+        )
+        self._deliver_reset(tenant, prepared)
+
+    def _reject_reset(
+        self,
+        *,
+        tenant_id: UUID | None,
+        correlation_parts: tuple[object, ...],
+        occurred_at: datetime,
+    ) -> None:
+        self._record(
+            event_type="password_reset.failed",
+            tenant_id=tenant_id,
+            user_id=None,
+            correlation_parts=correlation_parts,
+            outcome_code="invalid_token",
+            occurred_at=occurred_at,
+        )
+        raise AccountActionLinkInvalidError()
+
+    def _revoke_sessions_after_reset(
+        self,
+        tenant_id: UUID,
+        user_id: str,
+        correlation_parts: tuple[object, ...],
+        now: datetime,
+    ) -> None:
+        # The new hash and auth_version are already committed; a central failure
+        # must never surface as a failed reset. Stale sessions are still rejected
+        # by AuthService.current_session through the auth_version mismatch.
+        for _attempt in range(2):
+            try:
+                with self._control_database.session_scope() as session:
+                    self._control_repository_factory(session).revoke_user_sessions(
+                        tenant_id,
+                        user_id,
+                        reason="password_reset",
+                        revoked_at=now,
+                    )
+            except Exception:  # noqa: BLE001 - retried once, then audited
+                continue
+            self._record(
+                event_type="session.revoked",
+                tenant_id=tenant_id,
+                user_id=user_id,
+                correlation_parts=("session-revocation", *correlation_parts),
+                outcome_code="password_reset",
+                occurred_at=now,
+            )
+            return
+        self._record(
+            event_type="password_reset.session_revocation_failed",
+            tenant_id=tenant_id,
+            user_id=user_id,
+            correlation_parts=("session-revocation", *correlation_parts),
+            outcome_code="revocation_failed",
+            occurred_at=now,
+        )
+
+    def reset_password(
+        self,
+        slug: str,
+        raw_token: str,
+        password: str,
+        confirmation: str,
+        source_ip: str,
+    ) -> None:
+        self._validate_new_password(password, confirmation)
+        now = self._clock()
+        tenant = self._public_tenant(slug) if self._usable_raw_token(raw_token) else None
+        if tenant is None:
+            self._reject_reset(
+                tenant_id=None,
+                correlation_parts=("password-reset", slug, source_ip),
+                occurred_at=now,
+            )
+        token_digest = self._token_digest("password_reset", raw_token)
+        correlation_parts = ("password-reset", tenant.id, token_digest, source_ip)
+        # Argon2id is deliberately slow: hash before taking any row lock.
+        password_hash = hash_password(password)
+
+        reset_user_id = None
+        try:
+            with self._router.tenant_session_scope(tenant.id) as session:
+                workspace_id = self._public_workspace_id(session)
+                user = self._token_holder(
+                    session, workspace_id, "password_reset", token_digest, now, lock=True
+                )
+                if user is not None:
+                    token = self._account_action_repository_factory(
+                        session, workspace_id
+                    ).consume_token("password_reset", token_digest, now)
+                    if token is not None:
+                        if token.user_id != user.id:
+                            raise AccountActionLinkInvalidError()
+                        user.password_hash = password_hash
+                        user.auth_version = user.auth_version + 1
+                        session.flush()
+                        reset_user_id = user.id
+        except (TenantUnavailableError, AccountActionLinkInvalidError):
+            reset_user_id = None
+
+        if reset_user_id is None:
+            self._reject_reset(
+                tenant_id=tenant.id,
+                correlation_parts=correlation_parts,
+                occurred_at=now,
+            )
+        self._revoke_sessions_after_reset(tenant.id, reset_user_id, correlation_parts, now)
+        self._record(
+            event_type="password_reset.completed",
+            tenant_id=tenant.id,
+            user_id=reset_user_id,
+            correlation_parts=correlation_parts,
+            outcome_code="completed",
             occurred_at=now,
         )
