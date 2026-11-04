@@ -298,6 +298,7 @@
     .drawer-quote p { margin: 0; color: var(--slate-500); font-size: 11px; }
     .drawer-quote strong { color: var(--navy-900); font-size: 13px; }
     .drawer-quote .tag { align-self: end; justify-self: end; }
+    .invite-delivery { margin-left: 6px; }
     .drawer-company-summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--slate-200); }
     .drawer-company-summary > h4 { margin: 0 0 10px; color: var(--slate-500); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
     .drawer-company-card { padding: 15px; border: 1px solid var(--slate-200); border-radius: 11px; background: var(--slate-50); }
@@ -2379,16 +2380,25 @@
       }
     }
 
+    const inviteDelivery = new Map();
+    let userActionInFlight = false;
+
     function usersAdminHTML() {
       if (currentUser().role !== 'Administrador') return '';
       const statusClass = status => status === 'Ativo' ? 'green' : status === 'Pendente' ? 'amber' : status === 'Cancelado' ? 'red' : '';
+      const busy = userActionInFlight ? ' disabled' : '';
       const rows = state.users.map(user => {
-        const pendingActions = user.status === 'Pendente' ? `<button class="button small" data-action="resend-invite" data-id="${user.id}" aria-label="Reenviar convite de ${escapeHTML(user.name)}">Reenviar</button><button class="button small accent" data-action="user-status" data-status="Ativo" data-id="${user.id}" aria-label="Simular aceitação de ${escapeHTML(user.name)}">Aceitar</button><button class="button small" data-action="user-status" data-status="Cancelado" data-id="${user.id}" aria-label="Cancelar convite de ${escapeHTML(user.name)}">Cancelar</button>` : '';
-        const deactivate = user.status === 'Ativo' && user.id !== state.currentUserId ? `<button class="button small" data-action="user-status" data-status="Inativo" data-id="${user.id}" aria-label="Desativar ${escapeHTML(user.name)}">Desativar</button>` : '';
-        return `<tr data-user-id="${escapeHTML(user.id)}"><td><div class="entity"><span class="entity-avatar">${initials(user.name)}</span><div><strong>${escapeHTML(user.name)}</strong><small>${escapeHTML(user.email)}</small></div></div></td><td>${escapeHTML(user.jobTitle)}</td><td>${escapeHTML(user.team)}</td><td>${escapeHTML(user.role)}</td><td><span class="tag ${statusClass(user.status)}">${escapeHTML(user.status)}</span></td><td><div class="user-actions"><button class="button small" data-action="edit-user" data-id="${user.id}" aria-label="Editar ${escapeHTML(user.name)}">Editar</button>${pendingActions}${deactivate}</div></td></tr>`;
+        const delivery = user.status === 'Pendente' ? inviteDelivery.get(user.id) : null;
+        const deliveryNote = delivery === 'failed'
+          ? '<span class="tag red invite-delivery" data-delivery="failed">E-mail não enviado</span>'
+          : delivery === 'sent' ? '<span class="tag green invite-delivery" data-delivery="sent">Convite enviado</span>' : '';
+        const pendingActions = user.status === 'Pendente' ? `<button class="button small" data-action="resend-invite" data-id="${escapeHTML(user.id)}" aria-label="Reenviar convite de ${escapeHTML(user.name)}"${busy}>Reenviar</button><button class="button small" data-action="cancel-invite" data-id="${escapeHTML(user.id)}" aria-label="Cancelar convite de ${escapeHTML(user.name)}"${busy}>Cancelar</button>` : '';
+        const deactivate = user.status === 'Ativo' && user.id !== state.currentUserId ? `<button class="button small" data-action="user-status" data-status="Inativo" data-id="${escapeHTML(user.id)}" aria-label="Desativar ${escapeHTML(user.name)}">Desativar</button>` : '';
+        const reactivate = user.status === 'Inativo' ? `<button class="button small" data-action="reactivate-user" data-id="${escapeHTML(user.id)}" aria-label="Reativar ${escapeHTML(user.name)}"${busy}>Reativar</button>` : '';
+        return `<tr data-user-id="${escapeHTML(user.id)}"><td><div class="entity"><span class="entity-avatar">${initials(user.name)}</span><div><strong>${escapeHTML(user.name)}</strong><small>${escapeHTML(user.email)}</small></div></div></td><td>${escapeHTML(user.jobTitle)}</td><td>${escapeHTML(user.team)}</td><td>${escapeHTML(user.role)}</td><td><span class="tag ${statusClass(user.status)}">${escapeHTML(user.status)}</span>${deliveryNote}</td><td><div class="user-actions"><button class="button small" data-action="edit-user" data-id="${escapeHTML(user.id)}" aria-label="Editar ${escapeHTML(user.name)}">Editar</button>${pendingActions}${deactivate}${reactivate}</div></td></tr>`;
       }).join('');
       const total = status => state.users.filter(user => user.status === status).length;
-      return `<div class="page-toolbar"><div><h2>Usuários e permissões</h2><p>Gerencie cargos, equipes e acesso ao ambiente de teste.</p></div><div class="toolbar-actions"><button class="button primary" data-action="new-user">＋ Convidar funcionário</button></div></div><div class="user-summary"><div><span class="hint">Ativos</span><b>${total('Ativo')}</b></div><div><span class="hint">Pendentes</span><b>${total('Pendente')}</b></div><div><span class="hint">Inativos</span><b>${total('Inativo')}</b></div><div><span class="hint">Cancelados</span><b>${total('Cancelado')}</b></div></div><div class="list-card"><div class="table-wrap"><table><thead><tr><th>Funcionário</th><th>Cargo profissional</th><th>Equipe</th><th>Perfil de acesso</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer"><span>${state.users.length} usuário(s)</span><span>Convites simulados · sem envio de e-mail</span></div></div>`;
+      return `<div class="page-toolbar"><div><h2>Usuários e permissões</h2><p>Gerencie cargos, equipes e acesso dos funcionários da empresa.</p></div><div class="toolbar-actions"><button class="button primary" data-action="new-user">＋ Convidar funcionário</button></div></div><div class="user-summary"><div><span class="hint">Ativos</span><b>${total('Ativo')}</b></div><div><span class="hint">Pendentes</span><b>${total('Pendente')}</b></div><div><span class="hint">Inativos</span><b>${total('Inativo')}</b></div><div><span class="hint">Cancelados</span><b>${total('Cancelado')}</b></div></div><div class="list-card"><div class="table-wrap"><table><thead><tr><th>Funcionário</th><th>Cargo profissional</th><th>Equipe</th><th>Perfil de acesso</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer"><span>${state.users.length} usuário(s)</span><span>Convites enviados por e-mail · links válidos por 48 horas</span></div></div>`;
     }
 
     function openUserDialog(id = '') {
@@ -2409,32 +2419,102 @@
       return true;
     }
 
-    function nextIso(previous) {
-      const now = Date.now();
-      const before = Date.parse(previous || 0);
-      return new Date(Number.isNaN(before) ? now : Math.max(now, before + 1)).toISOString();
+    function applyServerUser(row) {
+      const record = {
+        id: row.id, name: row.name, email: row.email, jobTitle: row.jobTitle || '',
+        team: row.team || '', role: row.role, status: row.status, invitedAt: row.invitedAt || null
+      };
+      const merge = users => {
+        if (!Array.isArray(users)) return;
+        const existing = users.find(candidate => candidate.id === record.id);
+        if (existing) Object.assign(existing, record);
+        else users.push(clone(record));
+      };
+      merge(state.users);
+      // The server already persisted this row; it is not a pending snapshot change.
+      merge(confirmedState?.users);
+      state.ui.filtersByUser[record.id] ||= {};
+      state.ui.viewModesByUser[record.id] ||= { leads: 'list', deals: 'list' };
+      state.ui.dashboardScopeByUser[record.id] ||= 'all';
+      writeLocalState();
+      return state.users.find(candidate => candidate.id === record.id);
+    }
+
+    async function postUserAction(path, body = null) {
+      const init = { method: 'POST', headers: { Accept: 'application/json' } };
+      if (body) {
+        init.headers['Content-Type'] = 'application/json';
+        init.body = JSON.stringify(body);
+      }
+      return responseJson(await apiFetch(path, init));
+    }
+
+    function userActionMessage(failure, fallback) {
+      if (failure?.status === 422) return 'Revise os dados informados e tente novamente.';
+      return failure?.payload?.error?.message || fallback;
+    }
+
+    function deliveryMessage(user, deliveryStatus) {
+      return deliveryStatus === 'sent'
+        ? `Convite enviado para ${user.email}.`
+        : `Não foi possível enviar o e-mail para ${user.email}. O convite continua pendente; use Reenviar.`;
+    }
+
+    async function runUserAction(operation) {
+      if (userActionInFlight) return false;
+      userActionInFlight = true;
+      render();
+      try {
+        await operation();
+        return true;
+      } finally {
+        userActionInFlight = false;
+        render();
+      }
+    }
+
+    async function submitInvitation(form, data) {
+      const error = document.getElementById('userDialogError');
+      const button = document.getElementById('userSubmitButton');
+      if (userActionInFlight) return false;
+      error.textContent = '';
+      button.disabled = true;
+      button.textContent = 'Enviando convite...';
+      userActionInFlight = true;
+      try {
+        const payload = await postUserAction('/api/users/invitations', {
+          name: data.name.trim(), email: data.email.trim(), jobTitle: data.jobTitle.trim(),
+          team: data.team.trim() || null, role: data.role
+        });
+        const user = applyServerUser(payload.user);
+        inviteDelivery.set(user.id, payload.deliveryStatus);
+        document.getElementById('userDialog').close();
+        toast(deliveryMessage(user, payload.deliveryStatus));
+        return true;
+      } catch (failure) {
+        error.textContent = userActionMessage(failure, 'Não foi possível enviar o convite.');
+        return false;
+      } finally {
+        userActionInFlight = false;
+        button.disabled = false;
+        button.textContent = 'Enviar convite';
+        render();
+      }
     }
 
     function saveUser(form) {
       if (currentUser().role !== 'Administrador') return false;
       const data = Object.fromEntries(new FormData(form).entries());
-      const emailKey = data.email.trim().toLocaleLowerCase('pt-BR');
-      const error = document.getElementById('userDialogError');
-      let user = form.dataset.id ? state.users.find(candidate => candidate.id === form.dataset.id) : null;
+      const user = form.dataset.id ? state.users.find(candidate => candidate.id === form.dataset.id) : null;
       if (!user) {
-        const existing = state.users.find(candidate => String(candidate.email || '').toLocaleLowerCase('pt-BR') === emailKey);
-        if (existing && existing.status !== 'Cancelado') { error.textContent = 'Este e-mail já está cadastrado.'; return false; }
-        user = existing || { id: `u-invite-${Date.now().toString(36)}` };
-        Object.assign(user, data, { email: data.email.trim(), status: 'Pendente', invitedAt: nextIso(user.invitedAt) });
-        if (!existing) state.users.push(user);
-        state.ui.filtersByUser[user.id] ||= {};
-        state.ui.viewModesByUser[user.id] ||= { leads: 'list', deals: 'list' };
-        state.ui.dashboardScopeByUser[user.id] ||= 'all';
-      } else Object.assign(user, { name: data.name, jobTitle: data.jobTitle, team: data.team, role: data.role });
+        submitInvitation(form, data);
+        return true;
+      }
+      Object.assign(user, { name: data.name, jobTitle: data.jobTitle, team: data.team, role: data.role });
       saveState();
       document.getElementById('userDialog').close();
       render();
-      toast(form.dataset.id ? 'Funcionário atualizado.' : 'Convite simulado criado.');
+      toast('Funcionário atualizado.');
       return true;
     }
 
@@ -2442,8 +2522,49 @@
       if (currentUser().role !== 'Administrador') return false;
       const user = state.users.find(candidate => candidate.id === id && candidate.status === 'Pendente');
       if (!user) return false;
-      user.invitedAt = nextIso(user.invitedAt);
-      saveState(); render(); toast(`Convite de ${user.name} reenviado.`);
+      runUserAction(async () => {
+        try {
+          const payload = await postUserAction(`/api/users/${encodeURIComponent(id)}/invitation/resend`);
+          const updated = applyServerUser(payload.user);
+          inviteDelivery.set(updated.id, payload.deliveryStatus);
+          toast(deliveryMessage(updated, payload.deliveryStatus));
+        } catch (failure) {
+          toast(userActionMessage(failure, 'Não foi possível reenviar o convite.'));
+        }
+      });
+      return true;
+    }
+
+    function cancelInvite(id) {
+      if (currentUser().role !== 'Administrador') return false;
+      const user = state.users.find(candidate => candidate.id === id && candidate.status === 'Pendente');
+      if (!user) return false;
+      runUserAction(async () => {
+        try {
+          const payload = await postUserAction(`/api/users/${encodeURIComponent(id)}/invitation/cancel`);
+          const updated = applyServerUser(payload.user);
+          inviteDelivery.delete(updated.id);
+          toast(`Convite de ${updated.name} cancelado.`);
+        } catch (failure) {
+          toast(userActionMessage(failure, 'Não foi possível cancelar o convite.'));
+        }
+      });
+      return true;
+    }
+
+    function reactivateUser(id) {
+      if (currentUser().role !== 'Administrador') return false;
+      const user = state.users.find(candidate => candidate.id === id && candidate.status === 'Inativo');
+      if (!user) return false;
+      runUserAction(async () => {
+        try {
+          const payload = await postUserAction(`/api/users/${encodeURIComponent(id)}/reactivate`);
+          const updated = applyServerUser(payload.user);
+          toast(`Acesso de ${updated.name} reativado.`);
+        } catch (failure) {
+          toast(userActionMessage(failure, 'Não foi possível reativar o usuário.'));
+        }
+      });
       return true;
     }
 
@@ -2451,7 +2572,8 @@
       if (currentUser().role !== 'Administrador') return false;
       const user = state.users.find(candidate => candidate.id === id);
       if (!user || (id === state.currentUserId && status === 'Inativo')) { toast('Você não pode desativar o próprio usuário.'); return false; }
-      if (!['Ativo', 'Inativo', 'Cancelado'].includes(status)) return false;
+      // Only deactivation is a snapshot change; every other transition is server-owned.
+      if (status !== 'Inativo' || user.status !== 'Ativo') return false;
       user.status = status;
       saveState(); render(); toast(`Status de ${user.name}: ${status}.`);
       return true;
@@ -3782,7 +3904,7 @@
 
     const durableActions = new Set([
       'new', 'add-custom-field', 'hide-custom-field', 'manage-fields', 'save-field-visibility',
-      'create-custom-field', 'new-user', 'edit-user', 'resend-invite', 'user-status',
+      'create-custom-field', 'new-user', 'edit-user', 'resend-invite', 'cancel-invite', 'reactivate-user', 'user-status',
       'open-bitrix-import', 'open-deleted', 'restore-deleted', 'save-filter', 'delete-saved-filter', 'set-view-mode',
       'request-stage', 'undo-stage', 'delete', 'convert', 'discard', 'quote',
       'read', 'read-all', 'reset'
@@ -3825,6 +3947,8 @@
       if (action === 'open-deleted') openDeletedRecords();
       if (action === 'restore-deleted') restoreDeletedRecord(button.dataset.module, button.dataset.id);
       if (action === 'resend-invite') resendInvite(button.dataset.id);
+      if (action === 'cancel-invite') cancelInvite(button.dataset.id);
+      if (action === 'reactivate-user') reactivateUser(button.dataset.id);
       if (action === 'user-status') changeUserStatus(button.dataset.id, button.dataset.status);
       if (action === 'open-bitrix-import') openBitrixImport();
       if (action === 'open-dashboard-filters') openDashboardFilters();

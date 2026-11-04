@@ -135,6 +135,7 @@ async function openFresh(options = {}) {
     companyObservationFailuresRemaining: 0, companyObservationByKey: new Map(),
     companyDealRequests: [], companyDealFailures: new Set(), companyDealGates: new Map(),
     disableBillingAutomation: Boolean(options.disableBillingAutomation),
+    userRequests: [], inviteDeliveryStatus: 'sent', userActionFailure: null, userActionGate: null,
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
@@ -362,6 +363,54 @@ async function openFresh(options = {}) {
         ? { error: { code: 'database_unavailable', message: 'Funil indisponível.' } }
         : api.pipeline)
     });
+  });
+  await context.route('**/api/users/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    let body = null;
+    try { body = request.postDataJSON(); } catch (_) { body = null; }
+    api.userRequests.push({ method: request.method(), path: url.pathname, body, origin: request.headers().origin || null });
+    if (api.userActionGate) {
+      const gate = api.userActionGate;
+      api.userActionGate = null;
+      await gate;
+    }
+    const json = (status, payload) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(payload) });
+    if (api.userActionFailure) {
+      const failure = api.userActionFailure;
+      api.userActionFailure = null;
+      return json(failure.status, { error: { code: failure.code, message: failure.message } });
+    }
+    const users = api.state.users;
+    const invitedAt = new Date(Date.UTC(2026, 10, 4, 12, 0, api.userRequests.length)).toISOString();
+    const row = user => ({ id: user.id, name: user.name, email: user.email, jobTitle: user.jobTitle || '', team: user.team || '', role: user.role, status: user.status, invitedAt: user.invitedAt || null });
+    if (request.method() === 'POST' && url.pathname === '/api/users/invitations') {
+      const email = String(body.email || '').trim().toLowerCase();
+      let user = users.find(candidate => String(candidate.email || '').toLowerCase() === email);
+      if (user?.status === 'Ativo') return json(409, { error: { code: 'account_active', message: 'Este e-mail já pertence a um usuário ativo.' } });
+      if (user?.status === 'Inativo') return json(409, { error: { code: 'account_inactive', message: 'Este usuário está inativo. Reative o acesso em vez de enviar um convite.' } });
+      if (!user) {
+        user = { id: `user-api-${api.userRequests.length}` };
+        users.push(user);
+      }
+      Object.assign(user, { name: body.name.trim(), email, jobTitle: body.jobTitle.trim(), team: body.team || '', role: body.role, status: 'Pendente', invitedAt });
+      return json(201, { user: row(user), deliveryStatus: api.inviteDeliveryStatus });
+    }
+    const match = url.pathname.match(/^\/api\/users\/([^/]+)\/(invitation\/resend|invitation\/cancel|reactivate)$/);
+    if (request.method() !== 'POST' || !match) return json(404, { error: { code: 'not_found', message: 'Rota inexistente.' } });
+    const user = users.find(candidate => candidate.id === decodeURIComponent(match[1]));
+    if (match[2] === 'reactivate') {
+      if (!user || user.status !== 'Inativo') return json(409, { error: { code: 'account_not_inactive', message: 'Somente usuários inativos podem ser reativados.' } });
+      user.status = 'Ativo';
+      return json(200, { user: row(user) });
+    }
+    if (!user || user.status !== 'Pendente') return json(409, { error: { code: 'invitation_not_pending', message: 'Este convite não está mais pendente.' } });
+    if (match[2] === 'invitation/cancel') {
+      user.status = 'Cancelado';
+      return json(200, { user: row(user) });
+    }
+    user.invitedAt = invitedAt;
+    return json(200, { user: row(user), deliveryStatus: api.inviteDeliveryStatus });
   });
   await context.route('**/api/workspace**', async route => {
     const request = route.request();
@@ -3099,7 +3148,17 @@ async function storageEntries(page) {
     await assertCanonicalRehydration(page);
   });
 
+  async function assignableUserIds(page) {
+    // The same option list the lead and deal forms offer as responsible users.
+    return page.evaluate(() => {
+      const template = document.createElement('template');
+      template.innerHTML = fieldHTML('responsibleId', 'Responsável', 'user', true, '');
+      return [...template.content.querySelectorAll('option')].map(option => option.value);
+    });
+  }
+
   await run('ADM-03 Administrador convida edita e controla acesso de funcionários', async page => {
+    const api = apiByPage.get(page);
     await goTo(page, 'Usuários e permissões');
     await page.getByRole('button', { name: 'Convidar funcionário' }).click();
     const dialog = page.locator('#userDialog');
@@ -3109,13 +3168,14 @@ async function storageEntries(page) {
     await dialog.getByLabel('Equipe').fill('Vendas CMS');
     await dialog.getByLabel('Perfil de acesso').selectOption('Vendedor');
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
+    await page.locator('#toastRegion').getByText('Convite enviado para juliana@teste.invalid.', { exact: true }).waitFor();
 
     let state = await stateFrom(page);
     let juliana = state.users.find(user => user.email === 'juliana@teste.invalid');
     assert.deepEqual({ name: juliana.name, email: juliana.email, jobTitle: juliana.jobTitle, team: juliana.team, role: juliana.role, status: juliana.status }, {
       name: 'Juliana Lima', email: 'juliana@teste.invalid', jobTitle: 'Consultora comercial', team: 'Vendas CMS', role: 'Vendedor', status: 'Pendente'
     });
-    assert.equal(await page.getByLabel('Perfil de usuário').locator('option[value="' + juliana.id + '"]').count(), 0);
+    assert.equal((await assignableUserIds(page)).includes(juliana.id), false);
 
     await page.getByRole('button', { name: 'Convidar funcionário' }).click();
     await dialog.getByLabel('Nome completo').fill('Juliana Duplicada');
@@ -3123,31 +3183,38 @@ async function storageEntries(page) {
     await dialog.getByLabel('Cargo profissional').fill('Outro cargo');
     await dialog.getByLabel('Equipe').fill('Outra equipe');
     await dialog.getByLabel('Perfil de acesso').selectOption('Gestor');
+    // A pending invitee is re-invited by the server instead of duplicated (INV-01/INV-04).
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
-    assert.match(await dialog.locator('#userDialogError').innerText(), /e-mail já está cadastrado/i);
+    await page.locator('#toastRegion').getByText('Convite enviado para juliana@teste.invalid.', { exact: true }).last().waitFor();
     assert.equal((await stateFrom(page)).users.filter(user => user.email.toLocaleLowerCase('pt-BR') === 'juliana@teste.invalid').length, 1);
-    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
+    juliana = (await stateFrom(page)).users.find(user => user.id === juliana.id);
+    assert.deepEqual([juliana.name, juliana.role, juliana.status], ['Juliana Duplicada', 'Gestor', 'Pendente']);
 
     const invitedAt = juliana.invitedAt;
-    await page.getByRole('button', { name: 'Reenviar convite de Juliana Lima' }).click();
+    await page.getByRole('button', { name: 'Reenviar convite de Juliana Duplicada' }).click();
+    await waitForMockState(page, current => current.users.find(user => user.id === juliana.id)?.invitedAt !== invitedAt);
     juliana = (await stateFrom(page)).users.find(user => user.id === juliana.id);
     assert.equal(juliana.status, 'Pendente');
     assert.notEqual(juliana.invitedAt, invitedAt);
+    assert.equal(api.userRequests.at(-1).path, `/api/users/${juliana.id}/invitation/resend`);
 
-    await page.getByRole('button', { name: 'Editar Juliana Lima' }).click();
+    await page.getByRole('button', { name: 'Editar Juliana Duplicada' }).click();
+    await dialog.getByLabel('Nome completo').fill('Juliana Lima');
     await dialog.getByLabel('Cargo profissional').fill('Executiva de contas');
     await dialog.getByLabel('Equipe').fill('Vendas Enterprise');
     await dialog.getByLabel('Perfil de acesso').selectOption('Gestor');
     await dialog.getByRole('button', { name: 'Salvar funcionário' }).click();
+    await waitForMockState(page, current => current.users.find(user => user.id === juliana.id)?.jobTitle === 'Executiva de contas');
     juliana = (await stateFrom(page)).users.find(user => user.id === juliana.id);
-    assert.deepEqual([juliana.jobTitle, juliana.team, juliana.role], ['Executiva de contas', 'Vendas Enterprise', 'Gestor']);
+    assert.deepEqual([juliana.jobTitle, juliana.team, juliana.role, juliana.status], ['Executiva de contas', 'Vendas Enterprise', 'Gestor', 'Pendente']);
+    assert.equal(await page.getByRole('button', { name: /Simular aceitação/ }).count(), 0);
+    assert.equal(await page.evaluate(id => changeUserStatus(id, 'Ativo'), juliana.id), false);
+    assert.equal((await stateFrom(page)).users.find(user => user.id === juliana.id).status, 'Pendente');
 
-    await page.getByRole('button', { name: 'Simular aceitação de Juliana Lima' }).click();
-    assert.equal((await stateFrom(page)).users.find(user => user.id === juliana.id).status, 'Ativo');
     assert.equal(await page.locator('#profileSelect').count(), 0);
-    await page.getByRole('button', { name: 'Desativar Juliana Lima' }).click();
-    assert.equal((await stateFrom(page)).users.find(user => user.id === juliana.id).status, 'Inativo');
-    assert.equal(await page.getByLabel('Perfil de usuário').locator(`option[value="${juliana.id}"]`).count(), 0);
+    await page.getByRole('button', { name: 'Desativar Vitor Costa' }).click();
+    await waitForMockState(page, current => current.users.find(user => user.id === 'u-vitor')?.status === 'Inativo');
+    assert.equal((await assignableUserIds(page)).includes('u-vitor'), false);
 
     await page.getByRole('button', { name: 'Convidar funcionário' }).click();
     await dialog.getByLabel('Nome completo').fill('Rafael Teste');
@@ -3157,9 +3224,10 @@ async function storageEntries(page) {
     await dialog.getByLabel('Perfil de acesso').selectOption('Vendedor');
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
     await page.getByRole('button', { name: 'Cancelar convite de Rafael Teste' }).click();
+    await page.locator('#toastRegion').getByText('Convite de Rafael Teste cancelado.', { exact: true }).waitFor();
     const canceled = (await stateFrom(page)).users.find(user => user.email === 'rafael@teste.invalid');
     assert.equal(canceled.status, 'Cancelado');
-    assert.equal(await page.getByLabel('Perfil de usuário').locator(`option[value="${canceled.id}"]`).count(), 0);
+    assert.equal((await assignableUserIds(page)).includes(canceled.id), false);
 
     await page.getByRole('button', { name: 'Convidar funcionário' }).click();
     await dialog.getByLabel('Nome completo').fill('Rafael Reativado');
@@ -3168,10 +3236,11 @@ async function storageEntries(page) {
     await dialog.getByLabel('Equipe').fill('Vendas CMS');
     await dialog.getByLabel('Perfil de acesso').selectOption('Vendedor');
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
+    await page.locator('#toastRegion').getByText('Convite enviado para rafael@teste.invalid.', { exact: true }).waitFor();
     const reinvited = (await stateFrom(page)).users.filter(user => user.email.toLocaleLowerCase('pt-BR') === 'rafael@teste.invalid');
     assert.equal(reinvited.length, 1);
     assert.deepEqual({ id: reinvited[0].id, name: reinvited[0].name, email: reinvited[0].email, jobTitle: reinvited[0].jobTitle, team: reinvited[0].team, role: reinvited[0].role, status: reinvited[0].status }, {
-      id: canceled.id, name: 'Rafael Reativado', email: 'RAFAEL@TESTE.INVALID', jobTitle: 'Consultor', team: 'Vendas CMS', role: 'Vendedor', status: 'Pendente'
+      id: canceled.id, name: 'Rafael Reativado', email: 'rafael@teste.invalid', jobTitle: 'Consultor', team: 'Vendas CMS', role: 'Vendedor', status: 'Pendente'
     });
     assert.equal(await page.evaluate(() => changeUserStatus('u-admin', 'Inativo')), false);
     assert.equal((await stateFrom(page)).users.find(user => user.id === 'u-admin').status, 'Ativo');
@@ -3181,6 +3250,142 @@ async function storageEntries(page) {
     await page.evaluate(() => showView('admin'));
     assert.equal(await page.locator('#topTitle').innerText(), 'Visão geral');
     await assertCanonicalRehydration(page);
+  });
+
+  async function inviteFromDialog(page, values) {
+    await page.getByRole('button', { name: 'Convidar funcionário' }).click();
+    const dialog = page.locator('#userDialog');
+    await dialog.getByLabel('Nome completo').fill(values.name);
+    await dialog.getByLabel('E-mail').fill(values.email);
+    await dialog.getByLabel('Cargo profissional').fill(values.jobTitle || 'Consultora comercial');
+    await dialog.getByLabel('Equipe').fill(values.team || 'Vendas CMS');
+    await dialog.getByLabel('Perfil de acesso').selectOption(values.role || 'Vendedor');
+    await dialog.getByRole('button', { name: 'Enviar convite' }).click();
+    return dialog;
+  }
+
+  async function waitForUserRequests(page, count) {
+    const api = apiByPage.get(page);
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (api.userRequests.length >= count) return api.userRequests;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    throw new Error(`o mock não recebeu ${count} requisição(ões) de usuários`);
+  }
+
+  await run('INVUI-02 convite real mostra estado e entrega confirmados pelo servidor', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Usuários e permissões');
+    assert.equal(await page.getByText('Convites simulados', { exact: false }).count(), 0);
+    assert.equal(await page.getByText('Convites enviados por e-mail · links válidos por 48 horas', { exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: /Simular aceitação/ }).count(), 0);
+    const writesBefore = api.workspaceWrites.length;
+
+    const dialog = await inviteFromDialog(page, { name: '  Juliana Lima ', email: 'Juliana@Teste.Invalid' });
+    await page.locator('#toastRegion').getByText('Convite enviado para juliana@teste.invalid.', { exact: true }).waitFor();
+
+    assert.equal(await dialog.evaluate(element => element.open), false);
+    const [request] = api.userRequests;
+    assert.deepEqual(
+      { method: request.method, path: request.path, body: request.body },
+      { method: 'POST', path: '/api/users/invitations', body: { name: 'Juliana Lima', email: 'Juliana@Teste.Invalid', jobTitle: 'Consultora comercial', team: 'Vendas CMS', role: 'Vendedor' } }
+    );
+    const row = page.locator('tr', { has: page.getByText('juliana@teste.invalid', { exact: true }) });
+    assert.equal(await row.locator('.tag').first().innerText(), 'Pendente');
+    assert.equal(await row.locator('[data-delivery="sent"]').innerText(), 'Convite enviado');
+    const state = await stateFrom(page);
+    const juliana = state.users.find(user => user.email === 'juliana@teste.invalid');
+    assert.equal(juliana.status, 'Pendente');
+    assert.equal(api.workspaceWrites.length, writesBefore, 'o convite não deve gravar o snapshot');
+    assert.equal((await assignableUserIds(page)).includes(juliana.id), false);
+  });
+
+  await run('INVUI-03 falha de SMTP mantém Pendente e oferece reenvio sem afirmar entrega', async page => {
+    const api = apiByPage.get(page);
+    api.inviteDeliveryStatus = 'failed';
+    await goTo(page, 'Usuários e permissões');
+    await inviteFromDialog(page, { name: 'Bruno Falha', email: 'bruno@teste.invalid' });
+    await page.locator('#toastRegion').getByText('Não foi possível enviar o e-mail para bruno@teste.invalid. O convite continua pendente; use Reenviar.', { exact: true }).waitFor();
+    const row = page.locator('tr', { has: page.getByText('bruno@teste.invalid', { exact: true }) });
+    assert.equal(await row.locator('.tag').first().innerText(), 'Pendente');
+    assert.equal(await row.locator('[data-delivery="failed"]').innerText(), 'E-mail não enviado');
+    assert.equal(await row.getByText('Convite enviado', { exact: true }).count(), 0);
+    assert.match(await page.locator('#toastRegion').innerText(), /^(?![\s\S]*Convite enviado)/);
+
+    api.inviteDeliveryStatus = 'sent';
+    await row.getByRole('button', { name: 'Reenviar convite de Bruno Falha' }).click();
+    await page.locator('#toastRegion').getByText('Convite enviado para bruno@teste.invalid.', { exact: true }).waitFor();
+    assert.equal(api.userRequests.at(-1).path, `/api/users/${(await stateFrom(page)).users.find(user => user.email === 'bruno@teste.invalid').id}/invitation/resend`);
+    assert.equal(await row.locator('[data-delivery="failed"]').count(), 0);
+    assert.equal(await row.locator('[data-delivery="sent"]').count(), 1);
+  });
+
+  await run('INV-06 a INV-08 mostram a regra do servidor sem criar linha local', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Usuários e permissões');
+    const usersBefore = (await stateFrom(page)).users.length;
+    api.userActionFailure = { status: 409, code: 'account_active', message: 'Este e-mail já pertence a um usuário ativo.' };
+    const dialog = await inviteFromDialog(page, { name: 'Duplicada', email: 'ana@exemplo.invalid' });
+    await dialog.locator('#userDialogError').getByText('Este e-mail já pertence a um usuário ativo.', { exact: true }).waitFor();
+    assert.equal(await dialog.evaluate(element => element.open), true);
+    assert.equal(await dialog.getByRole('button', { name: 'Enviar convite' }).isEnabled(), true);
+    assert.equal((await stateFrom(page)).users.length, usersBefore);
+
+    api.userActionFailure = { status: 429, code: 'rate_limited', message: 'Muitos convites enviados para este e-mail ou rede. Aguarde alguns minutos e tente novamente.' };
+    await dialog.getByRole('button', { name: 'Enviar convite' }).click();
+    await dialog.locator('#userDialogError').getByText(/Muitos convites enviados/).waitFor();
+    assert.equal((await stateFrom(page)).users.length, usersBefore);
+    assert.equal(api.userRequests.length, 2);
+  });
+
+  await run('INV-05 cancela, reativa e mantém inativos fora das atribuições', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Usuários e permissões');
+    await inviteFromDialog(page, { name: 'Rafael Teste', email: 'rafael@teste.invalid' });
+    await page.locator('#toastRegion').getByText('Convite enviado para rafael@teste.invalid.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Cancelar convite de Rafael Teste' }).click();
+    await page.locator('#toastRegion').getByText('Convite de Rafael Teste cancelado.', { exact: true }).waitFor();
+    const cancelled = (await stateFrom(page)).users.find(user => user.email === 'rafael@teste.invalid');
+    assert.equal(cancelled.status, 'Cancelado');
+    assert.equal(api.userRequests.at(-1).path, `/api/users/${cancelled.id}/invitation/cancel`);
+    assert.equal(await page.getByRole('button', { name: 'Reenviar convite de Rafael Teste' }).count(), 0);
+
+    await page.getByRole('button', { name: 'Desativar Vitor Costa' }).click();
+    await waitForMockState(page, state => state.users.find(user => user.id === 'u-vitor')?.status === 'Inativo');
+    assert.equal((await assignableUserIds(page)).includes('u-vitor'), false);
+    await page.getByRole('button', { name: 'Reativar Vitor Costa' }).click();
+    await page.locator('#toastRegion').getByText('Acesso de Vitor Costa reativado.', { exact: true }).waitFor();
+    assert.equal(api.userRequests.at(-1).path, '/api/users/u-vitor/reactivate');
+    assert.equal((await stateFrom(page)).users.find(user => user.id === 'u-vitor').status, 'Ativo');
+    assert.equal(await page.getByRole('button', { name: 'Desativar Vitor Costa' }).count(), 1);
+    assert.equal((await assignableUserIds(page)).includes('u-vitor'), true);
+  });
+
+  await run('INVUI-02 móvel convida, reenvia e cancela sem rolagem horizontal', async page => {
+    const api = apiByPage.get(page);
+    await page.getByRole('button', { name: 'Abrir menu' }).click();
+    await goTo(page, 'Usuários e permissões');
+    await inviteFromDialog(page, { name: 'Marina Movel', email: 'marina@teste.invalid' });
+    await page.locator('#toastRegion').getByText('Convite enviado para marina@teste.invalid.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Reenviar convite de Marina Movel' }).click();
+    await waitForUserRequests(page, 2);
+    await page.getByRole('button', { name: 'Cancelar convite de Marina Movel' }).click();
+    await page.locator('#toastRegion').getByText('Convite de Marina Movel cancelado.', { exact: true }).waitFor();
+    assert.deepEqual(api.userRequests.map(request => request.path.split('/').slice(-2).join('/')), ['users/invitations', 'invitation/resend', 'invitation/cancel']);
+    assert.equal((await stateFrom(page)).users.find(user => user.email === 'marina@teste.invalid').status, 'Cancelado');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  }, { viewport: { width: 390, height: 844 } });
+
+  await run('INV-09 perfis sem Administrador não veem nem chamam a administração de convites', async page => {
+    const api = apiByPage.get(page);
+    await selectProfile(page, 'u-manager');
+    await reloadReady(page);
+    assert.equal(await page.locator('.nav').getByRole('button', { name: /Usuários e permissões/ }).count(), 0);
+    assert.equal(await page.evaluate(() => openUserDialog()), false);
+    assert.equal(await page.evaluate(() => resendInvite('u-vitor')), false);
+    assert.equal(await page.evaluate(() => reactivateUser('u-vitor')), false);
+    assert.equal(api.userRequests.length, 0);
   });
 
   await run('BITRIX-02 rejeita arquivos inválidos e mantém a importação parcial', async page => {

@@ -426,17 +426,21 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Footer no longer claims invitations are simulated.
-- [ ] Create/resend/cancel render only server-confirmed user and delivery states.
-- [ ] Failed SMTP clearly keeps Pendente and offers retry without claiming delivery.
-- [ ] Non-admin controls are absent/disabled consistently with server authorization.
-- [ ] Active assignee lists continue excluding Pendente, Inativo and Cancelado.
-- [ ] Desktop and mobile E2E scenarios cover success, failure, resend and cancel.
-- [ ] Full gate passes and UI scenario count remains at least 122 plus the new cases.
+- [x] Footer no longer claims invitations are simulated.
+- [x] Create/resend/cancel render only server-confirmed user and delivery states.
+- [x] Failed SMTP clearly keeps Pendente and offers retry without claiming delivery.
+- [x] Non-admin controls are absent/disabled consistently with server authorization.
+- [x] Active assignee lists continue excluding Pendente, Inativo and Cancelado.
+- [x] Desktop and mobile E2E scenarios cover success, failure, resend and cancel.
+- [x] Full gate passes and UI scenario count remains at least 122 plus the new cases.
 
 **Tests**: e2e — extend `tests/ui-prototype.spec.cjs` with invitation administration scenarios.  
 **Gate**: full  
 **Commit**: `feat(ui): connect user invitations to api`
+
+**Evidence**: `Usuários e permissões` now calls `POST /api/users/invitations`, `.../invitation/resend`, `.../invitation/cancel` and `.../reactivate`; the row is replaced with the server's `AccountUserResponse` and merged into both the local and the last confirmed workspace state, so an API action never triggers a snapshot write. The simulated create/resend/cancel/accept code and the `Simular aceitação` button were removed; the footer reads `Convites enviados por e-mail · links válidos por 48 horas`. Delivery is shown per row from the server answer (`Convite enviado` / `E-mail não enviado`) and in the toast; a failed send keeps `Pendente`, says the e-mail was not sent and offers `Reenviar`. Server errors (409 active/inactive account, 429 limit, 422) are shown in the dialog without creating a local row. Inactive users get `Reativar`; `Desativar` stays a snapshot change and every other status transition is refused locally (server-owned since T9). Non-administrators have no navigation entry and the action functions return without any request. Editing profile fields still goes through the snapshot. Tests: `ADM-03` was rewritten for the real flow (same intent: invite, re-invite of a pending e-mail instead of the simulated duplicate error, resend, edit, deactivate, cancel, re-invite of a cancelled e-mail) and 6 new scenarios were added (invite success, SMTP failure + resend, server-rule errors, cancel + reactivate, mobile invite/resend/cancel without horizontal scroll, non-admin). The old `Perfil de usuário` option checks matched no element and always passed; they now use the real responsible-user option list (`fieldHTML(..., 'user', ...)`), which proves Pendente, Inativo and Cancelado users are not assignable and a reactivated user is. Mutation checks on the snapshot-free merge, the failed-delivery note, the delivery toast, the server-owned status rule, the footer, the reactivation button and the dialog error were all detected.
+
+**Windows gate**: full backend suite passed with 1182 tests, same 7 warnings as after T11 (no backend change); UI regression with the installed Chrome passed 128/128 scenarios (122 + 6 new).
 
 ---
 
