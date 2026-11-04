@@ -326,15 +326,19 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Existing hash, `auth_enabled`, `auth_version`, normalized email and protected status survive workspace updates.
-- [ ] Allowed profile fields still update without breaking references.
-- [ ] Pending/cancelled/inactive users cannot be made assignable through a crafted snapshot.
-- [ ] Repository tests prove protected-field preservation and normal profile editing.
-- [ ] Quick gate passes with no test deletion.
+- [x] Existing hash, `auth_enabled`, `auth_version`, normalized email and protected status survive workspace updates.
+- [x] Allowed profile fields still update without breaking references.
+- [x] Pending/cancelled/inactive users cannot be made assignable through a crafted snapshot.
+- [x] Repository tests prove protected-field preservation and normal profile editing.
+- [x] Quick gate passes with no test deletion.
 
 **Tests**: integration — extend `tests/backend/test_repository.py` and `tests/backend/test_workspace_service.py`.  
 **Gate**: quick  
 **Commit**: `fix(users): preserve server managed account fields`
+
+**Evidence**: 14 new PostgreSQL tests (13 in `test_repository.py`, 1 in `test_workspace_service.py`). They prove: a crafted administrator snapshot cannot change `password_hash`, `auth_enabled`, `auth_version`, `normalized_email` or the e-mail of an account with a server identity, and server-managed keys (`passwordHash`, `authEnabled`, `authVersion`, `normalizedEmail`, tokens, delivery state) are neither persisted in the payload nor returned in the snapshot (SEC-02); name, job title, role and team still update, and legacy roster users without a server identity keep an editable e-mail; the only status change a snapshot may make is `Ativo` → `Inativo` (existing deactivation with `auth_version` increment and session revocation), so `Pendente`, `Cancelado` and `Inativo` accounts cannot be made assignable and active accounts cannot be put into an invitation state (INV-10); `invited_at` is server-owned; users created by `AccountAccessService` (empty payload) are read from their columns, pass reference validation and appear after browser-created users, and columns win over a stale payload after a server re-invitation (INVUI-01); a pending invitee absent from a stale administrator snapshot is not soft-deleted, since only `cancel_invitation` ends an invitation. Mutation checks on status protection, e-mail protection, pending soft-delete exclusion, column overlay, key filtering and `invited_at` ownership were all detected. Reactivation (`Inativo` → `Ativo`) is no longer possible through the snapshot and has no route in the approved design (T10/T11); it needs an owner decision. New users are still created through the snapshot until T12 replaces the simulated invitation. No test was deleted, weakened or skipped.
+
+**Windows gate**: full backend suite on Windows 11 with Docker PostgreSQL 17 passed with 935 tests (921 after T8 + 14 new), 6 pre-existing warnings.
 
 ---
 

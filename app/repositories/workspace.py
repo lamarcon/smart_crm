@@ -48,6 +48,48 @@ ENTITY_MODELS = {
 }
 
 
+# Account fields owned by the server (invitation, recovery and login). A browser
+# snapshot may never write them, and they are never echoed back in a snapshot.
+SERVER_MANAGED_USER_KEYS = frozenset(
+    {
+        "password",
+        "passwordConfirmation",
+        "passwordHash",
+        "password_hash",
+        "authEnabled",
+        "auth_enabled",
+        "authVersion",
+        "auth_version",
+        "normalizedEmail",
+        "normalized_email",
+        "token",
+        "inviteToken",
+        "resetToken",
+        "deliveryStatus",
+        "delivery_status",
+    }
+)
+# The only account status change an administrator may make through a snapshot.
+# Invitation states change only through AccountAccessService; reactivation is a
+# server-side administrative action.
+SNAPSHOT_USER_STATUS_TRANSITIONS = frozenset({("Ativo", "Inativo")})
+_SERVER_ONLY_USER_POSITION = 1_000_000
+
+
+def _snapshot_user_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in record.items()
+        if key not in SERVER_MANAGED_USER_KEYS
+    }
+
+
+def _iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 class WorkspaceScopeError(RuntimeError):
     """Raised before business SQL when the trusted workspace context is invalid."""
 
@@ -123,7 +165,7 @@ class WorkspaceRepository:
 
     def read_active(self) -> WorkspaceState:
         state: dict[str, Any] = {
-            "users": self._read_payloads(CrmUser),
+            "users": self._read_users(),
             "leads": self._read_payloads(Lead),
             "contacts": self._read_payloads(Contact),
             "companies": self._read_payloads(Company),
@@ -242,6 +284,62 @@ class WorkspaceRepository:
         )
         return [record for _position, record in unpacked]
 
+    def _read_users(self) -> list[dict[str, Any]]:
+        team_names = {
+            team.id: team.name
+            for team in self.session.scalars(
+                select(Team).where(Team.workspace_id == self.workspace_id)
+            ).all()
+        }
+        rows = self.session.scalars(
+            select(CrmUser).where(
+                CrmUser.workspace_id == self.workspace_id,
+                CrmUser.deleted_at.is_(None),
+            )
+        ).all()
+        unpacked = sorted(
+            (self._user_record(row, team_names) for row in rows),
+            key=lambda pair: pair[0],
+        )
+        return [record for _position, record in unpacked]
+
+    @staticmethod
+    def _user_record(
+        row: CrmUser, team_names: dict[str, str]
+    ) -> tuple[int, dict[str, Any]]:
+        """Overlay the authoritative columns on the browser payload.
+
+        Columns win whenever they differ, so server-created invitees (empty
+        payload) and server-side transitions are visible, while unchanged
+        browser values keep their original representation.
+        """
+
+        position, record = _unpack(row.payload or {})
+        record = _snapshot_user_record(record)
+        if not record:
+            position = _SERVER_ONLY_USER_POSITION
+        canonical = {
+            "id": row.id,
+            "name": row.name,
+            "email": row.email,
+            "jobTitle": row.job_title,
+            "role": row.role,
+            "status": row.status,
+        }
+        for key, value in canonical.items():
+            if record.get(key) != value:
+                record[key] = value
+        submitted_team = record.get("team")
+        if row.team_id is None:
+            if submitted_team:
+                record.pop("team")
+        elif not submitted_team or team_id_for_name(str(submitted_team)) != row.team_id:
+            if row.team_id in team_names:
+                record["team"] = team_names[row.team_id]
+        if _date(record.get("invitedAt")) != row.invited_at:
+            record["invitedAt"] = _iso(row.invited_at)
+        return position, record
+
     def _deal_record(self, row: Deal) -> tuple[int, dict[str, Any]]:
         position, record = _unpack(row.payload)
         canonical = deepcopy(record)
@@ -330,8 +428,11 @@ class WorkspaceRepository:
 
     def _reconcile_users(self, records: list[dict[str, Any]], teams: dict[str, str]) -> None:
         present = {record["id"] for record in records}
-        self._soft_delete_absent(CrmUser, present)
-        for position, record in enumerate(records):
+        # A pending invitation is ended only by AccountAccessService.cancel_invitation;
+        # a snapshot loaded before the invitation must not delete the invitee.
+        self._soft_delete_absent(CrmUser, present, extra=(CrmUser.status != "Pendente",))
+        for position, submitted in enumerate(records):
+            record = _snapshot_user_record(submitted)
             row = self._scoped_one(CrmUser, record["id"])
             values = dict(
                 workspace_id=self.workspace_id,
@@ -348,6 +449,17 @@ class WorkspaceRepository:
             if row is None:
                 self.session.add(CrmUser(id=record["id"], **values))
             else:
+                # Credentials, auth flags, auth_version and normalized identity are
+                # absent from ``values`` and therefore never written here.
+                if row.normalized_email is not None:
+                    values["email"] = row.email
+                values["invited_at"] = row.invited_at
+                if (row.status, values["status"]) not in SNAPSHOT_USER_STATUS_TRANSITIONS:
+                    values["status"] = row.status
+                effective = dict(record, email=values["email"], status=values["status"])
+                if _date(effective.get("invitedAt")) != row.invited_at:
+                    effective["invitedAt"] = _iso(row.invited_at)
+                values["payload"] = _packed(effective, position)
                 access_changed = row.role != values["role"] or row.status != values["status"]
                 if access_changed:
                     row.auth_version += 1

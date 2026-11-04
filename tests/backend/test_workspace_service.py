@@ -895,3 +895,62 @@ def test_pipeline_transfer_invalidates_stale_workspace_snapshot(service) -> None
     assert current.state.deals[0]["stageId"] == str(target.id)
     assert current.state.deals[0]["stage"] == target.name
     assert len(current.state.deals[0]["stageHistory"]) == 1
+
+
+def test_admin_save_cannot_activate_invitee_or_overwrite_credentials(service) -> None:
+    from app.models import CrmUser
+
+    workspace, database = service
+    workspace.bootstrap(state())
+    server_hash = "$argon2id$v=19$m=65536,t=3,p=4$c2VydmVy$c2VydmVyLW1hbmFnZWQ"
+    with database.session_scope() as session:
+        admin = session.get(CrmUser, "u-1")
+        admin.password_hash = server_hash
+        admin.auth_enabled = True
+        admin.auth_version = 4
+        admin.normalized_email = "ana@test"
+        session.add(
+            CrmUser(
+                id="u-invited",
+                workspace_id="default",
+                name="Convidado",
+                email="convidado@test",
+                normalized_email="convidado@test",
+                auth_enabled=False,
+                auth_version=0,
+                job_title="Comercial",
+                role="Vendedor",
+                status="Pendente",
+                invited_at=datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc),
+                payload={},
+            )
+        )
+
+    loaded = workspace.load()
+    assert [user["id"] for user in loaded.state.users] == ["u-1", "u-2", "u-invited"]
+    crafted = loaded.state.model_copy(deep=True)
+    crafted.users[0].update(
+        {"email": "outro@test", "passwordHash": "x", "authEnabled": False, "authVersion": 0}
+    )
+    crafted.users[2].update({"status": "Ativo", "name": "Convidado Editado"})
+
+    result = workspace.save(loaded.version, crafted)
+
+    assert result.version == loaded.version + 1
+    with database.session_scope() as session:
+        admin = session.get(CrmUser, "u-1")
+        invited = session.get(CrmUser, "u-invited")
+        assert (admin.email, admin.normalized_email, admin.password_hash) == (
+            "ana@test",
+            "ana@test",
+            server_hash,
+        )
+        assert (admin.auth_enabled, admin.auth_version) == (True, 4)
+        assert (invited.status, invited.auth_enabled, invited.name) == (
+            "Pendente",
+            False,
+            "Convidado Editado",
+        )
+    reloaded = {user["id"]: user for user in workspace.load().state.users}
+    assert reloaded["u-invited"]["status"] == "Pendente"
+    assert "passwordHash" not in reloaded["u-1"]

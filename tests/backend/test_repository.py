@@ -323,3 +323,256 @@ def test_combined_workflow_state_rehydrates_in_new_repository_session(repository
     finally:
         fresh_session.close()
     assert without_pipeline_metadata(rehydrated) == original
+
+
+# --- T9: server-managed account fields ---------------------------------------
+
+from datetime import datetime, timezone  # noqa: E402
+
+from app.repositories.workspace import team_id_for_name  # noqa: E402
+
+SERVER_HASH = "$argon2id$v=19$m=65536,t=3,p=4$c2VydmVy$c2VydmVyLW1hbmFnZWQ"
+INVITED_AT = datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
+
+
+def _row(session: Session, user_id: str) -> CrmUser:
+    session.expire_all()
+    return session.scalar(
+        select(CrmUser).where(CrmUser.workspace_id == "default", CrmUser.id == user_id)
+    )
+
+
+def _set_columns(session: Session, user_id: str, **values: object) -> None:
+    row = _row(session, user_id)
+    for name, value in values.items():
+        setattr(row, name, value)
+    session.commit()
+    session.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+
+
+def _add_server_invitee(session: Session, user_id: str, *, status: str = "Pendente") -> None:
+    session.add(
+        CrmUser(
+            id=user_id,
+            workspace_id="default",
+            name="Convidada Real",
+            email=f"{user_id}@test",
+            normalized_email=f"{user_id}@test",
+            password_hash=None,
+            auth_enabled=False,
+            auth_version=0,
+            job_title="Comercial",
+            team_id=None,
+            role="Vendedor",
+            status=status,
+            invited_at=INVITED_AT,
+            payload={},
+        )
+    )
+    session.commit()
+    session.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+
+
+def _users(repo: WorkspaceRepository) -> dict[str, dict]:
+    return {
+        user["id"]: user
+        for user in repo.read_active().model_dump(by_alias=True, exclude_none=True)["users"]
+    }
+
+
+def test_workspace_update_preserves_credentials_access_flags_version_and_identity(
+    repository,
+) -> None:
+    repo, session = repository
+    original = sample_state()
+    persist(repo, original)
+    _set_columns(
+        session,
+        "u-1",
+        password_hash=SERVER_HASH,
+        auth_enabled=True,
+        auth_version=3,
+        normalized_email="ana@test",
+    )
+    session.info.clear()
+    crafted = deepcopy(original)
+    crafted["users"][0].update(
+        {
+            "name": "Ana Editada",
+            "jobTitle": "Diretora",
+            "email": "atacante@test",
+            "passwordHash": "texto-plano",
+            "password_hash": "texto-plano",
+            "authEnabled": False,
+            "auth_enabled": False,
+            "authVersion": 0,
+            "auth_version": 0,
+            "normalizedEmail": "atacante@test",
+            "normalized_email": "atacante@test",
+        }
+    )
+
+    repo.reconcile(WorkspaceState.model_validate(crafted))
+    session.commit()
+    session.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+
+    row = _row(session, "u-1")
+    assert (row.password_hash, row.auth_enabled, row.auth_version) == (SERVER_HASH, True, 3)
+    assert (row.email, row.normalized_email) == ("ana@test", "ana@test")
+    assert (row.name, row.job_title) == ("Ana Editada", "Diretora")
+    assert "auth_changed_user_ids" not in session.info
+    assert "texto-plano" not in repr(row.payload)
+    assert "atacante@test" not in repr(row.payload)
+    loaded = _users(repo)["u-1"]
+    assert not {
+        "passwordHash",
+        "password_hash",
+        "authEnabled",
+        "auth_enabled",
+        "authVersion",
+        "auth_version",
+        "normalizedEmail",
+        "normalized_email",
+    } & set(loaded)
+    assert (loaded["email"], loaded["name"], loaded["jobTitle"]) == (
+        "ana@test",
+        "Ana Editada",
+        "Diretora",
+    )
+
+
+def test_legacy_roster_user_without_server_identity_keeps_editable_email(repository) -> None:
+    repo, session = repository
+    original = sample_state()
+    persist(repo, original)
+    changed = deepcopy(original)
+    changed["users"][1]["email"] = "bia.nova@test"
+
+    persist(repo, changed)
+
+    row = _row(session, "u-2")
+    assert (row.email, row.normalized_email, row.auth_enabled) == ("bia.nova@test", None, False)
+
+
+@pytest.mark.parametrize(
+    ("current", "submitted"),
+    [
+        ("Pendente", "Ativo"),
+        ("Pendente", "Inativo"),
+        ("Cancelado", "Ativo"),
+        ("Cancelado", "Pendente"),
+        ("Inativo", "Ativo"),
+        ("Ativo", "Pendente"),
+        ("Ativo", "Cancelado"),
+        ("Ativo", "Convidado"),
+    ],
+)
+def test_crafted_snapshot_cannot_change_protected_account_status(
+    repository,
+    current: str,
+    submitted: str,
+) -> None:
+    repo, session = repository
+    original = sample_state()
+    persist(repo, original)
+    _set_columns(session, "u-2", status=current, auth_version=2)
+    session.info.clear()
+    crafted = deepcopy(original)
+    crafted["users"][1]["status"] = submitted
+
+    repo.reconcile(WorkspaceState.model_validate(crafted))
+    session.commit()
+    session.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+
+    row = _row(session, "u-2")
+    assert (row.status, row.auth_version, row.auth_enabled) == (current, 2, False)
+    assert "auth_changed_user_ids" not in session.info
+    assert _users(repo)["u-2"]["status"] == current
+
+
+def test_server_created_invitee_is_read_from_columns_and_survives_a_stale_admin_snapshot(
+    repository,
+) -> None:
+    repo, session = repository
+    original = sample_state()
+    persist(repo, original)
+    _add_server_invitee(session, "u-real")
+
+    loaded = repo.read_active().model_dump(by_alias=True, exclude_none=True)
+    validate_references(WorkspaceState.model_validate(loaded))
+    invitee = next(user for user in loaded["users"] if user["id"] == "u-real")
+    assert invitee == {
+        "id": "u-real",
+        "name": "Convidada Real",
+        "email": "u-real@test",
+        "jobTitle": "Comercial",
+        "role": "Vendedor",
+        "status": "Pendente",
+        "invitedAt": "2026-10-31T12:00:00Z",
+    }
+    assert [user["id"] for user in loaded["users"]][-1] == "u-real"
+
+    stale = deepcopy(original)
+    stale["users"][0]["name"] = "Ana sem saber do convite"
+    persist(repo, stale)
+
+    row = _row(session, "u-real")
+    assert (row.deleted_at, row.status, row.payload) == (None, "Pendente", {})
+    assert _users(repo)["u-real"]["status"] == "Pendente"
+    assert _row(session, "u-1").name == "Ana sem saber do convite"
+
+
+def test_columns_win_over_a_stale_payload_after_server_reinvitation(repository) -> None:
+    repo, session = repository
+    original = sample_state()
+    original["users"].append(
+        {"id": "u-3", "name": "Carla", "email": "carla@test", "jobTitle": "Vendas", "role": "Vendedor", "team": "Vendas", "status": "Cancelado", "invitedAt": None}
+    )
+    persist(repo, original)
+    _set_columns(
+        session,
+        "u-3",
+        name="Carla Reconvidada",
+        role="Faturamento",
+        team_id=team_id_for_name("Gestão"),
+        status="Pendente",
+        invited_at=INVITED_AT,
+        normalized_email="carla@test",
+    )
+
+    loaded = _users(repo)["u-3"]
+
+    assert {key: loaded[key] for key in ("name", "role", "team", "status", "invitedAt")} == {
+        "name": "Carla Reconvidada",
+        "role": "Faturamento",
+        "team": "Gestão",
+        "status": "Pendente",
+        "invitedAt": "2026-10-31T12:00:00Z",
+    }
+    crafted = deepcopy(original)
+    crafted["users"][-1]["invitedAt"] = "2020-01-01T00:00:00Z"
+    persist(repo, crafted)
+    assert (_row(session, "u-3").invited_at, _row(session, "u-3").status) == (
+        INVITED_AT,
+        "Pendente",
+    )
+
+
+def test_pending_invitee_cannot_be_made_assignable_by_a_crafted_snapshot(repository) -> None:
+    repo, session = repository
+    original = sample_state()
+    persist(repo, original)
+    _add_server_invitee(session, "u-real")
+    crafted = repo.read_active().model_dump(by_alias=True, exclude_none=True)
+    target = next(user for user in crafted["users"] if user["id"] == "u-real")
+    target["status"] = "Ativo"
+    target["authEnabled"] = True
+
+    persist(repo, crafted)
+
+    loaded = _users(repo)
+    assert loaded["u-real"]["status"] == "Pendente"
+    row = _row(session, "u-real")
+    assert (row.status, row.auth_enabled, row.password_hash) == ("Pendente", False, None)
+    assignable = {user_id for user_id, user in loaded.items() if user["status"] == "Ativo"}
+    assert "u-real" not in assignable
