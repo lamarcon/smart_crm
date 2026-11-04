@@ -182,3 +182,22 @@ def test_offline_installer_uses_only_wheelhouse_and_pinned_requirements() -> Non
     assert "pip install" in installer
     assert "http://" not in installer
     assert "https://" not in installer
+
+
+def test_runtime_collection_includes_smtp_deployment_files() -> None:
+    files = {path.as_posix() for path in builder.collect_runtime_files(PROJECT_ROOT)}
+
+    assert {
+        "app/mail.py",
+        "app/mail_cli.py",
+        "app/services/account_access.py",
+        "migrations/versions/b4e2c9a7d6f1_add_account_action_tokens.py",
+        "deploy/manual-windows-pg11/set-smtp-password.ps1",
+    } <= files
+    required = {path.as_posix() for path in builder.REQUIRED_DEPLOYMENT_FILES}
+    assert {
+        "app/mail_cli.py",
+        "migrations/versions/b4e2c9a7d6f1_add_account_action_tokens.py",
+        "deploy/manual-windows-pg11/set-smtp-password.ps1",
+    } <= required
+    assert not any(name.endswith("smtp-password.bin") for name in files)

@@ -3,7 +3,10 @@ param(
     [string]$AppRoot = "C:\brbots\apps\smart-crm",
     [string]$EnvFile = "C:\ProgramData\SmartCRM\server.env",
     [string]$LogDirectory = "C:\ProgramData\SmartCRM\logs",
-    [switch]$ValidateOnly
+    [string]$SmtpPasswordSecretFile = "C:\ProgramData\SmartCRM\service-secrets\smtp-password.bin",
+    [switch]$ValidateOnly,
+    [switch]$SkipSecretDecryption,
+    [string]$SmtpSmokeTo
 )
 
 Set-StrictMode -Version Latest
@@ -18,7 +21,7 @@ $allowedKeys = @(
     "SMART_CRM_TENANT_POOL_SIZE", "SMART_CRM_TENANT_MAX_OVERFLOW",
     "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS", "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
     "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK"
-)
+) + @(Get-SmartCrmSmtpEnvironmentKeys)
 
 $runtimeKeys = @(
     "SMART_CRM_CONTROL_DATABASE_URL", "SMART_CRM_TENANT_SECRET_STORE",
@@ -26,7 +29,7 @@ $runtimeKeys = @(
     "SMART_CRM_TENANT_POOL_SIZE", "SMART_CRM_TENANT_MAX_OVERFLOW",
     "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS", "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
     "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK"
-)
+) + @(Get-SmartCrmSmtpEnvironmentKeys)
 
 function Read-SmartCrmEnvironment {
     param([string]$Path)
@@ -41,6 +44,9 @@ function Read-SmartCrmEnvironment {
             throw "Linha invalida no arquivo de ambiente."
         }
         $key = $Matches.Key
+        if ($key -eq "SMART_CRM_SMTP_PASSWORD") {
+            throw "A senha SMTP nao pode ficar no server.env; use set-smtp-password.ps1 (DPAPI)."
+        }
         if ($key -notin $allowedKeys) { throw "Variavel nao permitida: $key" }
         if ($values.ContainsKey($key)) { throw "Variavel duplicada: $key" }
         $values[$key] = $Matches.Value.Trim()
@@ -100,6 +106,17 @@ if (-not [double]::TryParse(
     throw "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS deve ser positivo."
 }
 
+Assert-SmartCrmSmtpSettings -Settings $settings -SecretFile $SmtpPasswordSecretFile
+if ($SkipSecretDecryption -and -not $ValidateOnly) {
+    throw "-SkipSecretDecryption so pode ser usado com -ValidateOnly."
+}
+Assert-SmartCrmServiceSecretReadable `
+    -Path $settings.SMART_CRM_SMTP_PASSWORD_SECRET_FILE `
+    -SkipDecryption:$SkipSecretDecryption
+if ($SmtpSmokeTo -and ($ValidateOnly -or $SmtpSmokeTo -notmatch "^[^@\s]+@[^@\s]+\.[^@\s]+$")) {
+    throw "-SmtpSmokeTo exige um e-mail valido e nao pode ser combinado com -ValidateOnly."
+}
+
 $python = Join-Path $AppRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Virtualenv ausente: $python" }
 if ($ValidateOnly) {
@@ -109,6 +126,20 @@ if ($ValidateOnly) {
 
 foreach ($key in $runtimeKeys) {
     [Environment]::SetEnvironmentVariable($key, $settings[$key], "Process")
+}
+if ($SmtpSmokeTo) {
+    Push-Location $AppRoot
+    try {
+        & $python -m app.mail_cli smoke --to $SmtpSmokeTo
+        $smokeExit = $LASTEXITCODE
+    }
+    finally {
+        foreach ($key in $runtimeKeys) {
+            [Environment]::SetEnvironmentVariable($key, $null, "Process")
+        }
+        Pop-Location
+    }
+    exit $smokeExit
 }
 New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
 $logPath = Join-Path $LogDirectory "smart-crm.log"

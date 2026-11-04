@@ -329,3 +329,80 @@ def test_unconfigured_sender_always_fails_delivery() -> None:
         UnconfiguredMailSender().send(message)
 
     assert failure.value.code == "smtp_not_configured"
+
+
+# --- T14: SMTP smoke test CLI ---------------------------------------------------
+
+from app.mail_cli import main as mail_cli_main, run_smoke  # noqa: E402
+
+
+class RecordingSmtpSender:
+    instances: list["RecordingSmtpSender"] = []
+
+    def __init__(self, settings: SmtpSettings, failure: Exception | None = None) -> None:
+        self.settings = settings
+        self.failure = failure
+        self.messages: list = []
+        RecordingSmtpSender.instances.append(self)
+
+    def send(self, message) -> None:  # noqa: ANN001
+        if self.failure is not None:
+            raise self.failure
+        self.messages.append(message)
+
+
+def test_smtp_smoke_sends_one_fixed_message_with_the_dpapi_password() -> None:
+    RecordingSmtpSender.instances.clear()
+    reads: list[str] = []
+
+    def read(path: str) -> str:
+        reads.append(path)
+        return "segredo-ficticio"
+
+    code, line = run_smoke(
+        "responsavel@example.test",
+        environ=FULL_SMTP_ENVIRONMENT,
+        read_password=read,
+        sender_factory=RecordingSmtpSender,
+    )
+
+    assert (code, line) == (0, "smtp smoke: PASS")
+    [sender] = RecordingSmtpSender.instances
+    [message] = sender.messages
+    assert message.recipient == "responsavel@example.test"
+    assert message.action_link == ""
+    assert sender.settings.password == "segredo-ficticio"
+    assert reads == [FULL_SMTP_ENVIRONMENT["SMART_CRM_SMTP_PASSWORD_SECRET_FILE"]]
+    assert "segredo-ficticio" not in line
+
+
+@pytest.mark.parametrize(
+    ("recipient", "environment", "failure", "expected"),
+    [
+        ("sem-arroba", FULL_SMTP_ENVIRONMENT, None, (2, "smtp smoke: FAIL code=smtp_recipient_invalid")),
+        ("a@example.test", {}, None, (2, "smtp smoke: FAIL code=smtp_not_configured")),
+        ("a@example.test", {**FULL_SMTP_ENVIRONMENT, "SMART_CRM_SMTP_TLS_MODE": "plain"}, None, (2, "smtp smoke: FAIL code=smtp_tls_required")),
+        ("a@example.test", FULL_SMTP_ENVIRONMENT, MailDeliveryError("smtp_auth_failed"), (1, "smtp smoke: FAIL code=smtp_auth_failed")),
+    ],
+)
+def test_smtp_smoke_reports_only_redacted_codes(recipient, environment, failure, expected) -> None:  # noqa: ANN001
+    code, line = run_smoke(
+        recipient,
+        environ=environment,
+        read_password=lambda _path: "segredo-ficticio",
+        sender_factory=lambda settings: RecordingSmtpSender(settings, failure),
+    )
+
+    assert (code, line) == expected
+    assert "segredo-ficticio" not in line
+
+
+def test_smtp_smoke_reports_an_unreadable_secret(monkeypatch, capsys) -> None:  # noqa: ANN001
+    for key, value in FULL_SMTP_ENVIRONMENT.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("SMART_CRM_SMTP_PASSWORD_SECRET_FILE", "C:/inexistente/smtp-password.bin")
+
+    code = mail_cli_main(["smoke", "--to", "responsavel@example.test"])
+
+    assert code == 2
+    assert capsys.readouterr().out.strip() == "smtp smoke: FAIL code=smtp_password_unreadable"

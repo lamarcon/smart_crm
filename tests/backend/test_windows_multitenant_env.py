@@ -108,6 +108,15 @@ def test_environment_key_allowlist_rejects_unreviewed_inputs() -> None:
         "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS",
         "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
         "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK",
+        # T14: reviewed SMTP settings; the password is never an environment key.
+        "SMART_CRM_SMTP_HOST",
+        "SMART_CRM_SMTP_PORT",
+        "SMART_CRM_SMTP_USERNAME",
+        "SMART_CRM_SMTP_FROM_ADDRESS",
+        "SMART_CRM_SMTP_TLS_MODE",
+        "SMART_CRM_SMTP_TIMEOUT_SECONDS",
+        "SMART_CRM_SMTP_PASSWORD_SECRET_FILE",
     }
 
     assert set(values) == expected
+    assert "SMART_CRM_SMTP_PASSWORD" not in values

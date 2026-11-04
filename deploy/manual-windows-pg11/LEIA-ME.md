@@ -116,9 +116,10 @@ O listener global da instancia permanece como esta porque `DW_CMS` e `DW_PRODUTO
 Descubra o arquivo ativo sem imprimir senha:
 
 ```powershell
-$settings = Get-Content C:\ProgramData\SmartCRM\server.env |
-    Where-Object { $_ -and -not $_.StartsWith('#') } |
-    Out-String | ConvertFrom-StringData
+. "$releaseRoot\deploy\manual-windows-pg11\deployment-policy.ps1"
+$settings = Read-SmartCrmEnvironment `
+    -Path C:\ProgramData\SmartCRM\server.env `
+    -AllowedKeys @(Get-SmartCrmEnvironmentAllowedKeys)
 $env:PGPASSWORD = $settings.SMART_CRM_DB_PASSWORD
 try {
     $pgHbaPath = (& "C:\Program Files\PostgreSQL\11\bin\psql.exe" `
@@ -282,6 +283,89 @@ Set-Clipboard -Value ""
 Remove-Variable controlPassword,controlUserInfo,controlUri -ErrorAction SilentlyContinue
 ```
 
+## 5.1. Configurar o SMTP de convites e recuperacao de senha
+
+Convites e recuperacao de senha enviam e-mail pelo SMTP da empresa. As chaves nao secretas ficam no `server.env`; a senha fica somente em `C:\ProgramData\SmartCRM\service-secrets\smtp-password.bin`, protegida por DPAPI para `SmartCRMService`. O `server.env` rejeita `SMART_CRM_SMTP_PASSWORD`, SMTP sem TLS (`SMART_CRM_SMTP_TLS_MODE` aceita somente `starttls` ou `implicit_tls`) e placeholders `REPLACE_WITH_*`. Nenhum comando abaixo imprime a senha.
+
+### Staging (sem tocar na release ativa)
+
+1. Rode `install-offline.ps1` da nova release como Administrador: ele cria `service-secrets` com ACL restrita a `SYSTEM`, Administradores e `SmartCRMService` e nao altera a tarefa ativa.
+2. Gere um sucessor do `server.env` que preserva cada linha existente byte a byte e acrescenta as chaves SMTP (os valores nunca sao reinterpretados, entao caminhos com `\` e URLs ficam intactos):
+
+```powershell
+$envPath = "C:\ProgramData\SmartCRM\server.env"
+$nextEnv = "C:\ProgramData\SmartCRM\server.env.next"
+. "$releaseRoot\deploy\manual-windows-pg11\deployment-policy.ps1"
+$lines = Add-SmartCrmSmtpEnvironmentLines `
+    -Path $envPath `
+    -SmtpHost smtp.exemplo.com.br `
+    -Port 587 `
+    -Username crm@exemplo.com.br `
+    -FromAddress crm@exemplo.com.br `
+    -TlsMode starttls `
+    -TimeoutSeconds 10
+[IO.File]::WriteAllLines($nextEnv, $lines, (New-Object Text.UTF8Encoding($false)))
+$serviceSid = (New-Object Security.Principal.NTAccount($serviceAccount)).Translate([Security.Principal.SecurityIdentifier]).Value
+icacls $nextEnv /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*$($serviceSid):R" | Out-Null
+Remove-Variable lines -ErrorAction SilentlyContinue
+```
+
+Use `-TlsMode implicit_tls -Port 465` quando o provedor exigir TLS implicito. Em instalacao nova, o `server.env` ja nasce com as chaves SMTP como placeholders: edite somente esses valores.
+
+3. Grave a senha SMTP como `SmartCRMService`. Abra `runas /user:NOME-DO-SERVIDOR\SmartCRMService powershell.exe` e, nessa janela:
+
+```powershell
+& "$releaseRoot\deploy\manual-windows-pg11\set-smtp-password.ps1"
+```
+
+O prompt oculta a senha, pede confirmacao, grava o arquivo DPAPI de forma atomica e confirma que ele abre para essa conta. O resultado esperado e `smtp password secret: STORED`.
+
+4. Ainda na janela de `SmartCRMService`, valide o sucessor antes do corte. A validacao abre o segredo DPAPI, rejeita ACL ampla e configuracao incompleta:
+
+```powershell
+& "$releaseRoot\deploy\manual-windows-pg11\start-smart-crm.ps1" `
+    -AppRoot $releaseRoot -EnvFile C:\ProgramData\SmartCRM\server.env.next -ValidateOnly
+```
+
+O resultado obrigatorio e `smart crm environment: VALID`.
+
+### Smoke test SMTP
+
+Na mesma janela de `SmartCRMService`, envie uma mensagem de teste para uma caixa controlada pela empresa:
+
+```powershell
+& "$releaseRoot\deploy\manual-windows-pg11\start-smart-crm.ps1" `
+    -AppRoot $releaseRoot -EnvFile C:\ProgramData\SmartCRM\server.env.next `
+    -SmtpSmokeTo responsavel@exemplo.com.br
+```
+
+O resultado obrigatorio e `smtp smoke: PASS`. Uma falha mostra somente um codigo (`smtp_auth_failed`, `smtp_tls_failed`, `smtp_timeout`, `smtp_password_unreadable`...), nunca a senha ou a resposta do servidor. O smoke test nao altera banco, tarefa nem release ativa.
+
+### Corte
+
+Com `VALID` e `PASS`, faca backup do arquivo atual e promova o sucessor imediatamente antes do inicializador da secao 6:
+
+```powershell
+Copy-Item -LiteralPath C:\ProgramData\SmartCRM\server.env -Destination C:\ProgramData\SmartCRM\server.env.pre-smtp
+Move-Item -LiteralPath C:\ProgramData\SmartCRM\server.env.next -Destination C:\ProgramData\SmartCRM\server.env -Force
+```
+
+O inicializador valida a configuracao como Administrador sem abrir o segredo (`-SkipSecretDecryption`); a tarefa inicia como `SmartCRMService`, que abre o segredo no startup e falha fechada se ele estiver ilegivel. Nesse caso o health check falha e o inicializador restaura a tarefa anterior.
+
+### Rollback
+
+Releases anteriores nao conhecem as chaves SMTP e recusam o `server.env` novo. Ao voltar para a release anterior, restaure tambem o arquivo salvo:
+
+```powershell
+Copy-Item -LiteralPath C:\ProgramData\SmartCRM\server.env.pre-smtp -Destination C:\ProgramData\SmartCRM\server.env -Force
+```
+
+Mantenha `smtp-password.bin`; ele e inofensivo para a release anterior e evita redigitar a senha no proximo corte.
+
+### Rotacao da senha SMTP
+
+Troque a senha no provedor, abra a janela `runas` de `SmartCRMService`, execute `set-smtp-password.ps1` de novo, rode o smoke test com o `server.env` ativo e reinicie a tarefa `SmartCRM` para o processo carregar o novo segredo. Nao copie a senha para chat, ticket, commit ou `server.env`.
+
 ## 6. Migrar e trocar a tarefa na janela autorizada
 
 Este passo altera os dois schemas e troca a tarefa que atende a porta 8080. Execute somente dentro da janela aprovada.
@@ -307,14 +391,15 @@ $expectedVersion = (& "$releaseRoot\.venv\Scripts\python.exe" `
 O inicializador executa, nesta ordem:
 
 1. `alembic-control.ini` ate `d5f0a8c3e7b2` e confirma exatamente esse head;
-2. executa a migracao tenant ate `a8d4e6f2b1c9` por uma tarefa temporaria sob `SmartCRMService`, usando `FleetService` e os segredos DPAPI;
+2. executa a migracao tenant ate o head empacotado (`b4e2c9a7d6f1`) por uma tarefa temporaria sob `SmartCRMService`, usando `FleetService` e os segredos DPAPI;
 3. exige evidencia de que o tenant e o perfil central chegaram ao mesmo head antes de alterar a tarefa web;
 4. exporta a tarefa anterior para a pasta de recuperacao, para a tarefa e confirma que a porta 8080 foi liberada;
 5. registra a tarefa `SmartCRM` na release imutavel usando `SmartCRMService`;
 6. aceita sucesso somente quando a tarefa, `http://127.0.0.1:8080/health` e `/api/version` comprovam a release esperada.
 
-A linhagem tenant termina na revisao corretiva `a8d4e6f2b1c9`. Ela repara de forma
-idempotente funil e payloads incompletos sob FORCE RLS, sem SQL manual. Nao execute
+A revisao corretiva `a8d4e6f2b1c9` repara de forma idempotente funil e payloads
+incompletos sob FORCE RLS, sem SQL manual. A linhagem tenant desta release termina em
+`b4e2c9a7d6f1`, que cria `account_action_tokens` (convites e recuperacao de senha) com RLS. Nao execute
 `alembic.ini` diretamente e nao altere `expected_tenant_revision` manualmente.
 
 Qualquer falha antes da troca deixa a tarefa atual intacta. Se uma falha ocorrer
@@ -398,7 +483,7 @@ Somente depois do UAT registre essa release como ativa. Remover Basic Auth ou al
 Se o gate local falhar, mantenha o Apache inalterado e nao publique. Se a troca ja ocorreu:
 
 1. pare a tarefa `SmartCRM`;
-2. preserve logs, `server.env`, segredos DPAPI e evidencias;
+2. preserve logs, `server.env`, segredos DPAPI e evidencias; ao voltar para uma release sem SMTP, restaure `server.env.pre-smtp` (secao 5.1);
 3. restaure a tarefa anterior ou registre novamente `install-scheduled-task.ps1` com o caminho exato da release anterior e a mesma `SmartCRMService`;
 4. se a versao anterior nao for compativel com os schemas migrados, restaure os backups verificados de `smartcrm` e `smartcrm_control` somente com autorizacao explicita de rollback;
 5. valide loopback, Apache e contagens antes de reabrir o acesso.
@@ -407,4 +492,4 @@ Nao use `git reset --hard`, nao execute downgrade Alembic improvisado e nao apag
 
 ## 10. Proximas empresas
 
-Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `a8d4e6f2b1c9` pelo fluxo de frota, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.
+Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `b4e2c9a7d6f1` pelo fluxo de frota, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.

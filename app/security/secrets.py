@@ -198,3 +198,14 @@ class DpapiFileSecretProvider:
 
     def __repr__(self) -> str:
         return f"DpapiFileSecretProvider(root={str(self._root)!r}, protector=<redacted>)"
+
+
+def read_dpapi_secret_file(path: str | Path, *, protector: object | None = None) -> str:
+    """Decrypt one UTF-8 secret file protected for the current Windows account."""
+
+    ciphertext = Path(path).read_bytes()
+    try:
+        secret = (protector or DpapiProtector()).unprotect(ciphertext).decode("utf-8")
+    except (UnicodeDecodeError, ValueError) as error:
+        raise SecretProtectionError("protected secret is invalid") from error
+    return _validate_secret(secret)

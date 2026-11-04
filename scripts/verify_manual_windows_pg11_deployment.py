@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = {
     "MPG-01", "MPG-02", "MPG-03", "MPG-04", "MPG-05", "MPG-06", "MPG-07",
     "MPG-08", "MPG-09", "MPG-10", "MPG-11", "MPG-12", "MPG-13", "MPG-14",
-    "MPG-15", "MPG-16", "MPG-17", "MPG-18", "MPG-19",
+    "MPG-15", "MPG-16", "MPG-17", "MPG-18", "MPG-19", "MPG-20",
 }
 
 
@@ -147,6 +147,29 @@ def verify_source(root: Path) -> set[str]:
         "-PgHbaPath",
     )) and all(database not in (policy + install + initialize) for database in ("DW_CMS", "DW_PRODUTOS")),
         "MPG-19", "shared PostgreSQL HBA boundary or out-of-scope database preservation missing", passed)
+    smtp_script_path = deploy / "set-smtp-password.ps1"
+    smtp_script = smtp_script_path.read_text(encoding="utf-8") if smtp_script_path.exists() else ""
+    smtp_section = readme.partition("## 5.1. Configurar o SMTP")[2].partition("\n## ")[0]
+    _require(all(token in env_example for token in (
+        "SMART_CRM_SMTP_HOST=REPLACE_WITH_SMTP_HOST",
+        "SMART_CRM_SMTP_TLS_MODE=starttls",
+        "SMART_CRM_SMTP_PASSWORD_SECRET_FILE=C:\\ProgramData\\SmartCRM\\service-secrets\\smtp-password.bin",
+    )) and "SMART_CRM_SMTP_PASSWORD=" not in env_example
+       and all(token in start for token in (
+        "Get-SmartCrmSmtpEnvironmentKeys",
+        "Assert-SmartCrmSmtpSettings",
+        "Assert-SmartCrmServiceSecretReadable",
+        '"SMART_CRM_SMTP_PASSWORD"',
+    )) and all(token in policy for token in (
+        '-cnotin @("starttls", "implicit_tls")',
+        "DataProtectionScope]::CurrentUser",
+        "function Add-SmartCrmSmtpEnvironmentLines",
+        "[IO.File]::ReadAllLines($Path)",
+    )) and "ConvertFrom-StringData" not in policy + readme
+       and all(token in smtp_script for token in ("Read-Host -AsSecureString", "Protect-SmartCrmServiceSecret", "SmartCRMService"))
+       and "service-secrets" in install and "-SkipSecretDecryption" in install and "-SkipSecretDecryption" in initialize
+       and all(token in smtp_section for token in ("### Staging", "### Smoke test SMTP", "### Corte", "### Rollback", "### Rotacao da senha SMTP")),
+        "MPG-20", "SMTP settings, DPAPI password or SMTP runbook contract missing", passed)
     _require(all("==" in line for line in requirements.splitlines() if line.strip()), "MPG-02", "runtime dependency is not pinned", passed)
     return passed
 
@@ -185,7 +208,7 @@ def main() -> int:
     missing = REQUIREMENTS - passed
     if missing:
         raise AssertionError(f"requirements without evidence: {sorted(missing)}")
-    print("manual Windows PostgreSQL 11 deployment: PASS (19/19 requirements)")
+    print(f"manual Windows PostgreSQL 11 deployment: PASS ({len(REQUIREMENTS)}/{len(REQUIREMENTS)} requirements)")
     return 0
 
 

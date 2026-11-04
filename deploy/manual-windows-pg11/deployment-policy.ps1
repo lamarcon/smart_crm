@@ -97,7 +97,7 @@ function New-SmartCrmEnvironmentLines {
         "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS=5",
         "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS=3",
         "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK=1"
-    )
+    ) + @(New-SmartCrmSmtpEnvironmentLines)
 }
 
 function Get-SmartCrmEnvironmentAllowedKeys {
@@ -111,7 +111,7 @@ function Get-SmartCrmEnvironmentAllowedKeys {
         "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS",
         "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
         "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK"
-    )
+    ) + @(Get-SmartCrmSmtpEnvironmentKeys)
 }
 
 function Read-SmartCrmEnvironment {
@@ -438,4 +438,174 @@ function Wait-SmartCrmReleaseReady {
         }
     }
     throw "A release esperada $ExpectedVersion nao ficou pronta dentro do limite."
+}
+function Get-SmartCrmSmtpPasswordSecretPath {
+    return "C:\ProgramData\SmartCRM\service-secrets\smtp-password.bin"
+}
+
+function Get-SmartCrmSmtpEnvironmentKeys {
+    return @(
+        "SMART_CRM_SMTP_HOST", "SMART_CRM_SMTP_PORT", "SMART_CRM_SMTP_USERNAME",
+        "SMART_CRM_SMTP_FROM_ADDRESS", "SMART_CRM_SMTP_TLS_MODE",
+        "SMART_CRM_SMTP_TIMEOUT_SECONDS", "SMART_CRM_SMTP_PASSWORD_SECRET_FILE"
+    )
+}
+
+function New-SmartCrmSmtpEnvironmentLines {
+    param(
+        [string]$SmtpHost = "REPLACE_WITH_SMTP_HOST",
+        [string]$Port = "587",
+        [string]$Username = "REPLACE_WITH_SMTP_USERNAME",
+        [string]$FromAddress = "REPLACE_WITH_SMTP_FROM_ADDRESS",
+        [string]$TlsMode = "starttls",
+        [string]$TimeoutSeconds = "10",
+        [string]$SecretFile = (Get-SmartCrmSmtpPasswordSecretPath)
+    )
+    foreach ($value in @($SmtpHost, $Port, $Username, $FromAddress, $TlsMode, $TimeoutSeconds, $SecretFile)) {
+        if ($null -eq $value -or $value -match "[\r\n]") {
+            throw "Valor SMTP invalido para o server.env."
+        }
+    }
+    return @(
+        "SMART_CRM_SMTP_HOST=$SmtpHost",
+        "SMART_CRM_SMTP_PORT=$Port",
+        "SMART_CRM_SMTP_USERNAME=$Username",
+        "SMART_CRM_SMTP_FROM_ADDRESS=$FromAddress",
+        "SMART_CRM_SMTP_TLS_MODE=$TlsMode",
+        "SMART_CRM_SMTP_TIMEOUT_SECONDS=$TimeoutSeconds",
+        "SMART_CRM_SMTP_PASSWORD_SECRET_FILE=$SecretFile"
+    )
+}
+
+function Add-SmartCrmSmtpEnvironmentLines {
+    # Returns the existing server.env lines byte-for-byte plus the SMTP keys.
+    # Values are never re-parsed as key/value data, so Windows paths
+    # and URLs keep their backslashes and escapes.
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$SmtpHost,
+        [string]$Port = "587",
+        [Parameter(Mandatory = $true)]
+        [string]$Username,
+        [Parameter(Mandatory = $true)]
+        [string]$FromAddress,
+        [string]$TlsMode = "starttls",
+        [string]$TimeoutSeconds = "10"
+    )
+    $existing = Read-SmartCrmEnvironment -Path $Path -AllowedKeys @(Get-SmartCrmEnvironmentAllowedKeys)
+    foreach ($key in @(Get-SmartCrmSmtpEnvironmentKeys)) {
+        if ($existing.ContainsKey($key)) {
+            throw "O server.env ja possui configuracao SMTP ($key)."
+        }
+    }
+    $lines = @([IO.File]::ReadAllLines($Path))
+    $lines += ""
+    $lines += "# SMTP para convites e recuperacao de senha. A senha fica somente no arquivo DPAPI."
+    $lines += @(New-SmartCrmSmtpEnvironmentLines `
+        -SmtpHost $SmtpHost -Port $Port -Username $Username -FromAddress $FromAddress `
+        -TlsMode $TlsMode -TimeoutSeconds $TimeoutSeconds)
+    return $lines
+}
+
+function Assert-SmartCrmSmtpSettings {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Settings,
+        [string]$SecretFile = (Get-SmartCrmSmtpPasswordSecretPath)
+    )
+    foreach ($key in @(Get-SmartCrmSmtpEnvironmentKeys)) {
+        if (-not $Settings.ContainsKey($key) -or [string]::IsNullOrWhiteSpace($Settings[$key])) {
+            throw "Variavel obrigatoria ausente: $key"
+        }
+        if ($Settings[$key] -like "REPLACE_WITH_*") {
+            throw "$key ainda contem o placeholder do modelo."
+        }
+    }
+    $hostPattern = "^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+    if ($Settings.SMART_CRM_SMTP_HOST -notmatch $hostPattern) {
+        throw "SMART_CRM_SMTP_HOST deve ser um nome de host DNS."
+    }
+    $port = 0
+    if (-not [int]::TryParse($Settings.SMART_CRM_SMTP_PORT, [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
+        throw "SMART_CRM_SMTP_PORT deve ser uma porta TCP valida."
+    }
+    if ($Settings.SMART_CRM_SMTP_USERNAME -match "\s") {
+        throw "SMART_CRM_SMTP_USERNAME nao pode conter espacos."
+    }
+    if ($Settings.SMART_CRM_SMTP_FROM_ADDRESS -notmatch "^[^@\s]+@[^@\s]+\.[^@\s]+$") {
+        throw "SMART_CRM_SMTP_FROM_ADDRESS deve ser um endereco de e-mail."
+    }
+    if ($Settings.SMART_CRM_SMTP_TLS_MODE -cnotin @("starttls", "implicit_tls")) {
+        throw "SMART_CRM_SMTP_TLS_MODE deve ser starttls ou implicit_tls; SMTP sem TLS nao e aceito."
+    }
+    $timeout = 0.0
+    if (-not [double]::TryParse(
+        $Settings.SMART_CRM_SMTP_TIMEOUT_SECONDS,
+        [Globalization.NumberStyles]::Float,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [ref]$timeout
+    ) -or $timeout -le 0 -or $timeout -gt 60) {
+        throw "SMART_CRM_SMTP_TIMEOUT_SECONDS deve estar entre 0 e 60."
+    }
+    if ($Settings.SMART_CRM_SMTP_PASSWORD_SECRET_FILE -ne $SecretFile) {
+        throw "SMART_CRM_SMTP_PASSWORD_SECRET_FILE deve apontar para $SecretFile."
+    }
+}
+
+function Protect-SmartCrmServiceSecret {
+    param([Parameter(Mandatory = $true)][byte[]]$Plaintext)
+    Add-Type -AssemblyName System.Security
+    return [Security.Cryptography.ProtectedData]::Protect(
+        $Plaintext,
+        $null,
+        [Security.Cryptography.DataProtectionScope]::CurrentUser
+    )
+}
+
+function Assert-SmartCrmServiceSecretReadable {
+    # Proves the DPAPI file decrypts for the current account without exposing it.
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [switch]$SkipDecryption
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Segredo SMTP DPAPI ausente."
+    }
+    $broadPrincipals = @("S-1-1-0", "S-1-5-11", "S-1-5-32-545")
+    foreach ($rule in @((Get-Acl -LiteralPath $Path).Access)) {
+        if ($rule.AccessControlType -ne "Allow") { continue }
+        try {
+            $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+        }
+        catch {
+            $sid = ""
+        }
+        if ($sid -in $broadPrincipals) {
+            throw "O segredo SMTP DPAPI permite acesso amplo; restrinja a ACL."
+        }
+    }
+    if ($SkipDecryption) { return }
+    Add-Type -AssemblyName System.Security
+    $plain = $null
+    try {
+        $plain = [Security.Cryptography.ProtectedData]::Unprotect(
+            [IO.File]::ReadAllBytes($Path),
+            $null,
+            [Security.Cryptography.DataProtectionScope]::CurrentUser
+        )
+    }
+    catch {
+        throw "Segredo SMTP DPAPI ilegivel para esta conta. Valide como SmartCRMService."
+    }
+    try {
+        if ($plain.Length -eq 0) {
+            throw "Segredo SMTP DPAPI vazio."
+        }
+    }
+    finally {
+        [Array]::Clear($plain, 0, $plain.Length)
+    }
 }

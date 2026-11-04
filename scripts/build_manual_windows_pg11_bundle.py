@@ -25,10 +25,13 @@ RUNTIME_PATHS = (
 )
 REQUIRED_DEPLOYMENT_FILES = (
     Path("app/fleet_cli.py"),
+    Path("app/mail_cli.py"),
     Path("migrations/versions/a8d4e6f2b1c9_repair_tenant_deploy_state.py"),
+    Path("migrations/versions/b4e2c9a7d6f1_add_account_action_tokens.py"),
     Path("migrations_control/versions/d5f0a8c3e7b2_expand_account_action_throttle_buckets.py"),
     Path("deploy/manual-windows-pg11/run-fleet-migration.ps1"),
     Path("deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1"),
+    Path("deploy/manual-windows-pg11/set-smtp-password.ps1"),
 )
 IGNORED_PARTS = {"__pycache__", ".pytest_cache"}
 SAFE_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")

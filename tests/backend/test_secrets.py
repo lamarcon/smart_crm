@@ -138,3 +138,27 @@ def test_native_dpapi_uses_current_user_scope_and_detects_tampering() -> None:
     assert protector.unprotect(ciphertext) == b"service-bound-secret"
     with pytest.raises(SecretProtectionError):
         protector.unprotect(ciphertext[:-1] + bytes([ciphertext[-1] ^ 1]))
+
+
+def test_read_dpapi_secret_file_decrypts_utf8_and_rejects_invalid_content(tmp_path) -> None:  # noqa: ANN001
+    from app.security.secrets import SecretProtectionError, read_dpapi_secret_file
+
+    class ReversingProtector:
+        def unprotect(self, ciphertext: bytes) -> bytes:
+            return ciphertext[::-1]
+
+    valid = tmp_path / "smtp-password.bin"
+    valid.write_bytes("senha-ç-ficticia".encode("utf-8")[::-1])
+    invalid = tmp_path / "invalid.bin"
+    invalid.write_bytes(b"\xff\xfe")
+    empty = tmp_path / "empty.bin"
+    empty.write_bytes(b"")
+
+    assert read_dpapi_secret_file(valid, protector=ReversingProtector()) == "senha-ç-ficticia"
+    with pytest.raises(SecretProtectionError) as failure:
+        read_dpapi_secret_file(invalid, protector=ReversingProtector())
+    assert "\xff" not in str(failure.value)
+    with pytest.raises(SecretProtectionError):
+        read_dpapi_secret_file(empty, protector=ReversingProtector())
+    with pytest.raises(FileNotFoundError):
+        read_dpapi_secret_file(tmp_path / "missing.bin", protector=ReversingProtector())

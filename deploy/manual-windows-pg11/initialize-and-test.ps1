@@ -49,10 +49,13 @@ Assert-SmartCrmPostgresListeners `
     -SharedPostgres:$SharedPostgres `
     -PgHbaText $pgHbaText
 
+# Runs as Administrator: the SmartCRMService DPAPI secret is decrypted by the
+# service at startup, and a failure there rolls the cutover back.
 & (Join-Path $PSScriptRoot "start-smart-crm.ps1") `
     -AppRoot $AppRoot `
     -EnvFile $EnvFile `
-    -ValidateOnly
+    -ValidateOnly `
+    -SkipSecretDecryption
 
 $settings = Read-SmartCrmEnvironment `
     -Path $EnvFile `

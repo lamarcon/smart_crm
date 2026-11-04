@@ -67,12 +67,47 @@ def valid_server_environment() -> dict[str, str]:
         + "b" * 64
         + "@127.0.0.1:5432/smartcrm_control?connect_timeout=5"
     )
+    values["SMART_CRM_SMTP_HOST"] = "smtp.example.test"
+    values["SMART_CRM_SMTP_USERNAME"] = "crm@example.test"
+    values["SMART_CRM_SMTP_FROM_ADDRESS"] = "crm@example.test"
     return values
 
 
+TEST_SMTP_PASSWORD = "senha-smtp-ficticia-2026"
+EXAMPLE_SMTP_SECRET = r"C:\ProgramData\SmartCRM\service-secrets\smtp-password.bin"
+
+
+def write_service_secret(
+    path: Path, payload: bytes, *, protect: bool = True, broad_acl: bool = False
+) -> None:
+    from app.security.secrets import DpapiProtector
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(DpapiProtector().protect(payload) if protect else payload)
+    owner = f"{os.environ['USERDOMAIN']}\\{os.environ['USERNAME']}"
+    grants = [f"{owner}:F"] + (["*S-1-5-32-545:R"] if broad_acl else [])
+    subprocess.run(
+        ["icacls", str(path), "/inheritance:r", "/grant:r", *grants],
+        check=True,
+        capture_output=True,
+    )
+
+
 def run_start_validation(
-    tmp_path: Path, values: dict[str, str]
+    tmp_path: Path,
+    values: dict[str, str],
+    *,
+    secret: bytes | None = TEST_SMTP_PASSWORD.encode(),
+    protect: bool = True,
+    broad_acl: bool = False,
+    extra_args: tuple[str, ...] = (),
 ) -> subprocess.CompletedProcess[str]:
+    secret_file = tmp_path / "service-secrets" / "smtp-password.bin"
+    values = dict(values)
+    if values.get("SMART_CRM_SMTP_PASSWORD_SECRET_FILE") == EXAMPLE_SMTP_SECRET:
+        values["SMART_CRM_SMTP_PASSWORD_SECRET_FILE"] = str(secret_file)
+    if secret is not None:
+        write_service_secret(secret_file, secret, protect=protect, broad_acl=broad_acl)
     app_root = tmp_path / "app"
     python = app_root / ".venv/Scripts/python.exe"
     python.parent.mkdir(parents=True)
@@ -94,7 +129,10 @@ def run_start_validation(
             str(app_root),
             "-EnvFile",
             str(env_file),
+            "-SmtpPasswordSecretFile",
+            str(secret_file),
             "-ValidateOnly",
+            *extra_args,
         ],
         text=True,
         capture_output=True,
@@ -471,6 +509,13 @@ def test_environment_policy_emits_exact_external_database_contract():
         "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS": "5",
         "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS": "3",
         "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK": "1",
+        "SMART_CRM_SMTP_HOST": "REPLACE_WITH_SMTP_HOST",
+        "SMART_CRM_SMTP_PORT": "587",
+        "SMART_CRM_SMTP_USERNAME": "REPLACE_WITH_SMTP_USERNAME",
+        "SMART_CRM_SMTP_FROM_ADDRESS": "REPLACE_WITH_SMTP_FROM_ADDRESS",
+        "SMART_CRM_SMTP_TLS_MODE": "starttls",
+        "SMART_CRM_SMTP_TIMEOUT_SECONDS": "10",
+        "SMART_CRM_SMTP_PASSWORD_SECRET_FILE": r"C:\ProgramData\SmartCRM\service-secrets\smtp-password.bin",
     }
     assert '$envPath = Join-Path $programData "server.env"' in install
     assert '$programData = "C:\\ProgramData\\SmartCRM"' in install
@@ -1002,3 +1047,225 @@ def test_server_app_root_defaults_match_the_existing_brbots_directory():
     assert all(expected in script for script in scripts)
     assert "C:\\brbots\\apps\\smart-crm" in readme
     assert "C:\\Apps\\smart-crm" not in readme
+
+
+# --- T14: SMTP configuration and DPAPI secret ------------------------------
+
+SMTP_SECRET_KEY = "SMART_CRM_SMTP_PASSWORD_SECRET_FILE"
+
+
+def smtp_values(**changes: str) -> dict[str, str]:
+    values = valid_server_environment()
+    values.update(changes)
+    return values
+
+
+def test_environment_example_declares_smtp_keys_without_password():
+    example = ENV_EXAMPLE.read_text(encoding="utf-8")
+    keys = {line.split("=", 1)[0] for line in example.splitlines() if line and not line.startswith("#")}
+
+    assert {
+        "SMART_CRM_SMTP_HOST",
+        "SMART_CRM_SMTP_PORT",
+        "SMART_CRM_SMTP_USERNAME",
+        "SMART_CRM_SMTP_FROM_ADDRESS",
+        "SMART_CRM_SMTP_TLS_MODE",
+        "SMART_CRM_SMTP_TIMEOUT_SECONDS",
+        SMTP_SECRET_KEY,
+    } <= keys
+    assert "SMART_CRM_SMTP_PASSWORD" not in keys
+    assert (
+        r"SMART_CRM_SMTP_PASSWORD_SECRET_FILE=C:\ProgramData\SmartCRM\service-secrets\smtp-password.bin"
+        in example
+    )
+
+
+def test_windows_startup_exports_smtp_settings_and_reads_the_dpapi_secret(tmp_path: Path):
+    result = run_start_validation(tmp_path, smtp_values())
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "smart crm environment: VALID" in result.stdout
+    assert TEST_SMTP_PASSWORD not in result.stdout + result.stderr
+    start = START.read_text(encoding="utf-8")
+    assert "Get-SmartCrmSmtpEnvironmentKeys" in start
+
+
+@pytest.mark.parametrize(
+    ("changes", "fragment"),
+    [
+        ({"SMART_CRM_SMTP_HOST": "REPLACE_WITH_SMTP_HOST"}, "SMART_CRM_SMTP_HOST"),
+        ({"SMART_CRM_SMTP_HOST": "smtp exemplo"}, "SMART_CRM_SMTP_HOST"),
+        ({"SMART_CRM_SMTP_PORT": "0"}, "SMART_CRM_SMTP_PORT"),
+        ({"SMART_CRM_SMTP_PORT": "porta"}, "SMART_CRM_SMTP_PORT"),
+        ({"SMART_CRM_SMTP_USERNAME": ""}, "SMART_CRM_SMTP_USERNAME"),
+        ({"SMART_CRM_SMTP_USERNAME": "REPLACE_WITH_SMTP_USERNAME"}, "placeholder"),
+        ({"SMART_CRM_SMTP_FROM_ADDRESS": "sem-arroba"}, "SMART_CRM_SMTP_FROM_ADDRESS"),
+        ({"SMART_CRM_SMTP_TLS_MODE": "none"}, "SMART_CRM_SMTP_TLS_MODE"),
+        ({"SMART_CRM_SMTP_TLS_MODE": "STARTTLS"}, "SMART_CRM_SMTP_TLS_MODE"),
+        ({"SMART_CRM_SMTP_TIMEOUT_SECONDS": "0"}, "SMART_CRM_SMTP_TIMEOUT_SECONDS"),
+        ({"SMART_CRM_SMTP_TIMEOUT_SECONDS": "120"}, "SMART_CRM_SMTP_TIMEOUT_SECONDS"),
+        ({SMTP_SECRET_KEY: r"C:\Temp\smtp-password.bin"}, SMTP_SECRET_KEY),
+    ],
+)
+def test_windows_startup_rejects_invalid_or_insecure_smtp_before_uvicorn(
+    tmp_path: Path, changes: dict[str, str], fragment: str
+):
+    result = run_start_validation(tmp_path, smtp_values(**changes))
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert fragment in output
+    assert "smart crm environment: VALID" not in output
+    assert TEST_SMTP_PASSWORD not in output
+
+
+def test_windows_startup_rejects_missing_smtp_key(tmp_path: Path):
+    values = smtp_values()
+    values.pop("SMART_CRM_SMTP_FROM_ADDRESS")
+
+    result = run_start_validation(tmp_path, values)
+
+    assert result.returncode != 0
+    assert "SMART_CRM_SMTP_FROM_ADDRESS" in result.stdout + result.stderr
+
+
+def test_windows_startup_rejects_plaintext_smtp_password_without_echoing_it(tmp_path: Path):
+    values = smtp_values(SMART_CRM_SMTP_PASSWORD="senha-em-texto-puro-123")
+
+    result = run_start_validation(tmp_path, values)
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "set-smtp-password.ps1" in output
+    assert "senha-em-texto-puro-123" not in output
+
+
+@pytest.mark.parametrize("secret", [None, b"not-a-dpapi-blob"])
+def test_windows_startup_rejects_missing_or_undecryptable_smtp_secret(
+    tmp_path: Path, secret
+):  # noqa: ANN001
+    result = run_start_validation(tmp_path, smtp_values(), secret=secret, protect=False)
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0
+    assert "DPAPI" in output
+    assert "smart crm environment: VALID" not in output
+
+
+def test_skip_secret_decryption_still_requires_the_restricted_file(tmp_path: Path):
+    skipped = run_start_validation(
+        tmp_path, smtp_values(), secret=b"not-a-dpapi-blob", protect=False,
+        extra_args=("-SkipSecretDecryption",),
+    )
+    missing = run_start_validation(
+        tmp_path / "missing", smtp_values(), secret=None, extra_args=("-SkipSecretDecryption",)
+    )
+
+    assert skipped.returncode == 0, skipped.stdout + skipped.stderr
+    assert missing.returncode != 0
+
+
+def test_windows_startup_rejects_a_secret_readable_by_all_users(tmp_path: Path):
+    result = run_start_validation(tmp_path, smtp_values(), broad_acl=True)
+
+    assert result.returncode != 0
+    assert "ACL" in result.stdout + result.stderr
+
+
+def test_smoke_option_cannot_be_combined_with_validate_only(tmp_path: Path):
+    result = run_start_validation(
+        tmp_path, smtp_values(), extra_args=("-SmtpSmokeTo", "responsavel@example.test")
+    )
+
+    assert result.returncode != 0
+    assert "-SmtpSmokeTo" in result.stdout + result.stderr
+
+
+def test_smtp_upgrade_preserves_existing_lines_byte_for_byte(tmp_path: Path):
+    legacy = tmp_path / "server.env"
+    original_lines = [
+        "# comentario original",
+        "SMART_CRM_DB_PASSWORD=" + "a" * 64,
+        r"SMART_CRM_TENANT_SECRET_STORE=C:\ProgramData\SmartCRM\tenant-secrets",
+        "SMART_CRM_CONTROL_DATABASE_URL=postgresql+psycopg://c:%5Cx%3Dy@127.0.0.1:5432/smartcrm_control?connect_timeout=5",
+    ]
+    legacy.write_text("\n".join(original_lines) + "\n", encoding="utf-8")
+
+    result = run_policy(
+        f"@(Add-SmartCrmSmtpEnvironmentLines -Path {powershell_literal(str(legacy))} "
+        "-SmtpHost 'smtp.example.test' -Username 'crm@example.test' "
+        "-FromAddress 'crm@example.test' -TlsMode 'implicit_tls' -Port '465') | ConvertTo-Json -Compress"
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = json.loads(result.stdout)
+    assert lines[: len(original_lines)] == original_lines
+    added = dict(line.split("=", 1) for line in lines[len(original_lines):] if line and not line.startswith("#"))
+    assert added == {
+        "SMART_CRM_SMTP_HOST": "smtp.example.test",
+        "SMART_CRM_SMTP_PORT": "465",
+        "SMART_CRM_SMTP_USERNAME": "crm@example.test",
+        "SMART_CRM_SMTP_FROM_ADDRESS": "crm@example.test",
+        "SMART_CRM_SMTP_TLS_MODE": "implicit_tls",
+        "SMART_CRM_SMTP_TIMEOUT_SECONDS": "10",
+        SMTP_SECRET_KEY: r"C:\ProgramData\SmartCRM\service-secrets\smtp-password.bin",
+    }
+
+
+def test_smtp_upgrade_refuses_a_file_that_already_has_smtp(tmp_path: Path):
+    configured = tmp_path / "server.env"
+    configured.write_text("SMART_CRM_SMTP_HOST=smtp.example.test\n", encoding="utf-8")
+
+    result = run_policy(
+        f"Add-SmartCrmSmtpEnvironmentLines -Path {powershell_literal(str(configured))} "
+        "-SmtpHost 'smtp.example.test' -Username 'crm' -FromAddress 'crm@example.test' | Out-Null"
+    )
+
+    assert result.returncode != 0
+    assert "SMTP" in result.stdout + result.stderr
+
+
+def test_policy_secret_helpers_round_trip_with_python_dpapi(tmp_path: Path):
+    from app.security.secrets import read_dpapi_secret_file
+
+    secret_file = tmp_path / "smtp-password.bin"
+    result = run_policy(
+        "$bytes=[Text.Encoding]::UTF8.GetBytes('senha-ficticia-ç-2026'); "
+        f"[IO.File]::WriteAllBytes({powershell_literal(str(secret_file))}, "
+        "(Protect-SmartCrmServiceSecret -Plaintext $bytes))"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert read_dpapi_secret_file(str(secret_file)) == "senha-ficticia-ç-2026"
+
+
+def test_runbook_documents_smtp_staging_smoke_cutover_rollback_and_rotation():
+    readme = (PROJECT_ROOT / "deploy/manual-windows-pg11/LEIA-ME.md").read_text(encoding="utf-8")
+    section = readme.split("## 5.1. Configurar o SMTP", 1)[1].split("\n## ", 1)[0]
+
+    for required in (
+        "### Staging",
+        "### Smoke test SMTP",
+        "### Corte",
+        "### Rollback",
+        "### Rotacao da senha SMTP",
+        "set-smtp-password.ps1",
+        "Add-SmartCrmSmtpEnvironmentLines",
+        "-SmtpSmokeTo",
+        "smtp smoke: PASS",
+        "runas /user:NOME-DO-SERVIDOR\\SmartCRMService",
+        "server.env.pre-smtp",
+    ):
+        assert required in section, required
+    assert "ConvertFrom-StringData" not in readme
+    assert "SMART_CRM_SMTP_PASSWORD=" not in readme
+
+
+def test_initializer_validates_without_decrypting_as_administrator():
+    initializer = (PROJECT_ROOT / "deploy/manual-windows-pg11/initialize-and-test.ps1").read_text(encoding="utf-8")
+    install = (PROJECT_ROOT / "deploy/manual-windows-pg11/install-offline.ps1").read_text(encoding="utf-8")
+
+    assert "-SkipSecretDecryption" in initializer
+    assert "-SkipSecretDecryption" in install
+    assert '$serviceSecretDirectory = Join-Path $programData "service-secrets"' in install
+    assert 'icacls $serviceSecretDirectory /inheritance:r' in install

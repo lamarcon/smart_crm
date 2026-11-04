@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/user-invitations-password-recovery/design.md`  
-**Status**: In Progress
+**Status**: Implemented (T1–T14) — awaiting owner review, merge, release and Windows deployment
 
 ---
 
@@ -492,17 +492,21 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Non-secret SMTP settings are validated and exported to runtime; plaintext password is rejected from `server.env`.
-- [ ] A documented command stores the password in the fixed DPAPI file with restricted ACL under `SmartCRMService`.
-- [ ] Validate-only fails before cutover for missing/invalid SMTP config, unreadable DPAPI secret or insecure TLS mode.
-- [ ] Environment generator/upgrade preserves existing production values and adds SMTP keys without `ConvertFrom-StringData` path escaping.
-- [ ] Package-integrity, deployment outcome, bundle and startup tests cover success and safe failure.
-- [ ] Runbook includes staging, SMTP smoke test, cutover, rollback and secret rotation without printing secrets.
-- [ ] Build gate passes; generated bundle verifies and no active task/database is changed by staging.
+- [x] Non-secret SMTP settings are validated and exported to runtime; plaintext password is rejected from `server.env`.
+- [x] A documented command stores the password in the fixed DPAPI file with restricted ACL under `SmartCRMService`.
+- [x] Validate-only fails before cutover for missing/invalid SMTP config, unreadable DPAPI secret or insecure TLS mode.
+- [x] Environment generator/upgrade preserves existing production values and adds SMTP keys without `ConvertFrom-StringData` path escaping.
+- [x] Package-integrity, deployment outcome, bundle and startup tests cover success and safe failure.
+- [x] Runbook includes staging, SMTP smoke test, cutover, rollback and secret rotation without printing secrets.
+- [x] Build gate passes; generated bundle verifies and no active task/database is changed by staging.
 
 **Tests**: integration — extend `tests/backend/test_manual_windows_pg11_deployment.py`, `test_manual_windows_pg11_outcomes.py` and `test_windows_multitenant_bundle.py`.  
 **Gate**: build  
 **Commit**: `feat(deploy): configure smtp secrets for windows`
+
+**Evidence**: `server.env.example`, the allowlist (`Get-SmartCrmEnvironmentAllowedKeys` + `Get-SmartCrmSmtpEnvironmentKeys`) and the runtime export now carry `SMART_CRM_SMTP_HOST/PORT/USERNAME/FROM_ADDRESS/TLS_MODE/TIMEOUT_SECONDS/PASSWORD_SECRET_FILE`. `start-smart-crm.ps1` refuses `SMART_CRM_SMTP_PASSWORD` with a pointer to `set-smtp-password.ps1` (value never echoed), requires every SMTP key, rejects `REPLACE_WITH_*` placeholders, non-DNS hosts, invalid ports, sender without `@`, any TLS mode other than exactly `starttls`/`implicit_tls`, timeouts outside (0, 60] and any secret path other than `C:\ProgramData\SmartCRM\service-secrets\smtp-password.bin`, and `Assert-SmartCrmServiceSecretReadable` rejects a missing file, an ACL granting Everyone/Authenticated Users/Users, and a blob that does not DPAPI-decrypt to a non-empty value for the current account. `-SkipSecretDecryption` (only with `-ValidateOnly`) is used by `install-offline.ps1` and `initialize-and-test.ps1`, which run as Administrator; the decryption check runs as `SmartCRMService` during staging (runbook) and again at service startup, where the Python runtime fails closed and the initializer's health gate rolls the cutover back. New `set-smtp-password.ps1` (must run as `SmartCRMService`) reads the password twice at hidden prompts, protects it with DPAPI CurrentUser, writes it atomically into `service-secrets` (created by the installer with SYSTEM/Administrators/service-only ACL) and proves it decrypts. `New-SmartCrmEnvironmentLines` adds SMTP placeholders for new installs (the installer then skips validation and points to section 5.1) and `Add-SmartCrmSmtpEnvironmentLines` returns the existing file byte for byte plus the SMTP keys, refusing a file that already has SMTP. `-SmtpSmokeTo` runs the new `python -m app.mail_cli smoke` with the validated environment and prints only `smtp smoke: PASS` or a failure code. `LEIA-ME.md` gains section 5.1 (staging, smoke test, cutover with `server.env.pre-smtp` backup, rollback, rotation), replaces the `ConvertFrom-StringData` snippet in 3.1 with `Read-SmartCrmEnvironment`, and states that the tenant lineage now ends at `b4e2c9a7d6f1` (`account_action_tokens`); the fleet runner already targets the packaged head. The DPAPI file reader moved to `app.security.secrets.read_dpapi_secret_file` and is shared by the runtime and the CLI; PowerShell and Python DPAPI blobs are proven interchangeable. The bundle requires `app/mail_cli.py`, the `b4e2c9a7d6f1` migration and `set-smtp-password.ps1`; the source verifier gained MPG-20. Tests: 34 new (26 in `test_manual_windows_pg11_outcomes.py`, 6 in `test_mail.py`, 1 in `test_secrets.py`, 1 in `test_windows_multitenant_bundle.py`); the start-validation helper now writes a DPAPI test secret with a restricted ACL, and the exact environment-generator test and the reviewed key allowlist in `test_windows_multitenant_env.py` now expect the SMTP keys (and assert the password key is absent) — no test was removed or weakened. Mutation checks on the TLS-mode rule, the plaintext-password message, DPAPI decryption, the ACL check, the pinned secret path, placeholder rejection and the byte-preserving upgrade were all detected (placeholder rejection only after adding a username-placeholder case, because the host placeholder is also caught by the DNS rule).
+
+**Build gate**: full backend suite on Windows 11 with Docker PostgreSQL 17 passed with 1216 tests (1182 after T13 + 34 new), 7 warnings as after T11 — the first run had 1 failure (the reviewed allowlist test did not yet list the SMTP keys); after updating it, that file and the deployment contract tests were rerun and passed; UI regression with the installed Chrome passed 138/138; `python scripts/build_manual_windows_pg11_bundle.py --version v0.3.3` produced `dist/smart-crm-manual-pg11-v0.3.3.zip`, `verify_manual_windows_pg11_deployment.py --bundle` passed 20/20 and the extracted bundle's `test-package-integrity.ps1` passed; nothing was staged on a server and no task, database or production `server.env` was touched.
 
 ---
 

@@ -20,7 +20,11 @@ from app.mail import (
 )
 from app.main import STATIC_DIR, create_app as create_http_app
 from app.security.database_urls import insecure_tenant_loopback_enabled
-from app.security.secrets import DpapiFileSecretProvider, DpapiProtector, SecretProvider
+from app.security.secrets import (
+    DpapiFileSecretProvider,
+    SecretProvider,
+    read_dpapi_secret_file,
+)
 from app.services.account_access import AccountAccessService
 from app.services.auth import AuthService, SecurityAuditService
 from app.tenant_database import (
@@ -78,14 +82,10 @@ def _expected_origin() -> str:
     return os.getenv("SMART_CRM_EXPECTED_ORIGIN", DEFAULT_EXPECTED_ORIGIN)
 
 
-def _read_dpapi_password(path: str) -> str:
-    return DpapiProtector().unprotect(Path(path).read_bytes()).decode("utf-8")
-
-
 def _default_mail_sender() -> MailSender:
     """SMTP from the environment; the password only ever comes from DPAPI."""
 
-    settings = smtp_settings_from_environment(os.environ, read_password=_read_dpapi_password)
+    settings = smtp_settings_from_environment(os.environ, read_password=read_dpapi_secret_file)
     return UnconfiguredMailSender() if settings is None else SmtpMailSender(settings)
 
 

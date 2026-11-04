@@ -82,9 +82,11 @@ $programData = "C:\ProgramData\SmartCRM"
 $envPath = Join-Path $programData "server.env"
 $logDirectory = Join-Path $programData "logs"
 $secretDirectory = Join-Path $programData "tenant-secrets"
+$serviceSecretDirectory = Join-Path $programData "service-secrets"
 New-Item -ItemType Directory -Path $programData -Force | Out-Null
 New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $secretDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $serviceSecretDirectory -Force | Out-Null
 
 if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
     $bytes = New-Object byte[] 32
@@ -104,11 +106,21 @@ if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
 icacls $programData /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*$($serviceSid):(RX)" | Out-Null
 icacls $logDirectory /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*$($serviceSid):(OI)(CI)M" | Out-Null
 icacls $secretDirectory /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*$($serviceSid):(OI)(CI)M" | Out-Null
+icacls $serviceSecretDirectory /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*$($serviceSid):(OI)(CI)M" | Out-Null
 icacls $envPath /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*$($serviceSid):R" | Out-Null
 
 $environmentText = Get-Content -LiteralPath $envPath -Raw
-if ($environmentText -match "(?m)^SMART_CRM_CONTROL_DATABASE_URL=") {
-    & (Join-Path $PSScriptRoot "start-smart-crm.ps1") -AppRoot $AppRoot -ValidateOnly
+if ($environmentText -match "(?m)^SMART_CRM_CONTROL_DATABASE_URL=" -and
+    $environmentText -notmatch "(?m)^SMART_CRM_SMTP_HOST=") {
+    Write-Output "server.env sem SMTP: gere o sucessor com Add-SmartCrmSmtpEnvironmentLines (secao 5.1 do LEIA-ME.md)."
+}
+elseif ($environmentText -match "(?m)^SMART_CRM_SMTP_[A-Z_]+=REPLACE_WITH_") {
+    Write-Output "server.env com placeholders SMTP: conclua a secao 5.1 do LEIA-ME.md antes do corte."
+}
+elseif ($environmentText -match "(?m)^SMART_CRM_CONTROL_DATABASE_URL=") {
+    # Administrators cannot open the SmartCRMService DPAPI secret; that check
+    # runs as the service (section 5.1) and again at service startup.
+    & (Join-Path $PSScriptRoot "start-smart-crm.ps1") -AppRoot $AppRoot -ValidateOnly -SkipSecretDecryption
 }
 else {
     Write-Output "legacy server.env detected: complete o upgrade multiempresa descrito no LEIA-ME.md"
