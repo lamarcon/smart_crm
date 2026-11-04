@@ -1949,3 +1949,106 @@ def test_thirty_first_reset_request_from_one_ip_in_15_minutes_is_silently_not_se
         thirtieth_email,
         blocked_email,
     ]
+
+
+# --- Review follow-ups ------------------------------------------------------------
+
+
+def _counting_hash(monkeypatch) -> list[str]:  # noqa: ANN001
+    import app.services.account_access as module
+
+    calls: list[str] = []
+    real = module.hash_password
+
+    def counting(password: str) -> str:
+        calls.append("hash")
+        return real(password)
+
+    monkeypatch.setattr(module, "hash_password", counting)
+    return calls
+
+
+def test_unusable_links_are_rejected_before_any_argon2id_hash(
+    account_access_database_url: str, monkeypatch  # noqa: ANN001
+) -> None:
+    """Accept and reset are public and unthrottled: a dead link must cost no hash."""
+
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"prehash-{uuid.uuid4().hex}@example.test"
+    mail = InMemoryMailSender()
+    service, _router, audit = _service(account_access_database_url, mail)
+    _user_id, raw_token = _invite(service, mail, actor_id, email)
+    hashes = _counting_hash(monkeypatch)
+
+    for operation, event_type in (
+        (service.accept_invitation, "invitation.accept_failed"),
+        (service.reset_password, "password_reset.failed"),
+    ):
+        with pytest.raises(AccountActionLinkInvalidError):
+            operation("brbots", "x" * 43, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.70")
+        assert audit.events[-1]["event_type"] == event_type
+    # A live invitation token is not a password-reset token either.
+    with pytest.raises(AccountActionLinkInvalidError):
+        service.reset_password("brbots", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.70")
+    assert hashes == []
+
+    service.accept_invitation("brbots", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.70")
+    assert hashes == ["hash"]
+    assert _read_user(account_access_database_url, email).status == "Ativo"
+
+    with pytest.raises(AccountActionLinkInvalidError):
+        service.accept_invitation("brbots", raw_token, INVITEE_PASSWORD, INVITEE_PASSWORD, "203.0.113.70")
+    assert hashes == ["hash"], "a consumed link must not be hashed again"
+
+
+class _FailAfterSendRouter:
+    """Delegates to the real router but fails the first tenant session after the e-mail."""
+
+    def __init__(self, inner: TenantRouter) -> None:
+        self.inner = inner
+        self.fail_next = False
+
+    @contextmanager
+    def tenant_session_scope(self, tenant_id: uuid.UUID):
+        from app.tenant_database import TenantUnavailableError
+
+        if self.fail_next:
+            self.fail_next = False
+            raise TenantUnavailableError("tenant database unavailable")
+        with self.inner.tenant_session_scope(tenant_id) as session:
+            yield session
+
+
+class _ArmingMailSender(InMemoryMailSender):
+    def __init__(self) -> None:
+        super().__init__()
+        self.router: _FailAfterSendRouter | None = None
+
+    def send(self, message) -> None:  # noqa: ANN001
+        super().send(message)
+        assert self.router is not None
+        self.router.fail_next = True
+
+
+def test_sent_invitation_is_not_an_error_when_only_recording_the_delivery_fails(
+    account_access_database_url: str,
+) -> None:
+    """The e-mail is already out; a 503 would make the admin resend and kill that link."""
+
+    actor_id = _seed_admin(account_access_database_url)
+    email = f"record-{uuid.uuid4().hex}@example.test"
+    mail = _ArmingMailSender()
+    service, router, audit = _service(account_access_database_url, mail)
+    failing = _FailAfterSendRouter(router)
+    mail.router = failing
+    service._router = failing  # noqa: SLF001 - inject the post-send outage
+
+    result = service.invite(TENANT_ID, _principal(actor_id), _command(email), "203.0.113.71")
+
+    assert result.delivery_status == "sent"
+    assert audit.events[-1]["event_type"] == "invitation.sent"
+    assert audit.events[-1]["outcome_code"] == "delivery_record_failed"
+    [token] = _read_tokens(account_access_database_url, result.user_id)
+    assert (token.delivery_status, token.invalidated_at, token.consumed_at) == ("pending", None, None)
+    raw_token = mail.messages[-1].action_link.split("#token=", 1)[1]
+    assert service.inspect_action("brbots", "invitation", raw_token).email == email

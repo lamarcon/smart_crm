@@ -1269,6 +1269,8 @@
     // The raw token lives only here, never in the address bar, storage or a URL.
     let accountActionToken = null;
     let accountActionRoute = null;
+    // Each opened link gets a number; a late answer about an older link is ignored.
+    let accountActionSequence = 0;
 
     function publicActionFromPath() {
       const segments = location.pathname.split('/').filter(Boolean);
@@ -1314,6 +1316,7 @@
       });
     }
     async function openAccountAction(route) {
+      const sequence = ++accountActionSequence;
       accountActionRoute = route;
       accountActionToken = takeFragmentToken();
       document.getElementById('accountActionTitle').textContent = route.title;
@@ -1327,11 +1330,13 @@
       }
       try {
         const view = await responseJson(await postPublicJson(route.inspect, { slug: route.slug, token: accountActionToken }));
+        if (sequence !== accountActionSequence) return;
         document.getElementById('accountActionCompany').textContent = view.company_name;
         document.getElementById('accountActionEmail').textContent = view.email;
         showAccountActionState('ready');
         document.getElementById('accountPassword').focus();
       } catch (_) {
+        if (sequence !== accountActionSequence) return;
         showAccountActionState('invalid');
       }
     }

@@ -674,7 +674,7 @@ async function openAuthPage(pathname, options = {}) {
       return route.fulfill({ status: options.forgotStatus || 202, contentType: 'application/json', body: JSON.stringify({ message: 'Se o e-mail existir, enviaremos as instruções.' }) });
     }
     if (url.pathname === '/api/auth/invitations/inspect' || url.pathname === '/api/auth/password/reset/inspect') {
-      if (options.inspectGate) await options.inspectGate;
+      if (options.inspectGate && (!options.inspectGateToken || body?.token === options.inspectGateToken)) await options.inspectGate;
       if (url.search || body?.token !== (options.validToken || PUBLIC_LINK_TOKEN) || consumedTokens.has(body?.token)) return invalidLink();
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ company_name: 'Cliente A', email: 'convidada@cliente-a.test' }) });
     }
@@ -1172,6 +1172,29 @@ async function storageEntries(page) {
     const inspections = authRequests.filter(item => item.url.endsWith('/api/auth/invitations/inspect'));
     assert.deepEqual(inspections.map(item => item.body.token), ['token-trocado', PUBLIC_LINK_TOKEN]);
   });
+
+  await runAuth('ACCEPT-04 resposta atrasada do link antigo não invalida o link novo', '/cliente-a/accept-invite#token=token-trocado', async ({ page, authRequests }) => {
+    // The old link's check is still pending when the new link is opened in the same tab.
+    await page.locator('#accountActionStatus').getByText('Verificando o link...', { exact: true }).waitFor();
+    await page.goto(new URL(publicLinkUrl('accept-invite').replace(/^\//, ''), BASE_URL).toString());
+    await page.locator('#accountActionForm').waitFor({ state: 'visible' });
+    releaseInspect();
+    const deadline = Date.now() + 5000;
+    while (authRequests.filter(item => item.url.endsWith('/api/auth/invitations/inspect')).length < 2 && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    // Give the late 400 for the old token time to arrive and be ignored.
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('#accountActionForm').isHidden(), false);
+    assert.equal(await page.locator('#accountActionInvalid').isHidden(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.accountAction), 'ready');
+    await page.getByLabel('Nova senha').fill('senha-convite-2026');
+    await page.getByLabel('Confirmar senha').fill('senha-convite-2026');
+    await page.getByRole('button', { name: 'Ativar conta' }).click();
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    const completion = authRequests.find(item => item.url.endsWith('/api/auth/invitations/accept'));
+    assert.equal(completion.body.token, PUBLIC_LINK_TOKEN);
+  }, { inspectGate: new Promise(resolve => { releaseInspect = resolve; }), inspectGateToken: 'token-trocado' });
 
   await runAuth('ACCEPT-04 link sem token não consulta a API', '/cliente-a/accept-invite', async ({ page, authRequests }) => {
     await page.locator('#accountActionInvalid').waitFor({ state: 'visible' });

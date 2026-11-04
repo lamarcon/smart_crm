@@ -503,16 +503,23 @@ class AccountAccessService:
             failure_code = error.code
 
         delivered_at = self._clock()
-        with self._router.tenant_session_scope(tenant_id) as session:
-            workspace_id = self._workspace_id(session, actor)
-            self._account_action_repository_factory(
-                session, workspace_id
-            ).mark_delivery(
-                prepared.token_id,
-                status=delivery_status,
-                failure_code=failure_code,
-                now=delivered_at,
-            )
+        record_failed = False
+        try:
+            with self._router.tenant_session_scope(tenant_id) as session:
+                workspace_id = self._workspace_id(session, actor)
+                self._account_action_repository_factory(
+                    session, workspace_id
+                ).mark_delivery(
+                    prepared.token_id,
+                    status=delivery_status,
+                    failure_code=failure_code,
+                    now=delivered_at,
+                )
+        except (TenantUnavailableError, SQLAlchemyError):
+            # The message outcome is already final. The token stays "pending":
+            # after a sent e-mail its link keeps working; after a failed send no
+            # link exists outside the server, and a resend replaces the token.
+            record_failed = True
         self._record(
             event_type=(
                 "invitation.sent"
@@ -522,7 +529,8 @@ class AccountAccessService:
             tenant_id=tenant_id,
             user_id=prepared.user_id,
             correlation_parts=("invitation-delivery", prepared.token_id, delivery_status),
-            outcome_code=failure_code or "delivered",
+            outcome_code=failure_code
+            or ("delivery_record_failed" if record_failed else "delivered"),
             occurred_at=delivered_at,
         )
         return InvitationResult(
@@ -815,6 +823,27 @@ class AccountAccessService:
             return None
         return user
 
+    def _live_token_holder_exists(
+        self, tenant_id: UUID, purpose: str, token_digest: str, now: datetime
+    ) -> bool:
+        """Cheap unlocked pre-check, so an unusable link never costs an Argon2id hash.
+
+        The locked transaction re-checks everything; this only filters out links
+        that cannot succeed.
+        """
+
+        try:
+            with self._router.tenant_session_scope(tenant_id) as session:
+                workspace_id = self._public_workspace_id(session)
+                return (
+                    self._token_holder(
+                        session, workspace_id, purpose, token_digest, now, lock=False
+                    )
+                    is not None
+                )
+        except TenantUnavailableError:
+            return False
+
     def inspect_action(self, slug: str, purpose: str, raw_token: str) -> PublicActionView:
         if purpose not in PUBLIC_ACTION_PURPOSES or not self._usable_raw_token(raw_token):
             raise AccountActionLinkInvalidError()
@@ -874,6 +903,12 @@ class AccountAccessService:
             )
         token_digest = self._token_digest("invitation", raw_token)
         correlation_parts = ("invitation-accept", tenant.id, token_digest, source_ip)
+        if not self._live_token_holder_exists(tenant.id, "invitation", token_digest, now):
+            self._reject_acceptance(
+                tenant_id=tenant.id,
+                correlation_parts=correlation_parts,
+                occurred_at=now,
+            )
         # Argon2id is deliberately slow: hash before taking any row lock.
         password_hash = hash_password(password)
 
@@ -1169,6 +1204,12 @@ class AccountAccessService:
             )
         token_digest = self._token_digest("password_reset", raw_token)
         correlation_parts = ("password-reset", tenant.id, token_digest, source_ip)
+        if not self._live_token_holder_exists(tenant.id, "password_reset", token_digest, now):
+            self._reject_reset(
+                tenant_id=tenant.id,
+                correlation_parts=correlation_parts,
+                occurred_at=now,
+            )
         # Argon2id is deliberately slow: hash before taking any row lock.
         password_hash = hash_password(password)
 
