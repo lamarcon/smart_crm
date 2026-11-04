@@ -9,7 +9,7 @@ import ssl
 from dataclasses import dataclass, field
 from email.message import EmailMessage
 from email.utils import formataddr
-from typing import Protocol
+from typing import Callable, Mapping, Protocol
 
 
 _TLS_MODES = frozenset({"starttls", "implicit_tls"})
@@ -218,3 +218,77 @@ class SmtpMailSender:
             raise MailDeliveryError("smtp_protocol_error") from None
         except OSError:
             raise MailDeliveryError("smtp_unavailable") from None
+
+
+class UnconfiguredMailSender:
+    """Used when no SMTP setting exists: every delivery fails without side effects."""
+
+    def send(self, message: OutboundMessage) -> None:  # noqa: ARG002
+        raise MailDeliveryError("smtp_not_configured")
+
+
+SMTP_ENVIRONMENT_KEYS = (
+    "SMART_CRM_SMTP_HOST",
+    "SMART_CRM_SMTP_PORT",
+    "SMART_CRM_SMTP_USERNAME",
+    "SMART_CRM_SMTP_FROM_ADDRESS",
+    "SMART_CRM_SMTP_TLS_MODE",
+    "SMART_CRM_SMTP_TIMEOUT_SECONDS",
+    "SMART_CRM_SMTP_PASSWORD_SECRET_FILE",
+)
+SMTP_PLAINTEXT_PASSWORD_KEY = "SMART_CRM_SMTP_PASSWORD"
+DEFAULT_SMTP_TIMEOUT_SECONDS = 10.0
+MAX_SMTP_TIMEOUT_SECONDS = 60.0
+
+
+def smtp_settings_from_environment(
+    environ: Mapping[str, str],
+    *,
+    read_password: Callable[[str], str],
+) -> SmtpSettings | None:
+    """Build SMTP settings from non-secret keys plus a DPAPI-protected password file.
+
+    Returns ``None`` when no SMTP key is present. A plaintext password key, a
+    partial configuration or an unreadable secret raises a code-only
+    ``MailConfigurationError`` that never includes values.
+    """
+
+    if environ.get(SMTP_PLAINTEXT_PASSWORD_KEY):
+        raise MailConfigurationError("smtp_plaintext_password_rejected")
+    values = {key: (environ.get(key) or "").strip() for key in SMTP_ENVIRONMENT_KEYS}
+    if not any(values.values()):
+        return None
+    host = values["SMART_CRM_SMTP_HOST"]
+    from_address = values["SMART_CRM_SMTP_FROM_ADDRESS"]
+    tls_mode = values["SMART_CRM_SMTP_TLS_MODE"]
+    if not host or not from_address or not tls_mode:
+        raise MailConfigurationError("smtp_configuration_incomplete")
+    try:
+        port = int(values["SMART_CRM_SMTP_PORT"])
+        raw_timeout = values["SMART_CRM_SMTP_TIMEOUT_SECONDS"]
+        timeout = float(raw_timeout) if raw_timeout else DEFAULT_SMTP_TIMEOUT_SECONDS
+    except ValueError:
+        raise MailConfigurationError("smtp_configuration_invalid") from None
+    if not 0 < timeout <= MAX_SMTP_TIMEOUT_SECONDS or "@" not in from_address:
+        raise MailConfigurationError("smtp_configuration_invalid")
+    username = values["SMART_CRM_SMTP_USERNAME"]
+    secret_file = values["SMART_CRM_SMTP_PASSWORD_SECRET_FILE"]
+    password = ""
+    if username or secret_file:
+        if not username or not secret_file:
+            raise MailConfigurationError("smtp_credentials_incomplete")
+        try:
+            password = read_password(secret_file)
+        except Exception:
+            raise MailConfigurationError("smtp_password_unreadable") from None
+        if not password:
+            raise MailConfigurationError("smtp_password_unreadable")
+    return SmtpSettings(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        from_address=from_address,
+        tls_mode=tls_mode,
+        timeout_seconds=timeout,
+    )

@@ -135,6 +135,7 @@ O adaptador suportará `starttls` e `implicit_tls`, rejeitará transporte sem TL
   - `POST /api/auth/password/forgot`
   - `POST /api/auth/password/reset/inspect`
   - `POST /api/auth/password/reset`
+  - `POST /api/users/{user_id}/reactivate` (owner decision 2026-11-03: `Inativo` → `Ativo`, Administrador only)
 - **Dependencies**: `AccountAccessService`, principal autenticado, proteção de origem.
 - **Reuses**: formato de erro, cookies, contratos de tenant e dependency injection de `create_app`.
 

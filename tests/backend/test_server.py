@@ -326,3 +326,142 @@ def test_runtime_representation_never_exposes_component_details() -> None:
     runtime = runtime_with(FakeControlDatabase())
 
     assert repr(runtime) == "CentralRuntime(control=configured, tenant_router=lazy)"
+
+
+# --- T11: account-access wiring ---------------------------------------------
+
+SMTP_KEYS = (
+    "SMART_CRM_SMTP_HOST",
+    "SMART_CRM_SMTP_PORT",
+    "SMART_CRM_SMTP_USERNAME",
+    "SMART_CRM_SMTP_FROM_ADDRESS",
+    "SMART_CRM_SMTP_TLS_MODE",
+    "SMART_CRM_SMTP_TIMEOUT_SECONDS",
+    "SMART_CRM_SMTP_PASSWORD_SECRET_FILE",
+    "SMART_CRM_SMTP_PASSWORD",
+)
+
+
+@pytest.fixture
+def clean_smtp_environment(monkeypatch):  # noqa: ANN001, ANN201
+    for key in SMTP_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    return monkeypatch
+
+
+def test_runtime_injects_account_access_service_with_router_control_and_mail(
+    clean_smtp_environment,
+) -> None:  # noqa: ANN001
+    from app.mail import InMemoryMailSender
+    from app.services.account_access import AccountAccessService
+
+    clean_smtp_environment.setenv("SMART_CRM_EXPECTED_ORIGIN", "https://crm.example.test")
+    control = FakeControlDatabase()
+    mail = InMemoryMailSender()
+
+    runtime = bootstrap_runtime(
+        control_database=control,
+        secret_provider=InMemorySecretProvider(),
+        mail_sender=mail,
+    )
+
+    service = runtime.account_access_service
+    assert isinstance(service, AccountAccessService)
+    assert service._control_database is control
+    assert service._router is runtime.tenant_router
+    assert service._mail_sender is mail
+    assert service._public_origin == "https://crm.example.test"
+
+
+def test_runtime_without_smtp_settings_uses_a_sender_that_never_claims_delivery(
+    clean_smtp_environment,
+) -> None:  # noqa: ANN001
+    from app.mail import MailDeliveryError, UnconfiguredMailSender
+
+    runtime = bootstrap_runtime(
+        control_database=FakeControlDatabase(),
+        secret_provider=InMemorySecretProvider(),
+    )
+
+    sender = runtime.account_access_service._mail_sender
+    assert isinstance(sender, UnconfiguredMailSender)
+    with pytest.raises(MailDeliveryError) as failure:
+        sender.send(object())
+    assert failure.value.code == "smtp_not_configured"
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        {"SMART_CRM_SMTP_HOST": "smtp.example.test"},
+        {"SMART_CRM_SMTP_PASSWORD": "senha-em-texto-puro"},
+        {
+            "SMART_CRM_SMTP_HOST": "smtp.example.test",
+            "SMART_CRM_SMTP_PORT": "587",
+            "SMART_CRM_SMTP_FROM_ADDRESS": "crm@example.test",
+            "SMART_CRM_SMTP_TLS_MODE": "none",
+        },
+        {
+            "SMART_CRM_SMTP_HOST": "smtp.example.test",
+            "SMART_CRM_SMTP_PORT": "587",
+            "SMART_CRM_SMTP_FROM_ADDRESS": "crm@example.test",
+            "SMART_CRM_SMTP_TLS_MODE": "starttls",
+            "SMART_CRM_SMTP_USERNAME": "crm",
+            "SMART_CRM_SMTP_PASSWORD_SECRET_FILE": "C:/inexistente/smtp-password.bin",
+        },
+    ],
+)
+def test_runtime_refuses_incomplete_plaintext_or_unreadable_smtp_configuration(
+    clean_smtp_environment, environment: dict[str, str]
+) -> None:  # noqa: ANN001
+    for key, value in environment.items():
+        clean_smtp_environment.setenv(key, value)
+    control = FakeControlDatabase()
+
+    with pytest.raises(RuntimeBootstrapError) as captured:
+        bootstrap_runtime(control_database=control, secret_provider=InMemorySecretProvider())
+
+    assert str(captured.value) == "central runtime unavailable"
+    assert "senha-em-texto-puro" not in repr(captured.value)
+    assert control.disposed is True
+
+
+def test_central_app_exposes_account_routes_bound_to_the_runtime_service(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("shell", encoding="utf-8")
+
+    class RecordingAccountService:
+        def __init__(self) -> None:
+            self.calls: list[tuple] = []
+
+        def request_password_reset(self, slug: str, email: str, source_ip: str) -> None:
+            self.calls.append((slug, email))
+
+    service = RecordingAccountService()
+    runtime = CentralRuntime(
+        control_database=FakeControlDatabase(),
+        tenant_router=CountingRouter(),
+        auth_service=object(),
+        account_access_service=service,
+    )
+    client = TestClient(create_app(runtime=runtime, static_dir=tmp_path), base_url="https://sc2030.brbots.com")
+
+    response = client.post(
+        "/api/auth/password/forgot",
+        headers={"origin": "https://sc2030.brbots.com"},
+        json={"slug": "brbots", "email": "a@example.test"},
+    )
+
+    assert response.status_code == 202
+    assert service.calls == [("brbots", "a@example.test")]
+    paths = {route.path for route in client.app.routes}
+    assert {
+        "/api/users/invitations",
+        "/api/users/{user_id}/invitation/resend",
+        "/api/users/{user_id}/invitation/cancel",
+        "/api/users/{user_id}/reactivate",
+        "/api/auth/invitations/inspect",
+        "/api/auth/invitations/accept",
+        "/api/auth/password/forgot",
+        "/api/auth/password/reset/inspect",
+        "/api/auth/password/reset",
+    } <= paths

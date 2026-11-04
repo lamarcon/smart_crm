@@ -380,7 +380,9 @@ T13 → T14
 **Where**: `app/main.py`  
 **Depends on**: T10  
 **Reuses**: `create_app` dependency injection, principal resolver, expected-origin check and standard error payloads  
-**Requirement**: INV-01, INV-04, INV-05, INV-09, ACCEPT-01, ACCEPT-02, ACCEPT-04, RESET-01, RESET-04, RESET-06, SEC-07
+**Requirement**: INV-01, INV-04, INV-05, INV-08, INV-09, ACCEPT-01, ACCEPT-02, ACCEPT-04, RESET-01, RESET-04, RESET-06, SEC-03, SEC-04, SEC-07
+
+> Owner decisions (2026-11-03): SEC-03/SEC-04 also apply to administrative invitation sends (`invite_account`/`invite_ip`, 429 without e-mail), and `Inativo` → `Ativo` gets its own administrative reactivation route, because T9 removed that transition from the workspace snapshot.
 
 **Tools**:
 
@@ -389,17 +391,23 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Every route in the approved design delegates business rules to `AccountAccessService`.
-- [ ] Administrative routes reject missing/non-admin sessions and invalid origin before side effects.
-- [ ] Forgot-password always returns the approved 202 response.
-- [ ] Inspect/consume routes use tenant slug plus POST body token and never accept token query parameters.
-- [ ] Runtime construction injects the real router, control database, SMTP sender and service.
-- [ ] Integration tests cover every route's success, validation, authorization, invalid token, limit and dependency-failure paths.
-- [ ] Full gate passes with no test deletion.
+- [x] Every route in the approved design delegates business rules to `AccountAccessService`.
+- [x] Administrative routes reject missing/non-admin sessions and invalid origin before side effects.
+- [x] Forgot-password always returns the approved 202 response.
+- [x] Inspect/consume routes use tenant slug plus POST body token and never accept token query parameters.
+- [x] Runtime construction injects the real router, control database, SMTP sender and service.
+- [x] Integration tests cover every route's success, validation, authorization, invalid token, limit and dependency-failure paths.
+- [x] Invitation and resend sends are limited to 5 per account and 30 per IP in 15 minutes and answer 429 without token or e-mail (SEC-03/SEC-04).
+- [x] `POST /api/users/{user_id}/reactivate` lets only an Administrador move `Inativo` → `Ativo`, increments `auth_version` once and is audited.
+- [x] Full gate passes with no test deletion.
 
 **Tests**: integration — create `tests/backend/test_account_access_api.py` and extend server factory tests.  
 **Gate**: full  
 **Commit**: `feat(api): expose account invitation endpoints`
+
+**Evidence**: Routes: `POST /api/users/invitations` (201), `POST /api/users/{id}/invitation/resend`, `POST /api/users/{id}/invitation/cancel`, `POST /api/users/{id}/reactivate`, `POST /api/auth/invitations/inspect`, `POST /api/auth/invitations/accept` (204), `POST /api/auth/password/forgot` (202), `POST /api/auth/password/reset/inspect`, `POST /api/auth/password/reset` (204), plus `GET /{slug}/accept-invite` and `GET /{slug}/reset-password` shells (no session read, `no-store`). Administrative routes authenticate through the new `CookiePrincipalResolver.authenticate` (origin → alternate-session rejection → cookie session → `MANAGE_USERS`) without opening a tenant session, so a request never holds two tenant connections from the pool of 2+2; every check runs before the service is called. Service errors map to stable codes (403 `forbidden`, 409 `account_active`/`account_inactive`/`invitation_not_pending`/`account_not_inactive`, 422, 429 `rate_limited` with `Retry-After: 900`, 503 `tenant_unavailable`/`database_unavailable`) without internal detail; responses carry the server-confirmed row (`AccountUserResponse`) and `deliveryStatus` only. Public routes require the expected origin, reject any query string with the single `invalid_link` answer, and map a missing/oversized/malformed token or slug or any extra field to that same answer; only password problems are explained (422 `password_mismatch`/`invalid_password`). Forgot-password answers 202 with the approved message for every body, including malformed ones, and runs the lookup and SMTP call as a background task after the response, so neither the answer nor its timing depends on the account or the mail server. Service additions: invitation limits through a new `ControlRepository.admit_account_action_request` shared with recovery (lock, check, then count; the 5th/30th request is still sent, the 6th/31st is held and audited as `invitation.rate_limited`); `reactivate_user`; `account_user`; teams resolved by name (`team_id_for_name`) and created on demand; and invitations now match legacy roster users without `normalized_email` case-insensitively, so an existing account is never duplicated or turned into a 500. Runtime: `bootstrap_runtime` builds `AccountAccessService` with the real control database, tenant router and SMTP sender; SMTP settings come from `SMART_CRM_SMTP_*` with the password read only from the DPAPI file, a plaintext `SMART_CRM_SMTP_PASSWORD` or partial/invalid settings stop startup with the generic bootstrap error, and with no SMTP key at all an `UnconfiguredMailSender` makes every delivery fail as `smtp_not_configured` (strict deployment validation is T14). Tests: 179 new (154 in `test_account_access_api.py`, of which 10 run end to end on PostgreSQL with real login, invitation, acceptance, recovery, session revocation, both limits, legacy users and reactivation; 7 in `test_server.py`; 18 in `test_mail.py`); the T6 control-repository stub gained the admission method. Mutation checks on the role check, query rejection, forgot-password 202 for invalid bodies, invitation admission, reactivation version increment and state check, legacy matching, token-error redaction and plaintext SMTP password rejection were all detected. No test was deleted, weakened or skipped.
+
+**Windows gate**: full backend suite on Windows 11 with Docker PostgreSQL 17 passed with 1182 tests (1003 after T10 + 179 new), 7 warnings: the 6 pre-existing ones plus one more of the same Pydantic/FastAPI alias kind for `jobTitle`; UI regression with the installed Chrome passed 122/122 scenarios.
 
 ---
 

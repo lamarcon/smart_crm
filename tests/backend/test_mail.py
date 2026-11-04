@@ -215,3 +215,117 @@ def test_smtp_failures_expose_only_stable_redacted_codes(
     assert str(captured.value) == expected_code
     assert "smtp-super-secret" not in str(captured.value)
     assert "token=a" not in str(captured.value)
+
+
+# --- T11: SMTP settings from the environment --------------------------------
+
+from app.mail import UnconfiguredMailSender, smtp_settings_from_environment  # noqa: E402
+
+FULL_SMTP_ENVIRONMENT = {
+    "SMART_CRM_SMTP_HOST": "smtp.example.test",
+    "SMART_CRM_SMTP_PORT": "587",
+    "SMART_CRM_SMTP_USERNAME": "crm@example.test",
+    "SMART_CRM_SMTP_FROM_ADDRESS": "crm@example.test",
+    "SMART_CRM_SMTP_TLS_MODE": "starttls",
+    "SMART_CRM_SMTP_TIMEOUT_SECONDS": "8",
+    "SMART_CRM_SMTP_PASSWORD_SECRET_FILE": "C:/ProgramData/SmartCRM/service-secrets/smtp-password.bin",
+}
+
+
+def _never_read(_path: str) -> str:
+    raise AssertionError("password file must not be read")
+
+
+def test_smtp_environment_absent_means_not_configured() -> None:
+    assert smtp_settings_from_environment({}, read_password=_never_read) is None
+    assert smtp_settings_from_environment(
+        {"SMART_CRM_SMTP_HOST": "  "}, read_password=_never_read
+    ) is None
+
+
+def test_smtp_environment_reads_the_password_only_from_the_secret_file() -> None:
+    reads: list[str] = []
+
+    def read(path: str) -> str:
+        reads.append(path)
+        return "segredo-ficticio"
+
+    settings = smtp_settings_from_environment(FULL_SMTP_ENVIRONMENT, read_password=read)
+
+    assert reads == [FULL_SMTP_ENVIRONMENT["SMART_CRM_SMTP_PASSWORD_SECRET_FILE"]]
+    assert (settings.host, settings.port, settings.tls_mode, settings.timeout_seconds) == (
+        "smtp.example.test",
+        587,
+        "starttls",
+        8.0,
+    )
+    assert settings.password == "segredo-ficticio"
+    assert "segredo-ficticio" not in repr(settings)
+
+
+def test_smtp_environment_without_credentials_and_default_timeout() -> None:
+    environment = {
+        key: value
+        for key, value in FULL_SMTP_ENVIRONMENT.items()
+        if key
+        not in {
+            "SMART_CRM_SMTP_USERNAME",
+            "SMART_CRM_SMTP_PASSWORD_SECRET_FILE",
+            "SMART_CRM_SMTP_TIMEOUT_SECONDS",
+        }
+    }
+
+    settings = smtp_settings_from_environment(environment, read_password=_never_read)
+
+    assert (settings.username, settings.password, settings.timeout_seconds) == ("", "", 10.0)
+
+
+@pytest.mark.parametrize(
+    ("changes", "code"),
+    [
+        ({"SMART_CRM_SMTP_PASSWORD": "texto-puro"}, "smtp_plaintext_password_rejected"),
+        ({"SMART_CRM_SMTP_HOST": ""}, "smtp_configuration_incomplete"),
+        ({"SMART_CRM_SMTP_FROM_ADDRESS": ""}, "smtp_configuration_incomplete"),
+        ({"SMART_CRM_SMTP_TLS_MODE": ""}, "smtp_configuration_incomplete"),
+        ({"SMART_CRM_SMTP_TLS_MODE": "plain"}, "smtp_tls_required"),
+        ({"SMART_CRM_SMTP_PORT": "porta"}, "smtp_configuration_invalid"),
+        ({"SMART_CRM_SMTP_PORT": "70000"}, "smtp_configuration_invalid"),
+        ({"SMART_CRM_SMTP_TIMEOUT_SECONDS": "0"}, "smtp_configuration_invalid"),
+        ({"SMART_CRM_SMTP_TIMEOUT_SECONDS": "61"}, "smtp_configuration_invalid"),
+        ({"SMART_CRM_SMTP_FROM_ADDRESS": "sem-arroba"}, "smtp_configuration_invalid"),
+        ({"SMART_CRM_SMTP_USERNAME": ""}, "smtp_credentials_incomplete"),
+        ({"SMART_CRM_SMTP_PASSWORD_SECRET_FILE": ""}, "smtp_credentials_incomplete"),
+    ],
+)
+def test_smtp_environment_rejects_unsafe_or_incomplete_settings(changes, code: str) -> None:
+    environment = {**FULL_SMTP_ENVIRONMENT, **changes}
+
+    with pytest.raises(MailConfigurationError) as failure:
+        smtp_settings_from_environment(environment, read_password=lambda _path: "segredo-ficticio")
+
+    assert failure.value.code == code
+    assert "segredo-ficticio" not in str(failure.value)
+    assert "texto-puro" not in str(failure.value)
+
+
+@pytest.mark.parametrize("result", [OSError("acesso negado C:/x"), ""])
+def test_smtp_environment_reports_an_unreadable_secret_without_details(result) -> None:  # noqa: ANN001
+    def read(_path: str) -> str:
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    with pytest.raises(MailConfigurationError) as failure:
+        smtp_settings_from_environment(FULL_SMTP_ENVIRONMENT, read_password=read)
+
+    assert failure.value.code == "smtp_password_unreadable"
+    assert failure.value.__cause__ is None
+
+
+def test_unconfigured_sender_always_fails_delivery() -> None:
+    message = render_invitation_email("BRBots", RECIPIENT, LINK)
+
+    with pytest.raises(MailDeliveryError) as failure:
+        UnconfiguredMailSender().send(message)
+
+    assert failure.value.code == "smtp_not_configured"

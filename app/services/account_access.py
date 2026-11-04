@@ -9,21 +9,21 @@ from secrets import token_urlsafe
 from typing import Callable, Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.control_database import ControlDatabase, ControlRepository
-from app.control_models import LoginThrottle
 from app.mail import (
     MailDeliveryError,
     MailSender,
     render_invitation_email,
     render_password_reset_email,
 )
-from app.models import AccountActionToken, CrmUser
+from app.models import AccountActionToken, CrmUser, Team
 from app.policies import Action, CURRENT_ROLES, PrincipalScope, can_perform_action
 from app.repositories.account_actions import AccountActionRepository
+from app.repositories.workspace import team_id_for_name
 from app.schemas import (
     ACCOUNT_ACTION_TOKEN_MAX_LENGTH,
     INVALID_ACTION_LINK_MESSAGE,
@@ -41,6 +41,7 @@ from app.tenant_database import TenantDatabaseRouter, TenantUnavailableError
 INVITATION_TTL = timedelta(hours=48)
 PASSWORD_RESET_TTL = timedelta(hours=48)
 RESET_THROTTLE_BUCKETS = ("reset_account", "reset_ip")
+INVITE_THROTTLE_BUCKETS = ("invite_account", "invite_ip")
 PUBLIC_ACTION_PURPOSES = frozenset({"invitation", "password_reset"})
 MAX_RAW_TOKEN_LENGTH = ACCOUNT_ACTION_TOKEN_MAX_LENGTH
 
@@ -82,8 +83,20 @@ class AccountRequiresReactivationError(AccountAccessError):
     pass
 
 
-class InvitationStateError(AccountAccessError):
+class AccountStateError(AccountAccessError):
+    """The account is missing or not in the state the operation requires."""
+
+
+class InvitationStateError(AccountStateError):
     pass
+
+
+class AccountReactivationStateError(AccountStateError):
+    pass
+
+
+class AccountActionRateLimitedError(AccountAccessError):
+    """Too many invitation deliveries for this account or source address."""
 
 
 @dataclass(frozen=True)
@@ -93,6 +106,19 @@ class InvitationCommand:
     job_title: str
     team_id: str | None
     role: str
+    team_name: str | None = None
+
+
+@dataclass(frozen=True)
+class AccountUserView:
+    id: str
+    name: str
+    email: str
+    job_title: str
+    team: str | None
+    role: str
+    status: str
+    invited_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -205,14 +231,53 @@ class AccountAccessService:
         name = command.name.strip()
         email = command.email.strip().lower()
         job_title = command.job_title.strip()
+        team_name = (command.team_name or "").strip() or None
         if not name or not email or "@" not in email or command.role not in CURRENT_ROLES:
             raise AccountAccessValidationError("invalid invitation")
         return InvitationCommand(
             name=name,
             email=email,
             job_title=job_title,
-            team_id=command.team_id,
+            team_id=team_id_for_name(team_name) if team_name else command.team_id,
             role=command.role,
+            team_name=team_name,
+        )
+
+    @staticmethod
+    def _ensure_team(session: Session, workspace_id: str, command: InvitationCommand) -> None:
+        if command.team_name is None or command.team_id is None:
+            return
+        team = session.scalar(
+            select(Team).where(Team.workspace_id == workspace_id, Team.id == command.team_id)
+        )
+        if team is None:
+            session.add(Team(id=command.team_id, workspace_id=workspace_id, name=command.team_name))
+            session.flush()
+
+    @staticmethod
+    def _account_by_email(session: Session, workspace_id: str, email: str) -> CrmUser | None:
+        """Lock the account owning ``email``, including legacy roster users.
+
+        Users created before invitations have no ``normalized_email``; they are
+        matched case-insensitively so an invitation never duplicates them.
+        """
+
+        return session.scalar(
+            select(CrmUser)
+            .where(
+                CrmUser.workspace_id == workspace_id,
+                CrmUser.deleted_at.is_(None),
+                or_(
+                    CrmUser.normalized_email == email,
+                    and_(
+                        CrmUser.normalized_email.is_(None),
+                        func.lower(CrmUser.email) == email,
+                    ),
+                ),
+            )
+            .order_by(CrmUser.normalized_email.is_(None))
+            .limit(1)
+            .with_for_update()
         )
 
     @staticmethod
@@ -254,15 +319,9 @@ class AccountAccessService:
             try:
                 with self._router.tenant_session_scope(tenant_id) as session:
                     workspace_id = self._workspace_id(session, actor)
-                    user = session.scalar(
-                        select(CrmUser)
-                        .where(
-                            CrmUser.workspace_id == workspace_id,
-                            CrmUser.normalized_email == command.email,
-                            CrmUser.deleted_at.is_(None),
-                        )
-                        .with_for_update()
-                    )
+                    user = self._account_by_email(session, workspace_id, command.email)
+                    if user is None or user.status in {"Pendente", "Cancelado"}:
+                        self._ensure_team(session, workspace_id, command)
                     created = user is None
                     if user is None:
                         user = CrmUser(
@@ -449,6 +508,7 @@ class AccountAccessService:
         self._authorize(tenant_id, actor)
         normalized = self._normalized_command(command)
         tenant = self._tenant(tenant_id)
+        self._admit_invitation(tenant, actor, normalized.email, source_ip)
         prepared = self._prepare_invitation(tenant_id, actor, normalized)
         return self._deliver(tenant_id, actor, tenant, prepared, source_ip)
 
@@ -461,8 +521,134 @@ class AccountAccessService:
     ) -> InvitationResult:
         self._authorize(tenant_id, actor)
         tenant = self._tenant(tenant_id)
+        self._admit_invitation(
+            tenant, actor, self._pending_invitee_email(tenant_id, actor, user_id), source_ip
+        )
         prepared = self._prepare_resend(tenant_id, actor, user_id)
         return self._deliver(tenant_id, actor, tenant, prepared, source_ip)
+
+    def _pending_invitee_email(
+        self, tenant_id: UUID, actor: PrincipalScope, user_id: str
+    ) -> str:
+        with self._router.tenant_session_scope(tenant_id) as session:
+            workspace_id = self._workspace_id(session, actor)
+            user = session.scalar(
+                select(CrmUser).where(
+                    CrmUser.workspace_id == workspace_id,
+                    CrmUser.id == user_id,
+                    CrmUser.deleted_at.is_(None),
+                )
+            )
+            if user is None or user.status != "Pendente":
+                raise InvitationStateError("invitation is not pending")
+            return user.normalized_email or user.email.lower()
+
+    def _admit_invitation(
+        self,
+        tenant,  # noqa: ANN001
+        actor: PrincipalScope,
+        email: str,
+        source_ip: str,
+    ) -> None:
+        """Apply SEC-03/SEC-04 before any token is created or e-mail is sent.
+
+        Fails closed: when the central limiter is unavailable nothing is sent.
+        """
+
+        now = self._clock()
+        ip_text = source_ip if isinstance(source_ip, str) else ""
+        account_digest, ip_digest = AuthService.login_subject_digests(
+            tenant.slug, email, ip_text
+        )
+        if self._admit_request(INVITE_THROTTLE_BUCKETS, account_digest, ip_digest, now):
+            return
+        self._record(
+            event_type="invitation.rate_limited",
+            tenant_id=tenant.id,
+            user_id=None,
+            correlation_parts=("invitation-limit", account_digest, ip_digest, actor.user_id),
+            outcome_code="rate_limited",
+            occurred_at=now,
+        )
+        raise AccountActionRateLimitedError("invitation rate limited")
+
+    def reactivate_user(
+        self,
+        tenant_id: UUID,
+        actor: PrincipalScope,
+        user_id: str,
+    ) -> UserAccessResult:
+        """Return an ``Inativo`` account to ``Ativo`` (administrators only).
+
+        The snapshot can no longer make this transition (T9). ``auth_version`` is
+        incremented so any session state derived from the inactive account is
+        discarded.
+        """
+
+        self._authorize(tenant_id, actor)
+        self._tenant(tenant_id)
+        now = self._clock()
+        with self._router.tenant_session_scope(tenant_id) as session:
+            workspace_id = self._workspace_id(session, actor)
+            user = session.scalar(
+                select(CrmUser)
+                .where(
+                    CrmUser.workspace_id == workspace_id,
+                    CrmUser.id == user_id,
+                    CrmUser.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if user is None or user.status != "Inativo":
+                raise AccountReactivationStateError("account is not inactive")
+            user.status = "Ativo"
+            user.auth_version = user.auth_version + 1
+        self._record(
+            event_type="user.reactivated",
+            tenant_id=tenant_id,
+            user_id=user_id,
+            correlation_parts=("user-reactivation", tenant_id, user_id, actor.user_id),
+            outcome_code="reactivated",
+            occurred_at=now,
+        )
+        return UserAccessResult(user_id=user_id, status="Ativo")
+
+    def account_user(
+        self,
+        tenant_id: UUID,
+        actor: PrincipalScope,
+        user_id: str,
+    ) -> AccountUserView:
+        """Read the server-confirmed administrative view of one account."""
+
+        self._authorize(tenant_id, actor)
+        with self._router.tenant_session_scope(tenant_id) as session:
+            workspace_id = self._workspace_id(session, actor)
+            row = session.execute(
+                select(CrmUser, Team.name)
+                .outerjoin(
+                    Team,
+                    and_(Team.id == CrmUser.team_id, Team.workspace_id == CrmUser.workspace_id),
+                )
+                .where(
+                    CrmUser.workspace_id == workspace_id,
+                    CrmUser.id == user_id,
+                    CrmUser.deleted_at.is_(None),
+                )
+            ).one_or_none()
+            if row is None:
+                raise AccountStateError("account not found")
+            user, team_name = row
+            return AccountUserView(
+                id=user.id,
+                name=user.name,
+                email=user.email,
+                job_title=user.job_title or "",
+                team=team_name,
+                role=user.role,
+                status=user.status,
+                invited_at=user.invited_at,
+            )
 
     def cancel_invitation(
         self,
@@ -686,37 +872,23 @@ class AccountAccessService:
 
     # Public password recovery -------------------------------------------------
 
-    def _admit_reset_request(self, account_digest: str, ip_digest: str, now: datetime) -> bool:
-        """Count one recovery request; False when either bucket is already blocked.
+    def _admit_request(
+        self,
+        buckets: tuple[str, str],
+        account_digest: str,
+        ip_digest: str,
+        now: datetime,
+    ) -> bool:
+        """Count one request in the account and IP buckets (locked in that order)."""
 
-        A bucket blocks *after* its limit is reached, so the 5th account request
-        (30th per IP) is still sent and only later requests in the window are held.
-        Rows are locked in a fixed order (account, then IP) before the check.
-        """
-
-        subjects = tuple(zip(RESET_THROTTLE_BUCKETS, (account_digest, ip_digest)))
         with self._control_database.session_scope() as session:
-            repository = self._control_repository_factory(session)
-            for bucket_type, subject_digest in subjects:
-                throttle = repository.session.scalar(
-                    select(LoginThrottle)
-                    .where(
-                        LoginThrottle.bucket_type == bucket_type,
-                        LoginThrottle.subject_digest == subject_digest,
-                    )
-                    .with_for_update()
-                )
-                if (
-                    throttle is not None
-                    and throttle.blocked_until is not None
-                    and throttle.blocked_until > now
-                ):
-                    return False
-            for bucket_type, subject_digest in subjects:
-                repository.record_account_action_request(
-                    bucket_type, subject_digest, now=now
-                )
-            return True
+            return self._control_repository_factory(session).admit_account_action_request(
+                tuple(zip(buckets, (account_digest, ip_digest))),
+                now=now,
+            )
+
+    def _admit_reset_request(self, account_digest: str, ip_digest: str, now: datetime) -> bool:
+        return self._admit_request(RESET_THROTTLE_BUCKETS, account_digest, ip_digest, now)
 
     def _prepare_reset(
         self,

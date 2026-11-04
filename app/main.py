@@ -9,7 +9,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Callable, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Path as FastAPIPath
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -25,6 +26,19 @@ from app.auth import (
 from app.database import Database, database
 from app.policies import Action, can_perform_action
 from app.schemas import (
+    ACCOUNT_USER_ID_MAX_LENGTH,
+    INVALID_ACTION_LINK_MESSAGE,
+    PASSWORD_MISMATCH_MESSAGE,
+    AccountActionTokenRequest,
+    AccountActionViewResponse,
+    AccountUserResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    InvitationAcceptRequest,
+    InvitationCreateRequest,
+    InvitationResponse,
+    PasswordResetRequest,
+    UserAccessResponse,
     ActivityEventResponse,
     ActivityPage,
     ActivityQuery,
@@ -48,6 +62,20 @@ from app.schemas import (
     normalize_tenant_identifier,
 )
 from app.repositories.activity import ActivityCursorError, ActivityScopeError
+from app.services.account_access import (
+    AccountAccessAuthorizationError,
+    AccountAccessService,
+    AccountAccessTenantUnavailableError,
+    AccountAccessValidationError,
+    AccountActionLinkInvalidError,
+    AccountActionRateLimitedError,
+    AccountAlreadyActiveError,
+    AccountPasswordPolicyError,
+    AccountReactivationStateError,
+    AccountRequiresReactivationError,
+    AccountStateError,
+    InvitationCommand,
+)
 from app.services.auth import AuthenticationError, AuthService, SessionContext
 from app.services.activity import (
     ActivityAuthorizationError,
@@ -82,6 +110,18 @@ APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
 MAX_BOOTSTRAP_BYTES = 25 * 1024 * 1024
 LOG = logging.getLogger("smart-crm-api")
+ACCOUNT_ACTION_RETRY_AFTER_SECONDS = 15 * 60
+FORGOT_PASSWORD_PATH = "/api/auth/password/forgot"
+PUBLIC_TOKEN_PATHS = frozenset(
+    {
+        "/api/auth/invitations/inspect",
+        "/api/auth/invitations/accept",
+        "/api/auth/password/reset/inspect",
+        "/api/auth/password/reset",
+    }
+)
+PASSWORD_LENGTH_MESSAGE = "A senha deve ter entre 8 e 128 caracteres."
+PUBLIC_ACTION_PAGES = ("accept-invite", "reset-password")
 DeletedModule = Literal[
     "users", "leads", "contacts", "companies", "deals", "quotes", "notifications"
 ]
@@ -128,6 +168,35 @@ def _validation_path(error: RequestValidationError) -> str:
     return ".".join(str(part) for part in first.get("loc", ()))
 
 
+def _password_policy_error(code: str) -> JSONResponse:
+    if code == "password_mismatch":
+        return _error(422, "password_mismatch", PASSWORD_MISMATCH_MESSAGE)
+    return _error(422, "invalid_password", PASSWORD_LENGTH_MESSAGE)
+
+
+def _public_token_validation_error(error: RequestValidationError) -> JSONResponse:
+    """Map body errors on link routes without revealing anything about the link.
+
+    A missing, oversized or malformed token or slug (or any unexpected field)
+    gets the single invalid-link answer; only password problems are explained.
+    """
+
+    password_issue = False
+    mismatch = False
+    for item in error.errors():
+        location = item.get("loc", ())
+        field = location[1] if len(location) > 1 else None
+        if field in {"password", "password_confirmation"}:
+            password_issue = True
+        elif field is None and PASSWORD_MISMATCH_MESSAGE in str(item.get("msg", "")):
+            mismatch = True
+        else:
+            return _error(400, "invalid_link", INVALID_ACTION_LINK_MESSAGE)
+    if mismatch and not password_issue:
+        return _password_policy_error("password_mismatch")
+    return _password_policy_error("password_length")
+
+
 def create_app(
     settings=None,  # noqa: ANN001 - reserved application-factory contract
     *,
@@ -142,6 +211,7 @@ def create_app(
     auth_settings: AuthSettings | None = None,
     principal_dependency: Callable | None = None,
     health_check: Callable[[], bool] | None = None,
+    account_access_service: AccountAccessService | None = None,
 ) -> FastAPI:
     del settings
     active_database = database_instance or database
@@ -250,6 +320,7 @@ def create_app(
                 "/api/deal-pipeline",
                 "/api/deals",
                 "/api/companies",
+                "/api/users",
             )
         ):
             response.headers["Cache-Control"] = "no-store"
@@ -281,8 +352,15 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error(
-        _request: Request, error: RequestValidationError
+        request: Request, error: RequestValidationError
     ) -> JSONResponse:
+        if request.url.path == FORGOT_PASSWORD_PATH:
+            # Same answer as every other recovery request (RESET-01).
+            return JSONResponse(
+                status_code=202, content=ForgotPasswordResponse().model_dump()
+            )
+        if request.url.path in PUBLIC_TOKEN_PATHS:
+            return _public_token_validation_error(error)
         return _error(
             422,
             "validation_error",
@@ -589,6 +667,332 @@ def create_app(
             path="/",
         )
 
+    # Account access: invitations, acceptance and password recovery --------
+
+    def require_account_service() -> AccountAccessService:
+        if account_access_service is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "account_access_unavailable",
+                    "message": "Convites e recuperação de senha temporariamente indisponíveis.",
+                },
+            )
+        return account_access_service
+
+    async def require_public_origin(request: Request) -> None:
+        require_expected_origin(request)
+
+    async def resolve_account_admin(request: Request) -> SessionContext:
+        if not isinstance(resolve_principal, CookiePrincipalResolver):
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "auth_unavailable",
+                    "message": "Autenticação temporariamente indisponível.",
+                },
+            )
+        context = await resolve_principal.authenticate(request)
+        if not can_perform_action(context.principal, Action.MANAGE_USERS):
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "forbidden", "message": "Acesso negado."},
+            )
+        return context
+
+    def source_ip(request: Request) -> str:
+        return request.client.host if request.client is not None else "unknown"
+
+    def run_account_admin(request: Request, operation: Callable[[], object]):  # noqa: ANN202
+        try:
+            return operation()
+        except AccountAccessAuthorizationError:
+            audit_request_denial(request, "forbidden")
+            return _error(403, "forbidden", "Acesso negado.")
+        except AccountActionRateLimitedError:
+            response = _error(
+                429,
+                "rate_limited",
+                "Muitos convites enviados para este e-mail ou rede. "
+                "Aguarde alguns minutos e tente novamente.",
+            )
+            response.headers["Retry-After"] = str(ACCOUNT_ACTION_RETRY_AFTER_SECONDS)
+            return response
+        except AccountAlreadyActiveError:
+            return _error(409, "account_active", "Este e-mail já pertence a um usuário ativo.")
+        except AccountRequiresReactivationError:
+            return _error(
+                409,
+                "account_inactive",
+                "Este usuário está inativo. Reative o acesso em vez de enviar um convite.",
+            )
+        except AccountReactivationStateError:
+            return _error(
+                409,
+                "account_not_inactive",
+                "Somente usuários inativos podem ser reativados.",
+            )
+        except AccountStateError:
+            return _error(
+                409,
+                "invitation_not_pending",
+                "Este convite não está mais pendente.",
+            )
+        except AccountAccessValidationError:
+            return _error(422, "validation_error", "Dados do convite inválidos.")
+        except (AccountAccessTenantUnavailableError, TenantUnavailableError):
+            return _error(
+                503,
+                "tenant_unavailable",
+                "Banco da empresa temporariamente indisponível.",
+            )
+
+    def account_user_payload(
+        account_service: AccountAccessService,
+        context: SessionContext,
+        user_id: str,
+    ) -> AccountUserResponse:
+        view = account_service.account_user(
+            context.principal.tenant_id, context.principal, user_id
+        )
+        return AccountUserResponse(
+            id=view.id,
+            name=view.name,
+            email=view.email,
+            jobTitle=view.job_title,
+            team=view.team,
+            role=view.role,
+            status=view.status,
+            invitedAt=view.invited_at,
+        )
+
+    def account_json(model, status_code: int = 200) -> JSONResponse:  # noqa: ANN001
+        return JSONResponse(
+            status_code=status_code,
+            content=model.model_dump(by_alias=True, mode="json"),
+        )
+
+    @app.post(
+        "/api/users/invitations",
+        status_code=201,
+        response_model=InvitationResponse,
+    )
+    def create_invitation(
+        payload: InvitationCreateRequest,
+        request: Request,
+        context: SessionContext = Depends(resolve_account_admin),
+    ):
+        account_service = require_account_service()
+
+        def operation() -> JSONResponse:
+            result = account_service.invite(
+                context.principal.tenant_id,
+                context.principal,
+                InvitationCommand(
+                    name=payload.name,
+                    email=payload.email,
+                    job_title=payload.job_title,
+                    team_id=None,
+                    role=payload.role,
+                    team_name=payload.team,
+                ),
+                source_ip(request),
+            )
+            return account_json(
+                InvitationResponse(
+                    user=account_user_payload(account_service, context, result.user_id),
+                    deliveryStatus=result.delivery_status,
+                ),
+                status_code=201,
+            )
+
+        return run_account_admin(request, operation)
+
+    @app.post(
+        "/api/users/{user_id}/invitation/resend",
+        response_model=InvitationResponse,
+    )
+    def resend_invitation(
+        request: Request,
+        user_id: str = FastAPIPath(min_length=1, max_length=ACCOUNT_USER_ID_MAX_LENGTH),
+        context: SessionContext = Depends(resolve_account_admin),
+    ):
+        account_service = require_account_service()
+
+        def operation() -> JSONResponse:
+            result = account_service.resend_invitation(
+                context.principal.tenant_id,
+                context.principal,
+                user_id,
+                source_ip(request),
+            )
+            return account_json(
+                InvitationResponse(
+                    user=account_user_payload(account_service, context, result.user_id),
+                    deliveryStatus=result.delivery_status,
+                )
+            )
+
+        return run_account_admin(request, operation)
+
+    @app.post(
+        "/api/users/{user_id}/invitation/cancel",
+        response_model=UserAccessResponse,
+    )
+    def cancel_invitation(
+        request: Request,
+        user_id: str = FastAPIPath(min_length=1, max_length=ACCOUNT_USER_ID_MAX_LENGTH),
+        context: SessionContext = Depends(resolve_account_admin),
+    ):
+        account_service = require_account_service()
+
+        def operation() -> JSONResponse:
+            result = account_service.cancel_invitation(
+                context.principal.tenant_id, context.principal, user_id
+            )
+            return account_json(
+                UserAccessResponse(
+                    user=account_user_payload(account_service, context, result.user_id)
+                )
+            )
+
+        return run_account_admin(request, operation)
+
+    @app.post(
+        "/api/users/{user_id}/reactivate",
+        response_model=UserAccessResponse,
+    )
+    def reactivate_user(
+        request: Request,
+        user_id: str = FastAPIPath(min_length=1, max_length=ACCOUNT_USER_ID_MAX_LENGTH),
+        context: SessionContext = Depends(resolve_account_admin),
+    ):
+        account_service = require_account_service()
+
+        def operation() -> JSONResponse:
+            result = account_service.reactivate_user(
+                context.principal.tenant_id, context.principal, user_id
+            )
+            return account_json(
+                UserAccessResponse(
+                    user=account_user_payload(account_service, context, result.user_id)
+                )
+            )
+
+        return run_account_admin(request, operation)
+
+    def invalid_link_response() -> JSONResponse:
+        return _error(400, "invalid_link", INVALID_ACTION_LINK_MESSAGE)
+
+    def reject_token_query(request: Request) -> JSONResponse | None:
+        # Tokens travel only in the JSON body; a query string is never accepted.
+        return invalid_link_response() if request.query_params else None
+
+    def inspect_public_action(
+        payload: AccountActionTokenRequest, request: Request, purpose: str
+    ):  # noqa: ANN202
+        rejected = reject_token_query(request)
+        if rejected is not None:
+            return rejected
+        try:
+            view = require_account_service().inspect_action(
+                payload.slug, purpose, payload.token
+            )
+        except AccountActionLinkInvalidError:
+            return invalid_link_response()
+        return AccountActionViewResponse(company_name=view.company_name, email=view.email)
+
+    @app.post(
+        "/api/auth/invitations/inspect",
+        response_model=AccountActionViewResponse,
+        dependencies=[Depends(require_public_origin)],
+    )
+    def inspect_invitation(payload: AccountActionTokenRequest, request: Request):
+        return inspect_public_action(payload, request, "invitation")
+
+    @app.post(
+        "/api/auth/password/reset/inspect",
+        response_model=AccountActionViewResponse,
+        dependencies=[Depends(require_public_origin)],
+    )
+    def inspect_password_reset(payload: AccountActionTokenRequest, request: Request):
+        return inspect_public_action(payload, request, "password_reset")
+
+    def complete_public_action(request: Request, operation: Callable[[], None]):  # noqa: ANN202
+        rejected = reject_token_query(request)
+        if rejected is not None:
+            return rejected
+        try:
+            operation()
+        except AccountActionLinkInvalidError:
+            return invalid_link_response()
+        except AccountPasswordPolicyError as error:
+            return _password_policy_error(error.code)
+        return Response(status_code=204)
+
+    @app.post(
+        "/api/auth/invitations/accept",
+        status_code=204,
+        response_class=Response,
+        response_model=None,
+        dependencies=[Depends(require_public_origin)],
+    )
+    def accept_invitation(payload: InvitationAcceptRequest, request: Request):
+        return complete_public_action(
+            request,
+            lambda: require_account_service().accept_invitation(
+                payload.slug,
+                payload.token,
+                payload.password,
+                payload.password_confirmation,
+                source_ip(request),
+            ),
+        )
+
+    @app.post(
+        "/api/auth/password/reset",
+        status_code=204,
+        response_class=Response,
+        response_model=None,
+        dependencies=[Depends(require_public_origin)],
+    )
+    def reset_password(payload: PasswordResetRequest, request: Request):
+        return complete_public_action(
+            request,
+            lambda: require_account_service().reset_password(
+                payload.slug,
+                payload.token,
+                payload.password,
+                payload.password_confirmation,
+                source_ip(request),
+            ),
+        )
+
+    def run_password_reset_request(slug: str, email: str, address: str) -> None:
+        try:
+            require_account_service().request_password_reset(slug, email, address)
+        except Exception:  # pragma: no cover - the service audits its own outcomes
+            LOG.error("password reset request failed", exc_info=False)
+
+    @app.post(
+        FORGOT_PASSWORD_PATH,
+        status_code=202,
+        response_model=ForgotPasswordResponse,
+        dependencies=[Depends(require_public_origin)],
+    )
+    def forgot_password(
+        payload: ForgotPasswordRequest,
+        request: Request,
+        background_tasks: BackgroundTasks,
+    ) -> ForgotPasswordResponse:
+        # The lookup and any SMTP call run after the response is sent, so the
+        # answer neither reveals the outcome nor waits for the mail server.
+        if account_access_service is not None:
+            background_tasks.add_task(
+                run_password_reset_request, payload.slug, payload.email, source_ip(request)
+            )
+        return ForgotPasswordResponse()
+
     @app.get("/api/workspace")
     def load_workspace(
         principal: ResolvedPrincipal = Depends(resolve_principal),
@@ -807,6 +1211,24 @@ def create_app(
     @app.get("/")
     def root_shell() -> FileResponse:
         return FileResponse(static_dir / "index.html")
+
+    def public_action_shell(tenant_slug: str):  # noqa: ANN202
+        # The token stays in the URL fragment, which browsers never send here.
+        try:
+            normalize_tenant_identifier(tenant_slug)
+        except ValueError:
+            return _error(404, "tenant_not_found", LOGIN_FAILURE_MESSAGE)
+        response = FileResponse(static_dir / "index.html")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    for page in PUBLIC_ACTION_PAGES:
+        app.add_api_route(
+            f"/{{tenant_slug}}/{page}",
+            public_action_shell,
+            methods=["GET"],
+            name=f"public_{page.replace('-', '_')}_shell",
+        )
 
     @app.get("/{tenant_slug}")
     def tenant_shell(tenant_slug: str, request: Request):

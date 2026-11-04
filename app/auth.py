@@ -171,7 +171,13 @@ class CookiePrincipalResolver:
                 self._audit_denial("unauthenticated", request=request)
                 raise unauthenticated_error(request)
 
-    async def __call__(self, request: Request) -> AsyncIterator[ResolvedPrincipal]:
+    async def authenticate(self, request: Request) -> SessionContext:
+        """Validate origin and the session cookie without opening a tenant session.
+
+        Used by routes whose service opens its own short tenant transactions,
+        so a request never holds two tenant connections at once.
+        """
+
         self._validate_origin(request)
         await self._reject_alternate_session_sources(request)
         token = request.cookies.get(SESSION_COOKIE_NAME)
@@ -186,6 +192,11 @@ class CookiePrincipalResolver:
         except AuthenticationError:
             self._audit_denial("unauthenticated", request=request, token=token)
             raise unauthenticated_error(request) from None
+        request.state.session_context = context
+        return context
+
+    async def __call__(self, request: Request) -> AsyncIterator[ResolvedPrincipal]:
+        context = await self.authenticate(request)
 
         changed_user_ids: tuple[str, ...] = ()
         try:

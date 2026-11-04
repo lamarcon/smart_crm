@@ -380,6 +380,41 @@ class ControlRepository:
             block_for=_ACTION_REQUEST_WINDOW,
         )
 
+    def admit_account_action_request(
+        self,
+        subjects: tuple[tuple[str, str], ...],
+        *,
+        now: datetime,
+    ) -> bool:
+        """Count one invitation/recovery request; False when any bucket is blocked.
+
+        A bucket blocks *after* its limit is reached, so the 5th account request
+        (30th per IP) is still admitted and only later requests in the window are
+        held. Rows are locked in the given order before checking, and nothing is
+        counted when a bucket is already blocked.
+        """
+
+        for bucket_type, subject_digest in subjects:
+            if bucket_type not in _ACTION_BUCKET_LIMITS:
+                raise ValueError("unsupported account action throttle bucket")
+            throttle = self.session.scalar(
+                select(LoginThrottle)
+                .where(
+                    LoginThrottle.bucket_type == bucket_type,
+                    LoginThrottle.subject_digest == subject_digest,
+                )
+                .with_for_update()
+            )
+            if (
+                throttle is not None
+                and throttle.blocked_until is not None
+                and throttle.blocked_until > now
+            ):
+                return False
+        for bucket_type, subject_digest in subjects:
+            self.record_account_action_request(bucket_type, subject_digest, now=now)
+        return True
+
     def clear_login_throttle(self, bucket_type: str, subject_digest: str) -> bool:
         result = self.session.execute(
             delete(LoginThrottle).where(

@@ -148,6 +148,10 @@ class ControlRepositoryStub:
     def create_session(self, **_values) -> None:  # noqa: ANN003
         raise AssertionError("account access must never create an authenticated session")
 
+    def admit_account_action_request(self, subjects, *, now) -> bool:  # noqa: ANN001
+        # Limits are exercised against the real ControlRepository in the T8/T11 tests.
+        return True
+
 
 class RecordingAudit:
     def __init__(self) -> None:

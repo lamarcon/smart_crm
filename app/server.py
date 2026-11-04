@@ -12,9 +12,16 @@ from sqlalchemy import text
 
 from app.auth import AuthSettings
 from app.control_database import ControlDatabase
+from app.mail import (
+    MailSender,
+    SmtpMailSender,
+    UnconfiguredMailSender,
+    smtp_settings_from_environment,
+)
 from app.main import STATIC_DIR, create_app as create_http_app
 from app.security.database_urls import insecure_tenant_loopback_enabled
-from app.security.secrets import DpapiFileSecretProvider, SecretProvider
+from app.security.secrets import DpapiFileSecretProvider, DpapiProtector, SecretProvider
+from app.services.account_access import AccountAccessService
 from app.services.auth import AuthService, SecurityAuditService
 from app.tenant_database import (
     ControlTenantProfileLoader,
@@ -35,6 +42,7 @@ class CentralRuntime:
     control_database: ControlDatabase
     tenant_router: TenantDatabaseRouter
     auth_service: AuthService
+    account_access_service: AccountAccessService | None = None
 
     def control_is_ready(self) -> bool:
         try:
@@ -61,6 +69,24 @@ def _default_secret_provider() -> SecretProvider:
     if not root:
         raise RuntimeBootstrapError("central runtime unavailable")
     return DpapiFileSecretProvider(Path(root))
+
+
+DEFAULT_EXPECTED_ORIGIN = "https://sc2030.brbots.com"
+
+
+def _expected_origin() -> str:
+    return os.getenv("SMART_CRM_EXPECTED_ORIGIN", DEFAULT_EXPECTED_ORIGIN)
+
+
+def _read_dpapi_password(path: str) -> str:
+    return DpapiProtector().unprotect(Path(path).read_bytes()).decode("utf-8")
+
+
+def _default_mail_sender() -> MailSender:
+    """SMTP from the environment; the password only ever comes from DPAPI."""
+
+    settings = smtp_settings_from_environment(os.environ, read_password=_read_dpapi_password)
+    return UnconfiguredMailSender() if settings is None else SmtpMailSender(settings)
 
 
 def _tenant_router_settings() -> TenantDatabaseRouterSettings:
@@ -97,6 +123,7 @@ def bootstrap_runtime(
     control_database: ControlDatabase | None = None,
     control_database_factory: Callable[[], ControlDatabase] = ControlDatabase,
     secret_provider: SecretProvider | None = None,
+    mail_sender: MailSender | None = None,
 ) -> CentralRuntime:
     """Validate the control lineage and compose lazy tenant routing."""
 
@@ -113,12 +140,20 @@ def bootstrap_runtime(
             security_event_recorder=security_audit.record,
             settings=_tenant_router_settings(),
         )
+        active_mail_sender = mail_sender or _default_mail_sender()
         return CentralRuntime(
             control_database=active_control,
             tenant_router=router,
             auth_service=AuthService(
                 active_control,
                 router,
+                security_audit=security_audit,
+            ),
+            account_access_service=AccountAccessService(
+                active_control,
+                router,
+                active_mail_sender,
+                public_origin=_expected_origin(),
                 security_audit=security_audit,
             ),
         )
@@ -145,13 +180,9 @@ def create_app(
         static_dir=static_dir,
         auth_service=active_runtime.auth_service,
         tenant_router=active_runtime.tenant_router,
-        auth_settings=AuthSettings(
-            expected_origin=os.getenv(
-                "SMART_CRM_EXPECTED_ORIGIN",
-                "https://sc2030.brbots.com",
-            )
-        ),
+        auth_settings=AuthSettings(expected_origin=_expected_origin()),
         health_check=active_runtime.control_is_ready,
+        account_access_service=active_runtime.account_access_service,
     )
     application.state.central_runtime = active_runtime
     application.add_event_handler("shutdown", active_runtime.dispose)
