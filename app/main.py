@@ -802,6 +802,7 @@ def create_app(
                 InvitationResponse(
                     user=account_user_payload(account_service, context, result.user_id),
                     deliveryStatus=result.delivery_status,
+                    workspaceVersion=result.workspace_version,
                 ),
                 status_code=201,
             )
@@ -830,6 +831,7 @@ def create_app(
                 InvitationResponse(
                     user=account_user_payload(account_service, context, result.user_id),
                     deliveryStatus=result.delivery_status,
+                    workspaceVersion=result.workspace_version,
                 )
             )
 
@@ -852,7 +854,8 @@ def create_app(
             )
             return account_json(
                 UserAccessResponse(
-                    user=account_user_payload(account_service, context, result.user_id)
+                    user=account_user_payload(account_service, context, result.user_id),
+                    workspaceVersion=result.workspace_version,
                 )
             )
 
@@ -875,7 +878,8 @@ def create_app(
             )
             return account_json(
                 UserAccessResponse(
-                    user=account_user_payload(account_service, context, result.user_id)
+                    user=account_user_payload(account_service, context, result.user_id),
+                    workspaceVersion=result.workspace_version,
                 )
             )
 

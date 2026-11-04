@@ -385,6 +385,8 @@ async function openFresh(options = {}) {
     const users = api.state.users;
     const invitedAt = new Date(Date.UTC(2026, 10, 4, 12, 0, api.userRequests.length)).toISOString();
     const row = user => ({ id: user.id, name: user.name, email: user.email, jobTitle: user.jobTitle || '', team: user.team || '', role: user.role, status: user.status, invitedAt: user.invitedAt || null });
+    // Like the server, every successful account action advances the workspace version.
+    const advanced = () => { api.version += 1; return api.version; };
     if (request.method() === 'POST' && url.pathname === '/api/users/invitations') {
       const email = String(body.email || '').trim().toLowerCase();
       let user = users.find(candidate => String(candidate.email || '').toLowerCase() === email);
@@ -395,7 +397,7 @@ async function openFresh(options = {}) {
         users.push(user);
       }
       Object.assign(user, { name: body.name.trim(), email, jobTitle: body.jobTitle.trim(), team: body.team || '', role: body.role, status: 'Pendente', invitedAt });
-      return json(201, { user: row(user), deliveryStatus: api.inviteDeliveryStatus });
+      return json(201, { user: row(user), deliveryStatus: api.inviteDeliveryStatus, workspaceVersion: advanced() });
     }
     const match = url.pathname.match(/^\/api\/users\/([^/]+)\/(invitation\/resend|invitation\/cancel|reactivate)$/);
     if (request.method() !== 'POST' || !match) return json(404, { error: { code: 'not_found', message: 'Rota inexistente.' } });
@@ -403,15 +405,15 @@ async function openFresh(options = {}) {
     if (match[2] === 'reactivate') {
       if (!user || user.status !== 'Inativo') return json(409, { error: { code: 'account_not_inactive', message: 'Somente usuários inativos podem ser reativados.' } });
       user.status = 'Ativo';
-      return json(200, { user: row(user) });
+      return json(200, { user: row(user), workspaceVersion: advanced() });
     }
     if (!user || user.status !== 'Pendente') return json(409, { error: { code: 'invitation_not_pending', message: 'Este convite não está mais pendente.' } });
     if (match[2] === 'invitation/cancel') {
       user.status = 'Cancelado';
-      return json(200, { user: row(user) });
+      return json(200, { user: row(user), workspaceVersion: advanced() });
     }
     user.invitedAt = invitedAt;
-    return json(200, { user: row(user), deliveryStatus: api.inviteDeliveryStatus });
+    return json(200, { user: row(user), deliveryStatus: api.inviteDeliveryStatus, workspaceVersion: advanced() });
   });
   await context.route('**/api/workspace**', async route => {
     const request = route.request();
@@ -3469,6 +3471,45 @@ async function storageEntries(page) {
     assert.equal(juliana.status, 'Pendente');
     assert.equal(api.workspaceWrites.length, writesBefore, 'o convite não deve gravar o snapshot');
     assert.equal((await assignableUserIds(page)).includes(juliana.id), false);
+  });
+
+  await run('INVUI-08 aba do administrador acompanha a versão avançada pelo convite e salva sem conflito', async page => {
+    const api = apiByPage.get(page);
+    const versionBefore = api.version;
+    const loadsBefore = api.workspaceLoads;
+    await goTo(page, 'Usuários e permissões');
+    await inviteFromDialog(page, { name: 'Versao Seguida', email: 'versao@teste.invalid' });
+    await page.locator('#toastRegion').getByText('Convite enviado para versao@teste.invalid.', { exact: true }).waitFor();
+    assert.equal(api.version, versionBefore + 1);
+
+    await createLead(page, 'Lead depois do convite');
+    await stateFrom(page);
+    const write = api.workspaceWrites.at(-1);
+    assert.equal(write.version, versionBefore + 1, 'o snapshot deve partir da versão devolvida pelo convite');
+    assert.equal(write.state.users.some(user => user.email === 'versao@teste.invalid'), true);
+    assert.equal(api.version, versionBefore + 2);
+    assert.equal(api.workspaceLoads, loadsBefore, 'nenhuma recarga por conflito');
+    assert.equal(await page.getByText('Dados atualizados em outra sessão. A versão atual foi recarregada.', { exact: true }).count(), 0);
+  });
+
+  await run('INVUI-09 versão avançada também por outra sessão força recarga em vez de sobrescrever usuários', async page => {
+    const api = apiByPage.get(page);
+    const loadsBefore = api.workspaceLoads;
+    await goTo(page, 'Usuários e permissões');
+    // Another session accepted an invitation meanwhile (status visible in the snapshot).
+    api.version += 1;
+    api.state.users.push({ id: 'user-aceito-fora', name: 'Aceito Fora', email: 'aceito@teste.invalid', jobTitle: 'SDR', team: '', role: 'Vendedor', status: 'Ativo', invitedAt: null });
+    await inviteFromDialog(page, { name: 'Gap Versao', email: 'gap@teste.invalid' });
+    await page.locator('#toastRegion').getByText('Convite enviado para gap@teste.invalid.', { exact: true }).waitFor();
+    const versionAfterInvite = api.version;
+
+    await createLead(page, 'Lead com versão defasada', { waitForSaved: false });
+    await page.getByText('Dados atualizados em outra sessão. A versão atual foi recarregada.', { exact: true }).waitFor();
+    assert.equal(api.workspaceLoads, loadsBefore + 1);
+    assert.equal(api.version, versionAfterInvite, 'o snapshot defasado não pode ser gravado');
+    assert.equal(api.state.users.some(user => user.id === 'user-aceito-fora'), true);
+    const state = await stateFrom(page);
+    assert.equal(state.users.some(user => user.id === 'user-aceito-fora'), true);
   });
 
   await run('INVUI-03 falha de SMTP mantém Pendente e oferece reenvio sem afirmar entrega', async page => {

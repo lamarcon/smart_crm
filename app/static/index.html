@@ -2666,6 +2666,12 @@
       return state.users.find(candidate => candidate.id === record.id);
     }
 
+    // Account actions advance the workspace version. Follow it only when nothing
+    // else changed in between; otherwise the next save gets 409 and reloads.
+    function adoptWorkspaceVersion(next) {
+      if (Number.isInteger(next) && next === workspaceVersion + 1) workspaceVersion = next;
+    }
+
     async function postUserAction(path, body = null) {
       const init = { method: 'POST', headers: { Accept: 'application/json' } };
       if (body) {
@@ -2713,6 +2719,7 @@
           team: data.team.trim() || null, role: data.role
         });
         const user = applyServerUser(payload.user);
+        adoptWorkspaceVersion(payload.workspaceVersion);
         inviteDelivery.set(user.id, payload.deliveryStatus);
         document.getElementById('userDialog').close();
         toast(deliveryMessage(user, payload.deliveryStatus));
@@ -2752,6 +2759,7 @@
         try {
           const payload = await postUserAction(`/api/users/${encodeURIComponent(id)}/invitation/resend`);
           const updated = applyServerUser(payload.user);
+          adoptWorkspaceVersion(payload.workspaceVersion);
           inviteDelivery.set(updated.id, payload.deliveryStatus);
           toast(deliveryMessage(updated, payload.deliveryStatus));
         } catch (failure) {
@@ -2769,6 +2777,7 @@
         try {
           const payload = await postUserAction(`/api/users/${encodeURIComponent(id)}/invitation/cancel`);
           const updated = applyServerUser(payload.user);
+          adoptWorkspaceVersion(payload.workspaceVersion);
           inviteDelivery.delete(updated.id);
           toast(`Convite de ${updated.name} cancelado.`);
         } catch (failure) {
@@ -2786,6 +2795,7 @@
         try {
           const payload = await postUserAction(`/api/users/${encodeURIComponent(id)}/reactivate`);
           const updated = applyServerUser(payload.user);
+          adoptWorkspaceVersion(payload.workspaceVersion);
           toast(`Acesso de ${updated.name} reativado.`);
         } catch (failure) {
           toast(userActionMessage(failure, 'Não foi possível reativar o usuário.'));

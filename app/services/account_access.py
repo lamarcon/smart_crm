@@ -20,7 +20,7 @@ from app.mail import (
     render_invitation_email,
     render_password_reset_email,
 )
-from app.models import AccountActionToken, CrmUser, Team
+from app.models import AccountActionToken, CrmUser, Team, Workspace
 from app.policies import Action, CURRENT_ROLES, PrincipalScope, can_perform_action
 from app.repositories.account_actions import AccountActionRepository
 from app.repositories.workspace import team_id_for_name
@@ -127,12 +127,14 @@ class InvitationResult:
     status: str
     delivery_status: str
     delivery_failure_code: str | None = None
+    workspace_version: int | None = None
 
 
 @dataclass(frozen=True)
 class UserAccessResult:
     user_id: str
     status: str
+    workspace_version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +150,7 @@ class _PreparedInvitation:
     token_id: UUID
     raw_token: str
     action: str
+    workspace_version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -225,6 +228,33 @@ class AccountAccessService:
         if not workspace_id or str(workspace_id) != actor.workspace_id:
             raise AccountAccessAuthorizationError("principal is not authorized")
         return str(workspace_id)
+
+    @staticmethod
+    def _lock_workspace(session: Session, workspace_id: str) -> Workspace | None:
+        """Lock the workspace row before any account row.
+
+        Snapshot saves lock the workspace and then reconcile users, so taking the
+        same order here prevents deadlocks between the two paths.
+        """
+
+        return session.scalar(
+            select(Workspace).where(Workspace.id == workspace_id).with_for_update()
+        )
+
+    @staticmethod
+    def _advance_workspace_version(workspace: Workspace | None) -> int | None:
+        """Publish an account change to every open snapshot.
+
+        Account actions change rows that the workspace snapshot shows. Without a
+        new version, a tab loaded earlier would save its stale user list over
+        them (deleting an accepted invitee or undoing a reactivation) instead of
+        receiving a conflict and reloading.
+        """
+
+        if workspace is None or workspace.initialized_at is None:
+            return None
+        workspace.version += 1
+        return workspace.version
 
     @staticmethod
     def _normalized_command(command: InvitationCommand) -> InvitationCommand:
@@ -319,6 +349,7 @@ class AccountAccessService:
             try:
                 with self._router.tenant_session_scope(tenant_id) as session:
                     workspace_id = self._workspace_id(session, actor)
+                    workspace = self._lock_workspace(session, workspace_id)
                     user = self._account_by_email(session, workspace_id, command.email)
                     if user is None or user.status in {"Pendente", "Cancelado"}:
                         self._ensure_team(session, workspace_id, command)
@@ -379,6 +410,7 @@ class AccountAccessService:
                         token_id=token.id,
                         raw_token=raw_token,
                         action="created" if created else "resent",
+                        workspace_version=self._advance_workspace_version(workspace),
                     )
             except IntegrityError:
                 if attempt == 0:
@@ -398,6 +430,7 @@ class AccountAccessService:
             raise AccountAccessValidationError("token generation failed")
         with self._router.tenant_session_scope(tenant_id) as session:
             workspace_id = self._workspace_id(session, actor)
+            workspace = self._lock_workspace(session, workspace_id)
             user = session.scalar(
                 select(CrmUser)
                 .where(
@@ -428,6 +461,7 @@ class AccountAccessService:
                 token_id=token.id,
                 raw_token=raw_token,
                 action="resent",
+                workspace_version=self._advance_workspace_version(workspace),
             )
 
     def _deliver(
@@ -496,6 +530,7 @@ class AccountAccessService:
             status="Pendente",
             delivery_status=delivery_status,
             delivery_failure_code=failure_code,
+            workspace_version=prepared.workspace_version,
         )
 
     def invite(
@@ -590,6 +625,7 @@ class AccountAccessService:
         now = self._clock()
         with self._router.tenant_session_scope(tenant_id) as session:
             workspace_id = self._workspace_id(session, actor)
+            workspace = self._lock_workspace(session, workspace_id)
             user = session.scalar(
                 select(CrmUser)
                 .where(
@@ -603,6 +639,7 @@ class AccountAccessService:
                 raise AccountReactivationStateError("account is not inactive")
             user.status = "Ativo"
             user.auth_version = user.auth_version + 1
+            workspace_version = self._advance_workspace_version(workspace)
         self._record(
             event_type="user.reactivated",
             tenant_id=tenant_id,
@@ -611,7 +648,9 @@ class AccountAccessService:
             outcome_code="reactivated",
             occurred_at=now,
         )
-        return UserAccessResult(user_id=user_id, status="Ativo")
+        return UserAccessResult(
+            user_id=user_id, status="Ativo", workspace_version=workspace_version
+        )
 
     def account_user(
         self,
@@ -661,6 +700,7 @@ class AccountAccessService:
         now = self._clock()
         with self._router.tenant_session_scope(tenant_id) as session:
             workspace_id = self._workspace_id(session, actor)
+            workspace = self._lock_workspace(session, workspace_id)
             user = session.scalar(
                 select(CrmUser)
                 .where(
@@ -674,6 +714,7 @@ class AccountAccessService:
                 raise InvitationStateError("invitation is not pending")
             user.status = "Cancelado"
             user.auth_enabled = False
+            workspace_version = self._advance_workspace_version(workspace)
             self._account_action_repository_factory(
                 session, workspace_id
             ).invalidate_active(
@@ -690,7 +731,9 @@ class AccountAccessService:
             outcome_code="cancelled",
             occurred_at=now,
         )
-        return UserAccessResult(user_id=user_id, status="Cancelado")
+        return UserAccessResult(
+            user_id=user_id, status="Cancelado", workspace_version=workspace_version
+        )
 
 
     # Public invitation inspection and acceptance -----------------------------
@@ -763,7 +806,9 @@ class AccountAccessService:
             CrmUser.deleted_at.is_(None),
         )
         if lock:
-            # Same order as invite/resend/cancel (user, then token) to avoid deadlocks.
+            # Same order as snapshot saves and invite/resend/cancel (workspace,
+            # then user, then token) to avoid deadlocks.
+            cls._lock_workspace(session, workspace_id)
             statement = statement.with_for_update()
         user = session.scalar(statement)
         if user is None or not cls._eligible_holder(user, purpose):
@@ -850,6 +895,10 @@ class AccountAccessService:
                         user.auth_enabled = True
                         user.status = "Ativo"
                         user.auth_version = user.auth_version + 1
+                        # The status is visible in the snapshot; open tabs must reload.
+                        self._advance_workspace_version(
+                            self._lock_workspace(session, workspace_id)
+                        )
                         session.flush()
                         accepted_user_id = user.id
         except (TenantUnavailableError, AccountActionLinkInvalidError):

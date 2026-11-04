@@ -882,6 +882,7 @@ def test_invitation_response_serializes_server_confirmed_state_in_camel_case() -
             invitedAt=datetime(2026, 11, 4, 12, 0, tzinfo=UTC),
         ),
         deliveryStatus="failed",
+        workspaceVersion=12,
     )
 
     assert response.model_dump(by_alias=True, mode="json") == {
@@ -896,9 +897,14 @@ def test_invitation_response_serializes_server_confirmed_state_in_camel_case() -
             "invitedAt": "2026-11-04T12:00:00Z",
         },
         "deliveryStatus": "failed",
+        "workspaceVersion": 12,
     }
     with pytest.raises(ValidationError):
         InvitationResponse(user=response.user, deliveryStatus="delivered")
+    with pytest.raises(ValidationError):
+        InvitationResponse(user=response.user, deliveryStatus="sent", workspaceVersion=0)
+    uninitialized = InvitationResponse(user=response.user, deliveryStatus="sent")
+    assert uninitialized.model_dump(by_alias=True)["workspaceVersion"] is None
     with pytest.raises(ValidationError):
         AccountUserResponse.model_validate(
             {**response.user.model_dump(by_alias=True), "passwordHash": "x"}

@@ -170,10 +170,13 @@ class AccountUserResponse(AccountAdminContractModel):
 class InvitationResponse(AccountAdminContractModel):
     user: AccountUserResponse
     delivery_status: DeliveryStatus = Field(alias="deliveryStatus")
+    # Workspace version after the change; null before workspace initialization.
+    workspace_version: int | None = Field(default=None, alias="workspaceVersion", ge=1)
 
 
 class UserAccessResponse(AccountAdminContractModel):
     user: AccountUserResponse
+    workspace_version: int | None = Field(default=None, alias="workspaceVersion", ge=1)
 
 
 class AccountActionTokenRequest(AuthContractModel):

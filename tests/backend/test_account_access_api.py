@@ -77,7 +77,9 @@ class FakeAccountService:
     def invite(self, tenant_id, actor, command, source_ip):  # noqa: ANN001, ANN201
         self.calls.append(("invite", tenant_id, actor.user_id, command, source_ip))
         self._maybe_fail()
-        return InvitationResult("user-new", "Pendente", self.delivery_status, None)
+        return InvitationResult(
+            "user-new", "Pendente", self.delivery_status, None, workspace_version=8
+        )
 
     def resend_invitation(self, tenant_id, actor, user_id, source_ip):  # noqa: ANN001, ANN201
         self.calls.append(("resend", tenant_id, actor.user_id, user_id, source_ip))
@@ -197,7 +199,11 @@ def test_admin_invitation_returns_server_confirmed_user_and_delivery(
     response = client.post("/api/users/invitations", headers=admin_headers(), json=INVITATION_BODY)
 
     assert response.status_code == 201
-    assert response.json() == {"user": EXPECTED_USER, "deliveryStatus": delivery_status}
+    assert response.json() == {
+        "user": EXPECTED_USER,
+        "deliveryStatus": delivery_status,
+        "workspaceVersion": 8,
+    }
     assert response.headers["cache-control"] == "no-store"
     [(name, tenant_id, actor_id, command, source_ip)] = _business_calls(service)
     assert (name, tenant_id, actor_id, source_ip) == (
@@ -1056,3 +1062,116 @@ def test_live_password_recovery_revokes_sessions_and_uses_the_new_password(live_
     )
     assert (replay.status_code, replay.json()) == (400, INVALID_LINK)
     assert _user(live_stack.database_url, member_id).auth_version == 2
+
+
+# --- Account actions advance the workspace version ------------------------------
+
+
+def _workspace_version(database_url: str, *, initialize_at: int | None = None) -> int | None:
+    """Read (and optionally create/initialize) the shared ``default`` workspace row."""
+
+    from app.models import Workspace
+
+    engine = _engine(database_url)
+    try:
+        with Session(bind=engine) as session, session.begin():
+            _set_workspace(session)
+            workspace = session.get(Workspace, "default")
+            if initialize_at is not None:
+                if workspace is None:
+                    workspace = Workspace(id="default", version=initialize_at)
+                    session.add(workspace)
+                workspace.version = initialize_at
+                workspace.initialized_at = datetime.now(timezone.utc)
+                session.flush()
+            return None if workspace is None else workspace.version
+    finally:
+        engine.dispose()
+
+
+def test_live_account_actions_advance_the_workspace_version_once_each(live_stack: LiveStack) -> None:
+    """Regression: a tab loaded before an account change must get 409, not overwrite it.
+
+    Every action that changes a user visible in the snapshot (invite, resend,
+    cancel, accept, reactivate) advances the version in the same transaction and
+    returns it; failed actions and password resets leave it unchanged.
+    """
+
+    url = live_stack.database_url
+    version = _workspace_version(url, initialize_at=40)
+    _admin_id, admin_email = _seed_member(url, role="Administrador")
+    admin = live_stack.admin(live_stack.login(admin_email, ADMIN_PASSWORD))
+    email = f"versao-{uuid.uuid4().hex[:8]}@example.test"
+
+    created = live_stack.client.post(
+        "/api/users/invitations",
+        headers=admin,
+        json={"name": "Versão", "email": email, "jobTitle": "Vendas", "team": None, "role": "Vendedor"},
+    )
+    assert created.status_code == 201, created.text
+    version += 1
+    assert created.json()["workspaceVersion"] == version == _workspace_version(url)
+    user_id = created.json()["user"]["id"]
+
+    resent = live_stack.client.post(f"/api/users/{user_id}/invitation/resend", headers=admin)
+    version += 1
+    assert resent.json()["workspaceVersion"] == version == _workspace_version(url)
+
+    duplicate_active = live_stack.client.post(
+        "/api/users/invitations",
+        headers=admin,
+        json={"name": "Admin", "email": admin_email, "jobTitle": "Diretora", "team": None, "role": "Vendedor"},
+    )
+    assert duplicate_active.status_code == 409
+    assert _workspace_version(url) == version, "a rejected invitation must not advance the version"
+
+    invalid_accept = live_stack.client.post(
+        "/api/auth/invitations/accept",
+        headers={"origin": ORIGIN},
+        json={"slug": "brbots", "token": "x" * 43, "password": INVITEE_PASSWORD, "password_confirmation": INVITEE_PASSWORD},
+    )
+    assert invalid_accept.status_code == 400
+    assert _workspace_version(url) == version
+
+    accepted = live_stack.client.post(
+        "/api/auth/invitations/accept",
+        headers={"origin": ORIGIN},
+        json={"slug": "brbots", "token": live_stack.link_token(), "password": INVITEE_PASSWORD, "password_confirmation": INVITEE_PASSWORD},
+    )
+    assert accepted.status_code == 204
+    version += 1
+    assert _workspace_version(url) == version
+
+    live_stack.client.post(
+        "/api/auth/password/forgot", headers={"origin": ORIGIN}, json={"slug": "brbots", "email": email}
+    )
+    reset = live_stack.client.post(
+        "/api/auth/password/reset",
+        headers={"origin": ORIGIN},
+        json={"slug": "brbots", "token": live_stack.link_token(), "password": "redefinida-2026", "password_confirmation": "redefinida-2026"},
+    )
+    assert reset.status_code == 204
+    assert _workspace_version(url) == version, "a password reset changes nothing the snapshot shows"
+
+    other = f"cancelar-{uuid.uuid4().hex[:8]}@example.test"
+    pending = live_stack.client.post(
+        "/api/users/invitations",
+        headers=admin,
+        json={"name": "Cancelar", "email": other, "jobTitle": "SDR", "team": None, "role": "Vendedor"},
+    ).json()
+    version += 1
+    cancelled = live_stack.client.post(
+        f"/api/users/{pending['user']['id']}/invitation/cancel", headers=admin
+    )
+    version += 1
+    assert cancelled.json()["workspaceVersion"] == version == _workspace_version(url)
+    cancelled_again = live_stack.client.post(
+        f"/api/users/{pending['user']['id']}/invitation/cancel", headers=admin
+    )
+    assert cancelled_again.status_code == 409
+    assert _workspace_version(url) == version
+
+    inactive_id, _inactive_email = _seed_member(url, role="Vendedor", status="Inativo")
+    reactivated = live_stack.client.post(f"/api/users/{inactive_id}/reactivate", headers=admin)
+    version += 1
+    assert reactivated.json()["workspaceVersion"] == version == _workspace_version(url)
