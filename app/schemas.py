@@ -11,6 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
+from app.security.passwords import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
 
 MODULES = ("leads", "contacts", "companies", "deals")
 EXPECTED_PUBLIC_HOST = "sc2030.brbots.com"
@@ -49,6 +50,16 @@ def normalize_tenant_identifier(identifier: str) -> str:
     return slug
 
 
+RoleName = Literal["Administrador", "Gestor", "Vendedor", "Assistente", "Faturamento"]
+
+
+def _normalize_email(value: str) -> str:
+    normalized = value.strip().lower()
+    if not EMAIL_PATTERN.fullmatch(normalized):
+        raise ValueError("invalid email")
+    return normalized
+
+
 class AuthContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -74,7 +85,7 @@ class LocateTenantResponse(AuthContractModel):
 class LoginRequest(AuthContractModel):
     slug: str = Field(min_length=1, max_length=63)
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
 
     @field_validator("slug")
     @classmethod
@@ -84,10 +95,7 @@ class LoginRequest(AuthContractModel):
     @field_validator("email")
     @classmethod
     def validate_email(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if not EMAIL_PATTERN.fullmatch(normalized):
-            raise ValueError("invalid email")
-        return normalized
+        return _normalize_email(value)
 
 
 class SessionResponse(AuthContractModel):
@@ -97,12 +105,132 @@ class SessionResponse(AuthContractModel):
     user_id: str = Field(min_length=1, max_length=128)
     user_name: str = Field(min_length=1, max_length=255)
     email: str = Field(min_length=3, max_length=254)
-    role: Literal["Administrador", "Gestor", "Vendedor", "Assistente", "Faturamento"]
+    role: RoleName
 
 
 class AuthErrorResponse(AuthContractModel):
     error: str = "invalid_login"
     message: str = LOGIN_FAILURE_MESSAGE
+
+
+# --- Account access: invitations, acceptance and password recovery ----------
+
+AccountStatus = Literal["Ativo", "Pendente", "Inativo", "Cancelado", "Convidado"]
+DeliveryStatus = Literal["pending", "sent", "failed"]
+ACCOUNT_ACTION_TOKEN_MAX_LENGTH = 512
+ACCOUNT_USER_ID_MAX_LENGTH = 128
+INVALID_ACTION_LINK_MESSAGE = "Este link é inválido ou expirou."
+PASSWORD_RESET_REQUEST_MESSAGE = "Se o e-mail existir, enviaremos as instruções."
+PASSWORD_MISMATCH_MESSAGE = "A senha e a confirmação devem ser iguais."
+
+
+def _strip_text(value: Any) -> Any:
+    return value.strip() if isinstance(value, str) else value
+
+
+class AccountAdminContractModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class InvitationCreateRequest(AccountAdminContractModel):
+    name: str = Field(min_length=1, max_length=255)
+    email: str = Field(min_length=3, max_length=254)
+    job_title: str = Field(alias="jobTitle", min_length=1, max_length=255)
+    team: str | None = Field(default=None, min_length=1, max_length=255)
+    role: RoleName
+
+    @field_validator("name", "job_title", mode="before")
+    @classmethod
+    def strip_required_text(cls, value: Any) -> Any:
+        return _strip_text(value)
+
+    @field_validator("team", mode="before")
+    @classmethod
+    def strip_optional_team(cls, value: Any) -> Any:
+        value = _strip_text(value)
+        return value or None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _normalize_email(value)
+
+
+class AccountUserResponse(AccountAdminContractModel):
+    id: str = Field(min_length=1, max_length=ACCOUNT_USER_ID_MAX_LENGTH)
+    name: str = Field(min_length=1, max_length=255)
+    email: str = Field(min_length=3, max_length=320)
+    job_title: str = Field(alias="jobTitle", max_length=255)
+    team: str | None = Field(default=None, max_length=255)
+    role: RoleName
+    status: AccountStatus
+    invited_at: datetime | None = Field(default=None, alias="invitedAt")
+
+
+class InvitationResponse(AccountAdminContractModel):
+    user: AccountUserResponse
+    delivery_status: DeliveryStatus = Field(alias="deliveryStatus")
+
+
+class UserAccessResponse(AccountAdminContractModel):
+    user: AccountUserResponse
+
+
+class AccountActionTokenRequest(AuthContractModel):
+    slug: str = Field(min_length=1, max_length=63)
+    token: str = Field(min_length=1, max_length=ACCOUNT_ACTION_TOKEN_MAX_LENGTH)
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, value: str) -> str:
+        return normalize_tenant_identifier(value)
+
+
+class AccountPasswordRequest(AccountActionTokenRequest):
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+    password_confirmation: str = Field(
+        min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH
+    )
+
+    @model_validator(mode="after")
+    def require_matching_confirmation(self) -> "AccountPasswordRequest":
+        if self.password != self.password_confirmation:
+            raise ValueError(PASSWORD_MISMATCH_MESSAGE)
+        return self
+
+
+class InvitationAcceptRequest(AccountPasswordRequest):
+    pass
+
+
+class PasswordResetRequest(AccountPasswordRequest):
+    pass
+
+
+class ForgotPasswordRequest(AuthContractModel):
+    slug: str = Field(min_length=1, max_length=63)
+    email: str = Field(min_length=3, max_length=254)
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, value: str) -> str:
+        return normalize_tenant_identifier(value)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _normalize_email(value)
+
+
+class AccountActionViewResponse(AuthContractModel):
+    company_name: str = Field(min_length=1, max_length=255)
+    email: str = Field(min_length=3, max_length=320)
+
+
+class ForgotPasswordResponse(AuthContractModel):
+    message: Literal["Se o e-mail existir, enviaremos as instruções."] = (
+        PASSWORD_RESET_REQUEST_MESSAGE
+    )
 
 
 class ContractModel(BaseModel):

@@ -357,16 +357,20 @@ T13 → T14
 
 **Done when**:
 
-- [ ] All request fields have explicit bounds and normalized email/slug behavior.
-- [ ] Password and confirmation require equality and accept exactly 8–128 characters.
-- [ ] Public response models contain no token, hash, DSN or internal availability detail.
-- [ ] Login and new-account validation use the same password bounds.
-- [ ] Boundary and redaction unit tests pass.
-- [ ] Quick gate passes with no test deletion.
+- [x] All request fields have explicit bounds and normalized email/slug behavior.
+- [x] Password and confirmation require equality and accept exactly 8–128 characters.
+- [x] Public response models contain no token, hash, DSN or internal availability detail.
+- [x] Login and new-account validation use the same password bounds.
+- [x] Boundary and redaction unit tests pass.
+- [x] Quick gate passes with no test deletion.
 
 **Tests**: unit — extend `tests/backend/test_schemas.py` and `tests/backend/test_security.py`.  
 **Gate**: quick  
 **Commit**: `feat(api): define account access contracts`
+
+**Evidence**: `MIN_PASSWORD_LENGTH` is now 8 in `app/security/passwords.py` and is the single source for `hash_password`, `LoginRequest`, the new acceptance/reset contracts and the service check. New contracts: `InvitationCreateRequest` (camelCase, trimmed name/job title 1–255, optional team 1–255 with blank → none, normalized e-mail ≤ 254, closed role list, server-managed fields forbidden), `AccountUserResponse`, `InvitationResponse` (`deliveryStatus` pending/sent/failed only, no failure code), `UserAccessResponse`, `AccountActionTokenRequest` (normalized slug, token 1–512), `InvitationAcceptRequest`/`PasswordResetRequest` (8–128, equal confirmation, no trimming), `ForgotPasswordRequest` and `ForgotPasswordResponse` (only the approved message) and `AccountActionViewResponse` (company name and e-mail only). The public messages and the token bound now live in `app/schemas.py` and the service imports them, so the API and service cannot drift. 68 new unit tests; two existing boundary tests were updated from the old 12-character minimum to the approved 8 (11 → 7 rejected, 12 → 8 accepted), none removed. Mutation checks on the minimum length, confirmation equality, blank-team normalization, login bounds and a leaked response field were all detected.
+
+**Windows gate**: full backend suite on Windows 11 with Docker PostgreSQL 17 passed with 1003 tests (935 after T9 + 68 new), 6 pre-existing warnings.
 
 ---
 

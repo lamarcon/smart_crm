@@ -285,7 +285,7 @@ def test_login_normalizes_tenant_and_email() -> None:
     assert request.password == "correct horse battery staple"
 
 
-@pytest.mark.parametrize("length", [12, 128])
+@pytest.mark.parametrize("length", [8, 128])
 def test_login_accepts_password_bounds_without_truncation(length: int) -> None:
     password = "x" * length
 
@@ -296,7 +296,7 @@ def test_login_accepts_password_bounds_without_truncation(length: int) -> None:
     "values",
     [
         {"slug": "cliente-a", "email": "invalid", "password": "x" * 12},
-        {"slug": "cliente-a", "email": "a@example.test", "password": "x" * 11},
+        {"slug": "cliente-a", "email": "a@example.test", "password": "x" * 7},
         {"slug": "cliente-a", "email": "a@example.test", "password": "x" * 129},
     ],
 )
@@ -625,3 +625,281 @@ def test_company_deal_summary_serializes_exact_money_and_stage_semantics() -> No
             }
         ],
     }
+
+
+# --- T10: account-access contracts -------------------------------------------
+
+from app.schemas import (  # noqa: E402
+    ACCOUNT_ACTION_TOKEN_MAX_LENGTH,
+    INVALID_ACTION_LINK_MESSAGE,
+    PASSWORD_MISMATCH_MESSAGE,
+    PASSWORD_RESET_REQUEST_MESSAGE,
+    AccountActionTokenRequest,
+    AccountActionViewResponse,
+    AccountUserResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    InvitationAcceptRequest,
+    InvitationCreateRequest,
+    InvitationResponse,
+    PasswordResetRequest,
+    UserAccessResponse,
+)
+from app.security.passwords import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH  # noqa: E402
+
+TOKEN = "dGVzdC10b2tlbi1maWN0aWNpby0xMjM0NTY3ODkwYWJj"
+
+
+def _invitation(**changes: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "name": "  Bia Souza ",
+        "email": "  BIA@Example.Test ",
+        "jobTitle": " Executiva de vendas ",
+        "team": " Vendas ",
+        "role": "Vendedor",
+    }
+    payload.update(changes)
+    return payload
+
+
+def test_invitation_request_normalizes_email_and_trims_profile_fields() -> None:
+    request = InvitationCreateRequest.model_validate(_invitation())
+
+    assert (request.name, request.email, request.job_title, request.team, request.role) == (
+        "Bia Souza",
+        "bia@example.test",
+        "Executiva de vendas",
+        "Vendas",
+        "Vendedor",
+    )
+
+
+@pytest.mark.parametrize("team", [None, "", "   "])
+def test_invitation_request_treats_blank_team_as_no_team(team: object) -> None:
+    assert InvitationCreateRequest.model_validate(_invitation(team=team)).team is None
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"name": "   "},
+        {"name": "n" * 256},
+        {"email": "sem-arroba"},
+        {"email": "a@b"},
+        {"email": "x" * 250 + "@a.br"},
+        {"jobTitle": ""},
+        {"jobTitle": "c" * 256},
+        {"team": "t" * 256},
+        {"role": "Dono"},
+        {"role": "administrador"},
+    ],
+)
+def test_invitation_request_rejects_out_of_bounds_fields(changes: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        InvitationCreateRequest.model_validate(_invitation(**changes))
+
+
+def test_invitation_request_accepts_inclusive_text_bounds() -> None:
+    request = InvitationCreateRequest.model_validate(
+        _invitation(name="n" * 255, jobTitle="c" * 255, team="t" * 255)
+    )
+
+    assert (len(request.name), len(request.job_title), len(request.team)) == (255, 255, 255)
+
+
+@pytest.mark.parametrize(
+    "authority_field",
+    ["status", "authEnabled", "passwordHash", "id", "workspaceId", "deliveryStatus", "token"],
+)
+def test_invitation_request_forbids_server_managed_fields(authority_field: str) -> None:
+    with pytest.raises(ValidationError):
+        InvitationCreateRequest.model_validate(_invitation(**{authority_field: "forjado"}))
+
+
+def _password_payload(**changes: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "slug": "Cliente-A",
+        "token": TOKEN,
+        "password": "senha123",
+        "password_confirmation": "senha123",
+    }
+    payload.update(changes)
+    return payload
+
+
+@pytest.mark.parametrize("model", [InvitationAcceptRequest, PasswordResetRequest])
+@pytest.mark.parametrize("length", [MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH])
+def test_password_requests_accept_exact_inclusive_bounds(model, length: int) -> None:
+    password = "p" * length
+
+    request = model.model_validate(
+        _password_payload(password=password, password_confirmation=password)
+    )
+
+    assert (MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH) == (8, 128)
+    assert request.password == password
+    assert request.slug == "cliente-a"
+
+
+@pytest.mark.parametrize("model", [InvitationAcceptRequest, PasswordResetRequest])
+@pytest.mark.parametrize("length", [MIN_PASSWORD_LENGTH - 1, MAX_PASSWORD_LENGTH + 1])
+def test_password_requests_reject_lengths_outside_bounds(model, length: int) -> None:
+    password = "p" * length
+
+    with pytest.raises(ValidationError):
+        model.model_validate(_password_payload(password=password, password_confirmation=password))
+
+
+@pytest.mark.parametrize("model", [InvitationAcceptRequest, PasswordResetRequest])
+def test_password_requests_require_identical_confirmation(model) -> None:
+    with pytest.raises(ValidationError) as failure:
+        model.model_validate(_password_payload(password_confirmation="senha124"))
+
+    assert PASSWORD_MISMATCH_MESSAGE in str(failure.value)
+    assert "senha123" not in str(failure.value)
+
+
+@pytest.mark.parametrize("model", [InvitationAcceptRequest, PasswordResetRequest])
+def test_password_requests_do_not_trim_or_truncate_passwords(model) -> None:
+    password = "  " + "p" * (MAX_PASSWORD_LENGTH - 4) + "  "
+
+    request = model.model_validate(
+        _password_payload(password=password, password_confirmation=password)
+    )
+
+    assert request.password == password
+
+
+@pytest.mark.parametrize(
+    "model", [AccountActionTokenRequest, InvitationAcceptRequest, PasswordResetRequest]
+)
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"token": ""},
+        {"token": "t" * (ACCOUNT_ACTION_TOKEN_MAX_LENGTH + 1)},
+        {"slug": "api"},
+        {"slug": "https://evil.example/cliente-a"},
+        {"tenant_id": str(uuid4())},
+        {"dsn": "postgresql://fake"},
+    ],
+)
+def test_token_requests_bound_token_and_reject_untrusted_tenant_fields(model, changes) -> None:
+    payload = _password_payload(**changes)
+    if model is AccountActionTokenRequest:
+        payload.pop("password")
+        payload.pop("password_confirmation")
+
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
+
+
+def test_token_request_accepts_maximum_token_length() -> None:
+    token = "t" * ACCOUNT_ACTION_TOKEN_MAX_LENGTH
+
+    assert AccountActionTokenRequest(slug="cliente-a", token=token).token == token
+
+
+def test_forgot_password_request_normalizes_slug_and_email() -> None:
+    request = ForgotPasswordRequest(slug=" Cliente-A ", email=" Ana@Example.Test ")
+
+    assert (request.slug, request.email) == ("cliente-a", "ana@example.test")
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"slug": "cliente-a", "email": "invalido"},
+        {"slug": "cliente_a", "email": "ana@example.test"},
+        {"slug": "cliente-a", "email": "ana@example.test", "token": TOKEN},
+    ],
+)
+def test_forgot_password_request_rejects_invalid_or_extra_fields(values) -> None:
+    with pytest.raises(ValidationError):
+        ForgotPasswordRequest.model_validate(values)
+
+
+def test_forgot_password_response_is_the_single_approved_message() -> None:
+    assert ForgotPasswordResponse().model_dump() == {"message": PASSWORD_RESET_REQUEST_MESSAGE}
+    assert PASSWORD_RESET_REQUEST_MESSAGE == "Se o e-mail existir, enviaremos as instruções."
+    with pytest.raises(ValidationError):
+        ForgotPasswordResponse(message="Conta não encontrada.")
+
+
+def test_public_contract_messages_match_the_service_contract() -> None:
+    from app.services import account_access
+
+    assert account_access.INVALID_ACTION_LINK_MESSAGE == INVALID_ACTION_LINK_MESSAGE
+    assert account_access.PASSWORD_RESET_REQUEST_MESSAGE == PASSWORD_RESET_REQUEST_MESSAGE
+    assert account_access.MAX_RAW_TOKEN_LENGTH == ACCOUNT_ACTION_TOKEN_MAX_LENGTH
+
+
+SECRET_FIELD_FRAGMENTS = ("token", "hash", "password", "dsn", "secret", "database", "available")
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        AccountActionViewResponse,
+        ForgotPasswordResponse,
+        AccountUserResponse,
+        InvitationResponse,
+        UserAccessResponse,
+    ],
+)
+def test_response_contracts_expose_no_secret_or_availability_fields(model) -> None:
+    schema = model.model_json_schema(by_alias=True)
+    names: set[str] = set()
+
+    def collect(node: dict) -> None:
+        names.update(node.get("properties", {}))
+        for definition in node.get("$defs", {}).values():
+            collect(definition)
+
+    collect(schema)
+    assert names
+    assert not {
+        name for name in names if any(part in name.lower() for part in SECRET_FIELD_FRAGMENTS)
+    }
+
+
+def test_action_view_contains_only_company_and_email() -> None:
+    assert set(AccountActionViewResponse.model_fields) == {"company_name", "email"}
+    with pytest.raises(ValidationError):
+        AccountActionViewResponse(company_name="Cliente A", email="a@example.test", user_id="u-1")
+
+
+def test_invitation_response_serializes_server_confirmed_state_in_camel_case() -> None:
+    response = InvitationResponse(
+        user=AccountUserResponse(
+            id="user-1",
+            name="Bia",
+            email="bia@example.test",
+            jobTitle="Vendas",
+            team=None,
+            role="Vendedor",
+            status="Pendente",
+            invitedAt=datetime(2026, 11, 4, 12, 0, tzinfo=UTC),
+        ),
+        deliveryStatus="failed",
+    )
+
+    assert response.model_dump(by_alias=True, mode="json") == {
+        "user": {
+            "id": "user-1",
+            "name": "Bia",
+            "email": "bia@example.test",
+            "jobTitle": "Vendas",
+            "team": None,
+            "role": "Vendedor",
+            "status": "Pendente",
+            "invitedAt": "2026-11-04T12:00:00Z",
+        },
+        "deliveryStatus": "failed",
+    }
+    with pytest.raises(ValidationError):
+        InvitationResponse(user=response.user, deliveryStatus="delivered")
+    with pytest.raises(ValidationError):
+        AccountUserResponse.model_validate(
+            {**response.user.model_dump(by_alias=True), "passwordHash": "x"}
+        )

@@ -24,6 +24,11 @@ from app.mail import (
 from app.models import AccountActionToken, CrmUser
 from app.policies import Action, CURRENT_ROLES, PrincipalScope, can_perform_action
 from app.repositories.account_actions import AccountActionRepository
+from app.schemas import (
+    ACCOUNT_ACTION_TOKEN_MAX_LENGTH,
+    INVALID_ACTION_LINK_MESSAGE,
+    PASSWORD_RESET_REQUEST_MESSAGE,
+)
 from app.security.passwords import (
     MAX_PASSWORD_LENGTH,
     MIN_PASSWORD_LENGTH,
@@ -35,11 +40,9 @@ from app.tenant_database import TenantDatabaseRouter, TenantUnavailableError
 
 INVITATION_TTL = timedelta(hours=48)
 PASSWORD_RESET_TTL = timedelta(hours=48)
-PASSWORD_RESET_REQUEST_MESSAGE = "Se o e-mail existir, enviaremos as instruções."
 RESET_THROTTLE_BUCKETS = ("reset_account", "reset_ip")
 PUBLIC_ACTION_PURPOSES = frozenset({"invitation", "password_reset"})
-MAX_RAW_TOKEN_LENGTH = 512
-INVALID_ACTION_LINK_MESSAGE = "Este link é inválido ou expirou."
+MAX_RAW_TOKEN_LENGTH = ACCOUNT_ACTION_TOKEN_MAX_LENGTH
 
 
 class AccountAccessError(RuntimeError):

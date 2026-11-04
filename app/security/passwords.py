@@ -12,7 +12,7 @@ from argon2.exceptions import InvalidHashError, VerificationError
 from argon2.low_level import Type
 
 
-MIN_PASSWORD_LENGTH = 12
+MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
 
 ARGON2_TIME_COST = 3
@@ -56,7 +56,9 @@ def _require_aware(value: datetime) -> None:
 
 def _validate_new_password(password: str) -> None:
     if not isinstance(password, str) or not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
-        raise PasswordPolicyError("password must contain 12 to 128 characters")
+        raise PasswordPolicyError(
+            f"password must contain {MIN_PASSWORD_LENGTH} to {MAX_PASSWORD_LENGTH} characters"
+        )
 
 
 def hash_password(password: str) -> str:

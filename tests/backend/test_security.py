@@ -49,7 +49,7 @@ def test_password_policy_accepts_inclusive_bounds(length: int) -> None:
 
 @pytest.mark.parametrize("length", [MIN_PASSWORD_LENGTH - 1, MAX_PASSWORD_LENGTH + 1])
 def test_password_policy_rejects_outside_bounds(length: int) -> None:
-    with pytest.raises(PasswordPolicyError, match="12 to 128"):
+    with pytest.raises(PasswordPolicyError, match="8 to 128"):
         hash_password("x" * length)
 
 
@@ -163,4 +163,30 @@ def test_session_time_helpers_require_aware_utc_datetimes() -> None:
             idle_expires_at=NOW,
             absolute_expires_at=NOW,
             revoked_at=None,
+        )
+
+
+def test_password_policy_is_the_approved_8_to_128_range() -> None:
+    assert (MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH) == (8, 128)
+    assert verify_password(hash_password("12345678"), "12345678") is True
+    with pytest.raises(PasswordPolicyError, match="8 to 128"):
+        hash_password("1234567")
+
+
+def test_login_and_new_password_contracts_share_the_password_bounds() -> None:
+    from app.schemas import AccountPasswordRequest, LoginRequest
+
+    for model, field in (
+        (LoginRequest, "password"),
+        (AccountPasswordRequest, "password"),
+        (AccountPasswordRequest, "password_confirmation"),
+    ):
+        metadata = model.model_fields[field].metadata
+        bounds = {
+            type(item).__name__: getattr(item, "min_length", None) or getattr(item, "max_length", None)
+            for item in metadata
+        }
+        assert bounds == {"MinLen": MIN_PASSWORD_LENGTH, "MaxLen": MAX_PASSWORD_LENGTH}, (
+            model,
+            field,
         )
