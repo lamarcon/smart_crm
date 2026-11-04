@@ -60,6 +60,12 @@
     .auth-form input:focus { border-color: var(--blue-500); box-shadow: 0 0 0 3px var(--blue-100); }
     .auth-form .button { width: 100%; min-height: 44px; }
     .auth-error { min-height: 20px; margin: 0; color: var(--red-600); font-size: 13px; font-weight: 650; }
+    .auth-notice { margin: 0; padding: 10px 12px; border-radius: 9px; color: var(--navy-800); background: var(--green-100); font-size: 13px; font-weight: 650; }
+    .auth-notice:empty { display: none; }
+    .auth-link { justify-self: center; border: 0; padding: 6px; color: var(--blue-500); background: transparent; font-weight: 700; cursor: pointer; text-decoration: underline; }
+    .auth-identity { display: grid; gap: 4px; margin: 0; padding: 12px; border-radius: 9px; background: var(--slate-100); color: var(--slate-600); overflow-wrap: anywhere; }
+    .auth-identity strong { color: var(--navy-900); }
+    .auth-form .hint { margin-top: -10px; color: var(--slate-500); font-size: 12px; }
 
     .app { min-height: 100vh; display: grid; grid-template-columns: 256px minmax(0, 1fr); }
     .sidebar {
@@ -484,8 +490,45 @@
       <form class="auth-form" id="tenantLoginForm">
         <label for="loginEmail">E-mail<input id="loginEmail" name="email" type="email" autocomplete="username" required></label>
         <label for="loginPassword">Senha<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+        <p class="auth-notice" id="loginNotice" role="status" aria-live="polite" hidden></p>
         <p class="auth-error" id="loginError" role="alert"></p>
         <button class="button primary" type="submit">Entrar</button>
+        <button class="auth-link" type="button" data-auth-action="forgot">Esqueci minha senha</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="auth-screen" id="tenantForgot" hidden>
+    <div class="auth-card">
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong></div>
+      <h1>Recuperar senha</h1>
+      <p>Informe o e-mail cadastrado em <span id="tenantForgotName"></span>. Se ele existir, enviaremos um link para criar uma nova senha.</p>
+      <form class="auth-form" id="tenantForgotForm" novalidate>
+        <label for="forgotEmail">E-mail<input id="forgotEmail" name="email" type="email" autocomplete="username" maxlength="254" required></label>
+        <p class="auth-error" id="forgotError" role="alert"></p>
+        <p class="auth-notice" id="forgotNotice" role="status" aria-live="polite"></p>
+        <button class="button primary" type="submit">Enviar instruções</button>
+        <button class="auth-link" type="button" data-auth-action="back-to-login">Voltar para o login</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="auth-screen" id="accountAction" hidden>
+    <div class="auth-card" aria-busy="false" id="accountActionCard">
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong></div>
+      <h1 id="accountActionTitle">Criar senha</h1>
+      <p id="accountActionStatus" role="status" aria-live="polite"></p>
+      <div id="accountActionInvalid" hidden>
+        <p class="auth-error" role="alert">Este link é inválido ou expirou.</p>
+        <button class="button primary" type="button" data-auth-action="back-to-login">Ir para o login</button>
+      </div>
+      <form class="auth-form" id="accountActionForm" hidden novalidate>
+        <p class="auth-identity"><span id="accountActionCompany"></span><strong id="accountActionEmail"></strong></p>
+        <label for="accountPassword">Nova senha<input id="accountPassword" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required aria-describedby="accountPasswordHint"></label>
+        <span class="hint" id="accountPasswordHint">Use de 8 a 128 caracteres.</span>
+        <label for="accountPasswordConfirmation">Confirmar senha<input id="accountPasswordConfirmation" name="password_confirmation" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+        <p class="auth-error" id="accountActionError" role="alert"></p>
+        <button class="button primary" type="submit" id="accountActionSubmit">Salvar senha</button>
       </form>
     </div>
   </section>
@@ -1174,6 +1217,8 @@
     function showAuthView(view, slug = '') {
       document.getElementById('tenantLocator').hidden = view !== 'locator';
       document.getElementById('tenantLogin').hidden = view !== 'login';
+      document.getElementById('tenantForgot').hidden = view !== 'forgot';
+      document.getElementById('accountAction').hidden = view !== 'account-action';
       document.getElementById('crmApp').hidden = view !== 'app';
       document.getElementById('tenantLoginName').textContent = slug;
       document.documentElement.dataset.authenticated = String(view === 'app');
@@ -1207,7 +1252,187 @@
         document.documentElement.dataset.pipelineReady = 'false';
       }
     }
+    const PASSWORD_RESET_NOTICE = 'Se o e-mail existir, enviaremos as instruções.';
+    const INVALID_LINK_MESSAGE = 'Este link é inválido ou expirou.';
+    const PUBLIC_ACTIONS = {
+      'accept-invite': {
+        purpose: 'invitation', title: 'Ative sua conta', submit: 'Ativar conta',
+        inspect: '/api/auth/invitations/inspect', complete: '/api/auth/invitations/accept',
+        success: 'Conta ativada. Entre com seu e-mail e a nova senha.'
+      },
+      'reset-password': {
+        purpose: 'password_reset', title: 'Criar nova senha', submit: 'Salvar nova senha',
+        inspect: '/api/auth/password/reset/inspect', complete: '/api/auth/password/reset',
+        success: 'Senha alterada. Entre com seu e-mail e a nova senha.'
+      }
+    };
+    // The raw token lives only here, never in the address bar, storage or a URL.
+    let accountActionToken = null;
+    let accountActionRoute = null;
+
+    function publicActionFromPath() {
+      const segments = location.pathname.split('/').filter(Boolean);
+      if (segments.length !== 2 || !PUBLIC_ACTIONS[segments[1]]) return null;
+      if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(segments[0])) return null;
+      return { slug: segments[0], page: segments[1], ...PUBLIC_ACTIONS[segments[1]] };
+    }
+    function takeFragmentToken() {
+      const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+      const token = params.get('token');
+      // Remove the secret from the address bar and history before anything else.
+      history.replaceState(null, '', location.pathname);
+      return token && token.length <= 512 ? token : null;
+    }
+    function setLoginNotice(message) {
+      const notice = document.getElementById('loginNotice');
+      notice.textContent = message || '';
+      notice.hidden = !message;
+    }
+    function showTenantLogin(slug, notice = '') {
+      history.replaceState(null, '', '/' + encodeURIComponent(slug));
+      setLoginNotice(notice);
+      showAuthView('login', slug);
+    }
+    function showAccountActionState(status) {
+      const card = document.getElementById('accountActionCard');
+      const form = document.getElementById('accountActionForm');
+      card.setAttribute('aria-busy', String(status === 'loading'));
+      document.getElementById('accountActionStatus').textContent = status === 'loading' ? 'Verificando o link...' : '';
+      document.getElementById('accountActionInvalid').hidden = status !== 'invalid';
+      form.hidden = status !== 'ready';
+      document.documentElement.dataset.accountAction = status;
+      if (status === 'invalid') {
+        accountActionToken = null;
+        form.reset();
+      }
+    }
+    async function postPublicJson(path, body) {
+      return apiFetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body)
+      });
+    }
+    async function openAccountAction(route) {
+      accountActionRoute = route;
+      accountActionToken = takeFragmentToken();
+      document.getElementById('accountActionTitle').textContent = route.title;
+      document.getElementById('accountActionSubmit').textContent = route.submit;
+      document.getElementById('accountActionError').textContent = '';
+      showAuthView('account-action', route.slug);
+      showAccountActionState('loading');
+      if (!accountActionToken) {
+        showAccountActionState('invalid');
+        return;
+      }
+      try {
+        const view = await responseJson(await postPublicJson(route.inspect, { slug: route.slug, token: accountActionToken }));
+        document.getElementById('accountActionCompany').textContent = view.company_name;
+        document.getElementById('accountActionEmail').textContent = view.email;
+        showAccountActionState('ready');
+        document.getElementById('accountPassword').focus();
+      } catch (_) {
+        showAccountActionState('invalid');
+      }
+    }
+    function newPasswordProblem(password, confirmation) {
+      if (password.length < 8 || password.length > 128) return 'A senha deve ter entre 8 e 128 caracteres.';
+      if (password !== confirmation) return 'A senha e a confirmação devem ser iguais.';
+      return '';
+    }
+    async function submitAccountAction(event) {
+      event.preventDefault();
+      const route = accountActionRoute;
+      const form = event.currentTarget;
+      const error = document.getElementById('accountActionError');
+      const button = document.getElementById('accountActionSubmit');
+      const password = form.elements.password.value;
+      const confirmation = form.elements.password_confirmation.value;
+      const problem = newPasswordProblem(password, confirmation);
+      error.textContent = problem;
+      if (problem || !route || !accountActionToken) return;
+      button.disabled = true;
+      button.textContent = 'Salvando...';
+      document.getElementById('accountActionCard').setAttribute('aria-busy', 'true');
+      try {
+        const response = await postPublicJson(route.complete, {
+          slug: route.slug, token: accountActionToken, password, password_confirmation: confirmation
+        });
+        if (response.status === 204) {
+          accountActionToken = null;
+          form.reset();
+          showTenantLogin(route.slug, route.success);
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        if (payload.error?.code === 'invalid_link') {
+          showAccountActionState('invalid');
+          return;
+        }
+        error.textContent = payload.error?.code === 'password_mismatch' || payload.error?.code === 'invalid_password'
+          ? payload.error.message
+          : 'Não foi possível salvar a senha agora. Tente novamente.';
+      } catch (_) {
+        error.textContent = 'Não foi possível salvar a senha agora. Tente novamente.';
+      } finally {
+        button.disabled = false;
+        button.textContent = route.submit;
+        document.getElementById('accountActionCard').setAttribute('aria-busy', 'false');
+      }
+    }
+    function openForgotPassword() {
+      const slug = tenantSlugFromPath();
+      if (!slug) return;
+      const form = document.getElementById('tenantForgotForm');
+      form.reset();
+      document.getElementById('forgotError').textContent = '';
+      document.getElementById('forgotNotice').textContent = '';
+      form.querySelector('button[type="submit"]').disabled = false;
+      document.getElementById('tenantForgotName').textContent = slug;
+      const email = document.getElementById('loginEmail').value.trim();
+      if (email) form.elements.email.value = email;
+      showAuthView('forgot', slug);
+      form.elements.email.focus();
+    }
+    async function submitForgotPassword(event) {
+      event.preventDefault();
+      const slug = tenantSlugFromPath();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById('forgotError');
+      const notice = document.getElementById('forgotNotice');
+      const email = form.elements.email.value.trim();
+      error.textContent = '';
+      notice.textContent = '';
+      if (!email || !form.elements.email.checkValidity()) {
+        error.textContent = 'Informe um e-mail válido.';
+        return;
+      }
+      button.disabled = true;
+      button.textContent = 'Enviando...';
+      try {
+        const response = await postPublicJson('/api/auth/password/forgot', { slug, email });
+        if (response.status !== 202) throw new Error('unavailable');
+        notice.textContent = PASSWORD_RESET_NOTICE;
+      } catch (_) {
+        error.textContent = 'Não foi possível enviar a solicitação agora. Tente novamente.';
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Enviar instruções';
+      }
+    }
+    function backToLogin() {
+      const slug = publicActionFromPath()?.slug || accountActionRoute?.slug || tenantSlugFromPath();
+      accountActionToken = null;
+      if (slug) showTenantLogin(slug);
+    }
     async function initializeRoute() {
+      const publicAction = publicActionFromPath();
+      if (publicAction) {
+        // Public link pages never read or create an authenticated session.
+        await openAccountAction(publicAction);
+        return;
+      }
       const slug = tenantSlugFromPath();
       if (location.pathname === '/' || location.pathname === '') {
         showAuthView('locator');
@@ -1249,6 +1474,7 @@
     }
     async function submitTenantLogin(event) {
       event.preventDefault();
+      setLoginNotice('');
       const slug = tenantSlugFromPath();
       const form = event.currentTarget;
       const button = form.querySelector('button[type="submit"]');
@@ -4055,6 +4281,12 @@
 
     document.getElementById('tenantLocatorForm').addEventListener('submit', submitTenantLocator);
     document.getElementById('tenantLoginForm').addEventListener('submit', submitTenantLogin);
+    document.getElementById('tenantForgotForm').addEventListener('submit', submitForgotPassword);
+    document.getElementById('accountActionForm').addEventListener('submit', submitAccountAction);
+    document.querySelectorAll('[data-auth-action]').forEach(button => button.addEventListener('click', () => {
+      if (button.dataset.authAction === 'forgot') openForgotPassword();
+      if (button.dataset.authAction === 'back-to-login') backToLogin();
+    }));
     document.getElementById('logoutButton').addEventListener('click', logout);
 
     loadApplicationVersion();

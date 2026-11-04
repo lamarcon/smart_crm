@@ -9,6 +9,7 @@ const AUTH_SESSION = {
   tenant_display_name: 'Cliente A', user_id: 'u-admin', user_name: 'Alexandre Martins',
   email: 'admin@cliente-a.test', role: 'Administrador'
 };
+const PUBLIC_LINK_TOKEN = 'dG9rZW4tZmljdGljaW8tcHVibGljby0xMjM0NQ';
 const STORAGE_KEY = 'smart-crm-demo-v1';
 const CONFIRMED_CACHE_KEY = 'smart-crm-confirmed-v1';
 const LEAD_STAGES = ['Em contato', 'Lead descartado', 'Lead convertido'];
@@ -627,6 +628,7 @@ async function openAuthPage(pathname, options = {}) {
   }
   const authRequests = [];
   const workspaceRequests = [];
+  const consumedTokens = new Set();
   let authenticated = options.authenticated === true;
   const session = { ...AUTH_SESSION, ...(options.session || {}) };
   if (options.cookie) {
@@ -663,6 +665,21 @@ async function openAuthPage(pathname, options = {}) {
     }
     if (url.pathname === '/api/auth/logout') {
       authenticated = false;
+      return route.fulfill({ status: 204 });
+    }
+    const invalidLink = () => route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: { code: 'invalid_link', message: 'Este link é inválido ou expirou.' } }) });
+    if (url.pathname === '/api/auth/password/forgot') {
+      return route.fulfill({ status: options.forgotStatus || 202, contentType: 'application/json', body: JSON.stringify({ message: 'Se o e-mail existir, enviaremos as instruções.' }) });
+    }
+    if (url.pathname === '/api/auth/invitations/inspect' || url.pathname === '/api/auth/password/reset/inspect') {
+      if (options.inspectGate) await options.inspectGate;
+      if (url.search || body?.token !== (options.validToken || PUBLIC_LINK_TOKEN) || consumedTokens.has(body?.token)) return invalidLink();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ company_name: 'Cliente A', email: 'convidada@cliente-a.test' }) });
+    }
+    if (url.pathname === '/api/auth/invitations/accept' || url.pathname === '/api/auth/password/reset') {
+      if (options.completeFailure) return route.fulfill({ status: options.completeFailure.status, contentType: 'application/json', body: JSON.stringify({ error: options.completeFailure.error }) });
+      if (url.search || body?.token !== (options.validToken || PUBLIC_LINK_TOKEN) || consumedTokens.has(body?.token)) return invalidLink();
+      consumedTokens.add(body.token);
       return route.fulfill({ status: 204 });
     }
     return route.fulfill({ status: 404 });
@@ -1057,6 +1074,149 @@ async function storageEntries(page) {
       })
     }
   });
+
+  let releaseInspect = () => {};
+  const publicLinkUrl = page => `/cliente-a/${page}#token=${PUBLIC_LINK_TOKEN}`;
+  const tokenLeaks = (page, requests) => requests.filter(item => item.url.includes(PUBLIC_LINK_TOKEN)).length
+    + (page.url().includes(PUBLIC_LINK_TOKEN) ? 1 : 0);
+
+  await runAuth('INVUI-04 login do tenant oferece Esqueci minha senha com resposta genérica', '/cliente-a', async ({ page, authRequests }) => {
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    await page.locator('#tenantLogin').getByLabel('E-mail').fill('pessoa@cliente-a.test');
+    await page.getByRole('button', { name: 'Esqueci minha senha' }).click();
+    const forgot = page.locator('#tenantForgot');
+    await forgot.waitFor({ state: 'visible' });
+    assert.equal(await forgot.getByLabel('E-mail').inputValue(), 'pessoa@cliente-a.test');
+    await forgot.getByRole('button', { name: 'Enviar instruções' }).click();
+    await forgot.getByText('Se o e-mail existir, enviaremos as instruções.', { exact: true }).waitFor();
+    assert.equal(await forgot.locator('#forgotNotice').innerText(), 'Se o e-mail existir, enviaremos as instruções.');
+    assert.equal(await forgot.locator('#forgotError').innerText(), '');
+    const request = authRequests.find(item => item.url.endsWith('/api/auth/password/forgot'));
+    assert.deepEqual({ method: request.method, body: request.body }, { method: 'POST', body: { slug: 'cliente-a', email: 'pessoa@cliente-a.test' } });
+    assert.equal(authRequests.filter(item => item.url.endsWith('/api/auth/login')).length, 0);
+    await forgot.getByRole('button', { name: 'Voltar para o login' }).click();
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    assert.equal(new URL(page.url()).pathname, '/cliente-a');
+  });
+
+  await runAuth('INVUI-04 localizador da raiz não oferece recuperação sem tenant', '/', async ({ page, authRequests }) => {
+    await page.locator('#tenantLocator').waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('button', { name: 'Esqueci minha senha' }).isVisible(), false);
+    assert.equal(authRequests.length, 0);
+  });
+
+  await runAuth('INVUI-04 falha de rede na recuperação não mostra a confirmação', '/cliente-a', async ({ page }) => {
+    await page.getByRole('button', { name: 'Esqueci minha senha' }).click();
+    const forgot = page.locator('#tenantForgot');
+    await forgot.getByLabel('E-mail').fill('pessoa@cliente-a.test');
+    await forgot.getByRole('button', { name: 'Enviar instruções' }).click();
+    await forgot.locator('#forgotError').getByText('Não foi possível enviar a solicitação agora. Tente novamente.', { exact: true }).waitFor();
+    assert.equal(await forgot.locator('#forgotNotice').innerText(), '');
+  }, { forgotStatus: 503 });
+
+  await runAuth('ACCEPT-01 aceite lê o token do fragmento, remove da URL e ativa sem sessão', publicLinkUrl('accept-invite'), async ({ page, authRequests, workspaceRequests }) => {
+    const action = page.locator('#accountAction');
+    await action.locator('#accountActionForm').waitFor({ state: 'visible' });
+    assert.equal(new URL(page.url()).hash, '');
+    assert.equal(new URL(page.url()).pathname, '/cliente-a/accept-invite');
+    assert.equal(await action.locator('#accountActionCompany').innerText(), 'Cliente A');
+    assert.equal(await action.locator('#accountActionEmail').innerText(), 'convidada@cliente-a.test');
+    const inspect = authRequests.find(item => item.url.endsWith('/api/auth/invitations/inspect'));
+    assert.deepEqual(inspect.body, { slug: 'cliente-a', token: PUBLIC_LINK_TOKEN });
+    assert.equal(authRequests.filter(item => item.url.endsWith('/api/auth/session')).length, 0);
+
+    await action.getByLabel('Nova senha').fill('curta');
+    await action.getByLabel('Confirmar senha').fill('curta');
+    await action.getByRole('button', { name: 'Ativar conta' }).click();
+    assert.equal(await action.locator('#accountActionError').innerText(), 'A senha deve ter entre 8 e 128 caracteres.');
+    await action.getByLabel('Nova senha').fill('senha-convite-2026');
+    await action.getByLabel('Confirmar senha').fill('senha-diferente-2026');
+    await action.getByRole('button', { name: 'Ativar conta' }).click();
+    assert.equal(await action.locator('#accountActionError').innerText(), 'A senha e a confirmação devem ser iguais.');
+    assert.equal(authRequests.filter(item => item.url.endsWith('/api/auth/invitations/accept')).length, 0);
+
+    await action.getByLabel('Confirmar senha').fill('senha-convite-2026');
+    await action.getByRole('button', { name: 'Ativar conta' }).click();
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#loginNotice').innerText(), 'Conta ativada. Entre com seu e-mail e a nova senha.');
+    assert.equal(new URL(page.url()).pathname, '/cliente-a');
+    const accept = authRequests.find(item => item.url.endsWith('/api/auth/invitations/accept'));
+    assert.deepEqual(accept.body, { slug: 'cliente-a', token: PUBLIC_LINK_TOKEN, password: 'senha-convite-2026', password_confirmation: 'senha-convite-2026' });
+    assert.equal(authRequests.filter(item => /\/api\/auth\/(session|login)$/.test(new URL(item.url).pathname)).length, 0);
+    assert.equal(workspaceRequests.length, 0);
+    assert.equal(await page.locator('#crmApp').isHidden(), true);
+    assert.equal(tokenLeaks(page, authRequests), 0);
+    assert.equal(await page.evaluate(token => JSON.stringify({ ...localStorage }).includes(token) || JSON.stringify({ ...sessionStorage }).includes(token), PUBLIC_LINK_TOKEN), false);
+  });
+
+  await runAuth('ACCEPT-04 link inválido mostra mensagem única sem formulário', `/cliente-a/accept-invite#token=token-trocado`, async ({ page, authRequests }) => {
+    const action = page.locator('#accountAction');
+    await action.locator('#accountActionInvalid').waitFor({ state: 'visible' });
+    assert.equal(await action.locator('#accountActionInvalid [role="alert"]').innerText(), 'Este link é inválido ou expirou.');
+    assert.equal(await action.locator('#accountActionForm').isHidden(), true);
+    assert.equal(new URL(page.url()).hash, '');
+    assert.equal(authRequests.filter(item => item.url.endsWith('/inspect')).length, 1);
+    await action.getByRole('button', { name: 'Ir para o login' }).click();
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    assert.equal(new URL(page.url()).pathname, '/cliente-a');
+  });
+
+  await runAuth('ACCEPT-04 link sem token não consulta a API', '/cliente-a/accept-invite', async ({ page, authRequests }) => {
+    await page.locator('#accountActionInvalid').waitFor({ state: 'visible' });
+    assert.equal(authRequests.length, 0);
+  });
+
+  await runAuth('ACCEPT-06 replay do link aceito mostra o mesmo link inválido', publicLinkUrl('accept-invite'), async ({ page }) => {
+    const action = page.locator('#accountAction');
+    await action.locator('#accountActionForm').waitFor({ state: 'visible' });
+    await action.getByLabel('Nova senha').fill('senha-convite-2026');
+    await action.getByLabel('Confirmar senha').fill('senha-convite-2026');
+    await action.getByRole('button', { name: 'Ativar conta' }).click();
+    await action.locator('#accountActionInvalid').waitFor({ state: 'visible' });
+    assert.equal(await action.locator('#accountActionInvalid [role="alert"]').innerText(), 'Este link é inválido ou expirou.');
+    assert.equal(await page.locator('#tenantLogin').isHidden(), true);
+  }, { completeFailure: { status: 400, error: { code: 'invalid_link', message: 'Este link é inválido ou expirou.' } } });
+
+  await runAuth('INVUI-05 aceite mostra carregamento acessível enquanto verifica o link', publicLinkUrl('accept-invite'), async ({ page }) => {
+    const card = page.locator('#accountActionCard');
+    await page.locator('#accountActionStatus').getByText('Verificando o link...', { exact: true }).waitFor();
+    assert.equal(await card.getAttribute('aria-busy'), 'true');
+    assert.equal(await page.locator('#accountActionForm').isHidden(), true);
+    releaseInspect();
+    await page.locator('#accountActionForm').waitFor({ state: 'visible' });
+    assert.equal(await card.getAttribute('aria-busy'), 'false');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'accountPassword');
+  }, { inspectGate: new Promise(resolve => { releaseInspect = resolve; }) });
+
+  await runAuth('RESET-05 redefinição completa no celular volta ao login sem sessão', publicLinkUrl('reset-password'), async ({ page, authRequests }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const action = page.locator('#accountAction');
+    await action.locator('#accountActionForm').waitFor({ state: 'visible' });
+    assert.equal(await action.locator('#accountActionTitle').innerText(), 'Criar nova senha');
+    assert.equal(new URL(page.url()).hash, '');
+    await action.getByLabel('Nova senha').fill('nova-senha-2026');
+    await action.getByLabel('Confirmar senha').fill('nova-senha-2026');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await action.getByRole('button', { name: 'Salvar nova senha' }).click();
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#loginNotice').innerText(), 'Senha alterada. Entre com seu e-mail e a nova senha.');
+    const reset = authRequests.find(item => item.url.endsWith('/api/auth/password/reset'));
+    assert.deepEqual(reset.body, { slug: 'cliente-a', token: PUBLIC_LINK_TOKEN, password: 'nova-senha-2026', password_confirmation: 'nova-senha-2026' });
+    assert.ok(authRequests.some(item => item.url.endsWith('/api/auth/password/reset/inspect')));
+    assert.equal(authRequests.filter(item => /\/api\/auth\/(session|login)$/.test(new URL(item.url).pathname)).length, 0);
+    assert.equal(tokenLeaks(page, authRequests), 0);
+  });
+
+  await runAuth('RESET-06 erro de senha do servidor mantém o formulário e o link', publicLinkUrl('reset-password'), async ({ page }) => {
+    const action = page.locator('#accountAction');
+    await action.locator('#accountActionForm').waitFor({ state: 'visible' });
+    await action.getByLabel('Nova senha').fill('nova-senha-2026');
+    await action.getByLabel('Confirmar senha').fill('nova-senha-2026');
+    await action.getByRole('button', { name: 'Salvar nova senha' }).click();
+    await action.locator('#accountActionError').getByText('A senha deve ter entre 8 e 128 caracteres.', { exact: true }).waitFor();
+    assert.equal(await action.locator('#accountActionForm').isVisible(), true);
+    assert.equal(await action.getByRole('button', { name: 'Salvar nova senha' }).isEnabled(), true);
+  }, { completeFailure: { status: 422, error: { code: 'invalid_password', message: 'A senha deve ter entre 8 e 128 caracteres.' } } });
 
   await runAuth('MT-04 preferência de outro usuário do mesmo tenant fica isolada', '/cliente-a', async ({ page }) => {
     await page.locator('#crmApp').waitFor({ state: 'visible' });

@@ -459,17 +459,21 @@ T13 → T14
 
 **Done when**:
 
-- [ ] Login shows `Esqueci minha senha` only after the tenant is known.
-- [ ] Forgot-password displays exactly the generic approved confirmation.
-- [ ] Invite/reset pages read token from the URL fragment, immediately remove it with `history.replaceState` and POST it only in JSON.
-- [ ] Forms cover loading, mismatch, bounds, success and uniform invalid-link states accessibly.
-- [ ] Success returns to the tenant login without creating a session.
-- [ ] Desktop/mobile E2E covers complete invite and reset flows, replay and invalid links.
-- [ ] Full gate passes and UI scenario count remains at least 122 plus the new cases.
+- [x] Login shows `Esqueci minha senha` only after the tenant is known.
+- [x] Forgot-password displays exactly the generic approved confirmation.
+- [x] Invite/reset pages read token from the URL fragment, immediately remove it with `history.replaceState` and POST it only in JSON.
+- [x] Forms cover loading, mismatch, bounds, success and uniform invalid-link states accessibly.
+- [x] Success returns to the tenant login without creating a session.
+- [x] Desktop/mobile E2E covers complete invite and reset flows, replay and invalid links.
+- [x] Full gate passes and UI scenario count remains at least 122 plus the new cases.
 
 **Tests**: e2e — extend `tests/ui-prototype.spec.cjs` with public invite/reset scenarios.  
 **Gate**: full  
 **Commit**: `feat(ui): add invitation and password recovery pages`
+
+**Evidence**: The tenant login (`/{slug}`) now offers `Esqueci minha senha`, which opens a recovery card (pre-filled with the typed e-mail) that POSTs `{slug, email}` to `/api/auth/password/forgot` and, on 202, shows exactly `Se o e-mail existir, enviaremos as instruções.`; a non-202 answer shows a retry error instead of the confirmation. The locator at `/` has no recovery action. `/{slug}/accept-invite` and `/{slug}/reset-password` read `#token=` from the fragment, remove it from the address bar and history with `history.replaceState` before any request, keep it only in memory and send it only in JSON bodies (`inspect`, then `accept`/`reset`); these pages never call `/api/auth/session` or `/api/auth/login`. States: `Verificando o link...` with `aria-busy`, a form showing company and e-mail with focus on the password, client checks for 8–128 characters and equal confirmation (no request when they fail), server password errors kept in the form, and one `Este link é inválido ou expirou.` state for a missing, wrong, replayed or cancelled link. Success clears the token and the form, replaces the URL with `/{slug}` and shows the login with `Conta ativada...` or `Senha alterada...`, without creating a session. 10 new scenarios (recovery confirmation and network failure, locator without recovery, full acceptance with fragment removal and no token in any URL or Web Storage, invalid link, link without token, replay, loading state, mobile reset with no horizontal scroll, server password error). Mutation checks on fragment removal, token in a query string, a session read after success or on the public page, client password checks, the recovery message, the loading state and replay handling were all detected.
+
+**Windows gate**: full backend suite passed with 1182 tests (no backend change), 7 warnings as after T11; UI regression with the installed Chrome passed 138/138 scenarios (128 after T12 + 10 new).
 
 ---
 
