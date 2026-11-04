@@ -1161,6 +1161,16 @@ async function storageEntries(page) {
     assert.equal(new URL(page.url()).pathname, '/cliente-a');
   });
 
+  await runAuth('ACCEPT-04 novo link aberto na mesma aba lê o token novo', '/cliente-a/accept-invite#token=token-trocado', async ({ page, authRequests }) => {
+    await page.locator('#accountActionInvalid').waitFor({ state: 'visible' });
+    await page.goto(new URL(publicLinkUrl('accept-invite').replace(/^\//, ''), BASE_URL).toString());
+    await page.locator('#accountActionForm').waitFor({ state: 'visible' });
+    assert.equal(new URL(page.url()).hash, '');
+    assert.equal(await page.locator('#accountActionInvalid').isHidden(), true);
+    const inspections = authRequests.filter(item => item.url.endsWith('/api/auth/invitations/inspect'));
+    assert.deepEqual(inspections.map(item => item.body.token), ['token-trocado', PUBLIC_LINK_TOKEN]);
+  });
+
   await runAuth('ACCEPT-04 link sem token não consulta a API', '/cliente-a/accept-invite', async ({ page, authRequests }) => {
     await page.locator('#accountActionInvalid').waitFor({ state: 'visible' });
     assert.equal(authRequests.length, 0);

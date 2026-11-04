@@ -475,6 +475,9 @@ T13 → T14
 
 **Windows gate**: full backend suite passed with 1182 tests (no backend change), 7 warnings as after T11; UI regression with the installed Chrome passed 138/138 scenarios (128 after T12 + 10 new).
 
+
+**Follow-up fix (after T14, branch `ai2/fix-public-link-hashchange`)**: a local end-to-end run against the real API (throwaway PostgreSQL tenant and control schema, file-backed mail sender, Chrome) passed invite, resend, replaced-link rejection, acceptance, replay rejection, sign-in, recovery with a generic answer and no mail for an unknown address, session revocation, old-password rejection and cancellation. It also found that opening a second link in a tab already on the public page only changed the fragment and kept the old state; the page now reacts to `hashchange` the same way as on load. One new UI scenario; UI regression 139/139.
+
 ---
 
 ### T14: Configure SMTP secrets in the Windows release

@@ -4290,6 +4290,12 @@
     document.getElementById('logoutButton').addEventListener('click', logout);
 
     loadApplicationVersion();
+    // A second e-mail link opened in the same tab only changes the fragment, which
+    // does not reload the page; read the new token the same way as on load.
+    window.addEventListener('hashchange', () => {
+      const route = publicActionFromPath();
+      if (route && /(?:^#|&)token=/.test(location.hash)) openAccountAction(route);
+    });
     initializeRoute();
   </script>
 </body>
