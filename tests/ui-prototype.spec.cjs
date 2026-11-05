@@ -2678,8 +2678,20 @@ async function storageEntries(page) {
     const dialog = page.locator('#entityDialog');
     const company = dialog.getByLabel('Empresa *');
     const contact = dialog.getByLabel('Contato');
-    const companyOptions = await dialog.locator(`#${await company.getAttribute('list')} option`).evaluateAll(options => options.map(option => option.value));
-    assert.deepEqual([...companyOptions].sort(), [...before.companies.map(item => item.name)].sort());
+    const optionValues = async input => {
+      const list = dialog.locator(`#${await input.getAttribute('aria-controls')}`);
+      await list.waitFor({ state: 'visible' });
+      return list.locator('li[data-value]').evaluateAll(options => options.map(option => option.dataset.value));
+    };
+    assert.equal(await dialog.locator('datalist').count(), 0, 'sem lista nativa, que abre fora do lugar em janelas modais');
+    await company.focus();
+    assert.equal(await company.getAttribute('aria-expanded'), 'true');
+    assert.deepEqual([...await optionValues(company)].sort(), [...before.companies.map(item => item.name)].sort());
+    // The list opens right below the field, inside the dialog.
+    const fieldBox = await company.boundingBox();
+    const listBox = await dialog.locator(`#${await company.getAttribute('aria-controls')}`).boundingBox();
+    assert.ok(Math.abs(listBox.y - (fieldBox.y + fieldBox.height)) <= 8, `lista deve abrir logo abaixo do campo (${listBox.y} x ${fieldBox.y + fieldBox.height})`);
+    assert.ok(Math.abs(listBox.x - fieldBox.x) <= 2);
 
     await dialog.getByLabel('Título do Negócio *').fill('Negócio com referência');
     await dialog.getByLabel('Valor (R$) *').fill('250');
@@ -2691,8 +2703,8 @@ async function storageEntries(page) {
 
     // Accents, case and spaces do not matter; the contact list follows the company.
     await company.fill('  arkos   estetica ');
-    const contactOptions = await dialog.locator(`#${await contact.getAttribute('list')} option`).evaluateAll(options => options.map(option => option.value));
-    assert.deepEqual(contactOptions, ['Ana Berclay']);
+    await contact.focus();
+    assert.deepEqual(await optionValues(contact), ['Ana Berclay']);
     await contact.fill('Giovani Oliveira');
     await dialog.getByRole('button', { name: 'Salvar registro' }).click();
     await page.locator('#toastRegion').getByText('Este contato não pertence à empresa Arkos Estética.', { exact: true }).waitFor();
@@ -2707,6 +2719,40 @@ async function storageEntries(page) {
       { company: 'Arkos Estética', companyId: 'E-802', contact: 'Ana Berclay', contactId: 'C-2281' }
     );
     await assertCanonicalRehydration(page);
+  });
+
+  await run('REF-03 lista de sugestões funciona com teclado e mouse sem fechar a janela', async page => {
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Novo Negócio' }).click();
+    const dialog = page.locator('#entityDialog');
+    const company = dialog.getByRole('combobox', { name: 'Empresa *' });
+    const contact = dialog.getByRole('combobox', { name: 'Contato' });
+    const companyList = dialog.locator('#field-company-options');
+    assert.equal(await company.getAttribute('aria-controls'), 'field-company-options');
+
+    await company.fill('pharma');
+    assert.deepEqual(await companyList.getByRole('option').allInnerTexts(), ['ALS Pharma' + String.fromCharCode(10) + 'Campinas / SP']);
+    await company.press('ArrowDown');
+    assert.equal(await company.getAttribute('aria-activedescendant'), await companyList.getByRole('option').first().getAttribute('id'));
+    await company.press('Enter');
+    assert.equal(await company.inputValue(), 'ALS Pharma');
+    assert.equal(await companyList.isHidden(), true);
+    assert.equal(await dialog.evaluate(element => element.open), true, 'Enter escolhe a sugestão sem enviar o formulário');
+
+    await contact.click();
+    const contactList = dialog.locator(`#${await contact.getAttribute('aria-controls')}`);
+    assert.equal(await contactList.getAttribute('role'), 'listbox');
+    await contactList.getByRole('option', { name: /Giovani Oliveira/ }).click();
+    assert.equal(await contact.inputValue(), 'Giovani Oliveira');
+    assert.equal(await contactList.isHidden(), true);
+
+    await company.fill('zzz inexistente');
+    assert.equal(await companyList.innerText(), 'Nenhuma empresa cadastrada para esta busca.');
+    await company.press('Escape');
+    assert.equal(await companyList.isHidden(), true);
+    assert.equal(await dialog.evaluate(element => element.open), true, 'Esc fecha só a lista');
+    await company.press('Escape');
+    assert.equal(await dialog.evaluate(element => element.open), false);
   });
 
   await run('REF-02 Negócio antigo com empresa livre continua editável sem trocar a empresa', async page => {
