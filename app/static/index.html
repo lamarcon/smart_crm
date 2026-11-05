@@ -326,6 +326,7 @@
     .field[hidden] { display: none !important; }
     .field.full { grid-column: 1 / -1; }
     .field label { color: var(--navy-700); font-size: 12px; font-weight: 700; }
+    .field .field-hint { color: var(--slate-500, #64748b); font-size: 11px; }
     .field input, .field select, .field textarea { width: 100%; min-height: 40px; border: 1px solid var(--slate-300); border-radius: 9px; padding: 9px 11px; outline: 0; background: white; }
     .field textarea { min-height: 82px; resize: vertical; }
     .hint { color: var(--slate-500); font-size: 11px; line-height: 1.4; }
@@ -2852,15 +2853,104 @@
       if (view === 'pipeline-admin' && currentUser().role === 'Administrador' && pipelineHistoryState.items === null && !pipelineHistoryState.loading) void loadPipelineHistory();
     }
 
+    // Company and contact references -------------------------------------------
+    // Names are compared without accents, case or repeated spaces, so "Jack  daniels"
+    // and "Jack Daniels" are the same company (duplicate guard).
+    function normalizedName(value) {
+      return String(value ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();
+    }
+    function normalizedEmail(value) { return String(value ?? '').trim().toLowerCase(); }
+    function choicesFor(records, describe) {
+      const counts = new Map();
+      records.forEach(record => counts.set(normalizedName(record.name), (counts.get(normalizedName(record.name)) || 0) + 1));
+      return records.map(record => ({
+        record,
+        // Homonyms get a distinguishing suffix so each option resolves to one record.
+        value: counts.get(normalizedName(record.name)) > 1 ? `${record.name} (${describe(record)})` : record.name
+      }));
+    }
+    function companyChoices() {
+      return choicesFor(state.companies || [], company => [company.city, company.id].filter(Boolean).join(' · '));
+    }
+    function contactBelongsTo(contact, company) {
+      if (!company) return true;
+      if (contact.companyId) return contact.companyId === company.id;
+      return normalizedName(contact.company) === normalizedName(company.name);
+    }
+    function contactChoices(company) {
+      return choicesFor((state.contacts || []).filter(contact => contactBelongsTo(contact, company)), contact => contact.email || contact.id);
+    }
+    function resolveChoice(choices, text) {
+      const exact = choices.filter(choice => choice.value === String(text ?? '').trim());
+      if (exact.length === 1) return exact[0].record;
+      const byName = choices.filter(choice => normalizedName(choice.record.name) === normalizedName(text));
+      return byName.length === 1 ? byName[0].record : null;
+    }
+    function findCompanyByName(name) {
+      const matches = (state.companies || []).filter(company => normalizedName(company.name) === normalizedName(name));
+      return matches.length >= 1 ? matches[0] : null;
+    }
+    function datalistHTML(id, choices) {
+      return `<datalist id="${id}">${choices.map(choice => `<option value="${escapeHTML(choice.value)}"></option>`).join('')}</datalist>`;
+    }
+    function refreshContactOptions(container) {
+      const companyInput = container.querySelector('[data-reference="company"]');
+      const list = container.querySelector('datalist[data-reference-list="contact"]');
+      if (!list) return;
+      const company = companyInput ? resolveChoice(companyChoices(), companyInput.value) : null;
+      list.innerHTML = contactChoices(company).map(choice => `<option value="${escapeHTML(choice.value)}"></option>`).join('');
+    }
+    function clearReferenceErrors(container) {
+      container.querySelectorAll('[data-reference]').forEach(input => input.setCustomValidity(''));
+    }
+    function referenceProblem(input, message) {
+      input.setCustomValidity(message);
+      input.reportValidity();
+      showToast(message);
+      return null;
+    }
+    // Resolves the deal's company and contact to registered records; null when invalid.
+    // New deals and changed values must use registered records; an untouched legacy
+    // value (imported or typed before this rule) is kept so other edits still save.
+    function resolveDealReferences(form, existing = null) {
+      const untouched = (input, key) => existing && input.value.trim() === String(existing[key] ?? '').trim();
+      clearReferenceErrors(form);
+      const companyInput = form.querySelector('[data-reference="company"]');
+      const contactInput = form.querySelector('[data-reference="contact"]');
+      const result = {};
+      let company = null;
+      if (companyInput) {
+        company = resolveChoice(companyChoices(), companyInput.value);
+        if (company) Object.assign(result, { company: company.name, companyId: company.id });
+        else if (!untouched(companyInput, 'company')) return referenceProblem(companyInput, 'Selecione uma empresa cadastrada na lista.');
+      }
+      if (contactInput) {
+        const text = contactInput.value.trim();
+        if (!text) Object.assign(result, { contact: '', contactId: null });
+        else {
+          const contact = resolveChoice(contactChoices(company), text);
+          if (!contact && untouched(contactInput, 'contact')) return result;
+          if (!contact) {
+            const elsewhere = resolveChoice(contactChoices(null), text);
+            return referenceProblem(contactInput, elsewhere && company
+              ? `Este contato não pertence à empresa ${company.name}.`
+              : 'Selecione um contato cadastrado na lista.');
+          }
+          Object.assign(result, { contact: contact.name, contactId: contact.id });
+        }
+      }
+      return result;
+    }
+
     const formDefinitions = {
       lead: [
-        ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'text', true],
+        ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'companySuggest', true],
         ['email', 'E-mail', 'email', true], ['phone', 'Telefone', 'text', false],
         ['segment', 'Segmento', 'text', false], ['source', 'Origem', 'text', false],
         ['responsibleId', 'Responsável', 'user', true], ['assistants', 'Assistente', 'assistant', false]
       ],
       contact: [
-        ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'text', true],
+        ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'companySuggest', true],
         ['email', 'E-mail', 'email', true], ['phone', 'Telefone', 'text', false], ['role', 'Cargo', 'text', false]
       ],
       company: [
@@ -2868,8 +2958,8 @@
         ['segment', 'Segmento', 'text', false], ['phone', 'Telefone', 'text', false], ['ownerId', 'Responsável', 'user', true]
       ],
       deal: [
-        ['title', 'Título do Negócio', 'text', true], ['company', 'Empresa', 'text', true],
-        ['contact', 'Contato', 'text', false], ['amount', 'Valor (R$)', 'number', true],
+        ['title', 'Título do Negócio', 'text', true], ['company', 'Empresa', 'companyRef', true],
+        ['contact', 'Contato', 'contactRef', false], ['amount', 'Valor (R$)', 'number', true],
         ['stage', 'Etapa', 'stage', true], ['responsibleId', 'Responsável', 'user', true],
         ['assistants', 'Assistente', 'assistant', false]
       ]
@@ -3371,6 +3461,7 @@
       document.getElementById('drawerBackToCompany').hidden = !(entity === 'deal' && drawerParentContext);
       const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
       document.getElementById('drawerFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
+      refreshContactOptions(document.getElementById('drawerFields'));
       renderDrawerCompanySummary(entity, record);
 
       renderDrawerCustomFields(record);
@@ -3589,6 +3680,7 @@
       document.getElementById('entityDialogTitle').textContent = `${id ? 'Editar' : 'Novo'} ${labels[entity]}`;
       const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
       document.getElementById('entityFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record?.[name])).join('');
+      refreshContactOptions(form);
       dialog.showModal();
       return true;
     }
@@ -3603,6 +3695,16 @@
         const assistants = state.users.filter(user => user.status === 'Ativo' && user.role === 'Assistente');
         const selected = Array.isArray(value) ? value[0] : '';
         return `<div class="field"><label for="${idPrefix}-${name}">${label}</label><select id="${idPrefix}-${name}" name="${name}"><option value="">Nenhum</option>${assistants.map(user => `<option value="${user.id}" ${user.id === selected ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
+      }
+      if (type === 'companyRef' || type === 'companySuggest') {
+        const listId = `${idPrefix}-${name}-options`;
+        const reference = type === 'companyRef' ? 'data-reference="company"' : '';
+        const hint = type === 'companyRef' ? '<small class="field-hint">Busque entre as empresas cadastradas.</small>' : '';
+        return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><input id="${idPrefix}-${name}" name="${name}" type="text" list="${listId}" autocomplete="off" ${reference} value="${escapeHTML(value ?? '')}" ${requiredAttr}>${datalistHTML(listId, companyChoices())}${hint}</div>`;
+      }
+      if (type === 'contactRef') {
+        const listId = `${idPrefix}-${name}-options`;
+        return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><input id="${idPrefix}-${name}" name="${name}" type="text" list="${listId}" autocomplete="off" data-reference="contact" value="${escapeHTML(value ?? '')}" ${requiredAttr}><datalist id="${listId}" data-reference-list="contact"></datalist><small class="field-hint">Contatos cadastrados da empresa escolhida.</small></div>`;
       }
       if (type === 'stage') {
         const selectedId = stageById(value)?.id || activeDealStages().find(stage => stage.name === value)?.id || initialStage()?.id;
@@ -3626,6 +3728,24 @@
         return [input.dataset.customKey, value];
       }));
       const existing = form.dataset.id ? state[collection].find(item => item.id === form.dataset.id) : null;
+      if (entity === 'company' && data.name !== undefined) {
+        const duplicate = (state.companies || []).find(company => company.id !== existing?.id && normalizedName(company.name) === normalizedName(data.name));
+        if (duplicate) { showToast(`Já existe uma empresa cadastrada como ${duplicate.name}.`); return; }
+      }
+      if (entity === 'contact' && data.email) {
+        const duplicate = (state.contacts || []).find(contact => contact.id !== existing?.id && normalizedEmail(contact.email) === normalizedEmail(data.email));
+        if (duplicate) { showToast(`Já existe um contato com o e-mail ${normalizedEmail(data.email)} (${duplicate.name}).`); return; }
+      }
+      if (entity === 'contact' && data.company !== undefined) {
+        const company = findCompanyByName(data.company);
+        if (company) Object.assign(data, { company: company.name, companyId: company.id });
+        else data.companyId = null;
+      }
+      if (entity === 'deal') {
+        const references = resolveDealReferences(form, existing);
+        if (!references) return;
+        Object.assign(data, references);
+      }
       if (entity === 'deal') {
         if (!requireDealPipeline()) return;
         const selectedStage = stageById(data.stageId || existing?.stageId || initialStage()?.id);
@@ -3637,8 +3757,10 @@
       if (data.assistants !== undefined) data.assistants = data.assistants ? [data.assistants] : [];
       if (data.amount !== undefined) data.amount = Number(data.amount);
       if (['lead', 'deal'].includes(entity)) data.team = state.users.find(user => user.id === data.responsibleId)?.team || currentUser().team;
+      const dropEmptyReferences = record => ['companyId', 'contactId'].forEach(key => { if (record[key] === null) delete record[key]; });
       if (existing) {
         Object.assign(existing, data, { updatedAt: new Date().toISOString() });
+        dropEmptyReferences(existing);
         if (Array.isArray(existing.customFields) && form.id === 'drawerForm') {
           const previousVisible = new Set(existing.visibleCustomFieldKeys || []);
           const globallyHidden = new Set(state.moduleFieldSettings[collection]?.hiddenCustomFieldKeys || []);
@@ -3656,6 +3778,7 @@
         if (entity === 'lead') Object.assign(base, { stage: 'Em contato' });
         if (entity === 'deal') Object.assign(base, { quotes: [], stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [] });
         Object.assign(base, data);
+        dropEmptyReferences(base);
         ensureSchemaFields(state, collection, base);
         state[collection].unshift(base);
       }
@@ -3684,12 +3807,41 @@
       if (!lead || lead.stage !== 'Em contato' || !requireDealPipeline()) return;
       const destination = initialStage();
       if (!destination) return;
+      if (!String(lead.company || '').trim() || !String(lead.name || '').trim()) {
+        showToast('Preencha o nome e a empresa do Lead antes de converter.');
+        return;
+      }
       const now = new Date().toISOString();
+      const created = [];
+      // Duplicate guard: reuse the registered company (same name ignoring accents/case)
+      // and the registered contact (same e-mail, or same name in that company).
+      let company = findCompanyByName(lead.company);
+      if (!company) {
+        company = {
+          id: nextId('E', state.companies), name: String(lead.company).trim().replace(/\s+/g, ' '), city: '',
+          segment: lead.segment || '', phone: '', ownerId: lead.responsibleId, createdAt: now, updatedAt: now
+        };
+        ensureSchemaFields(state, 'companies', company);
+        state.companies.unshift(company);
+        created.push(`empresa ${company.name}`);
+      }
+      const email = normalizedEmail(lead.email);
+      let contact = (email && state.contacts.find(candidate => normalizedEmail(candidate.email) === email))
+        || state.contacts.find(candidate => contactBelongsTo(candidate, company) && normalizedName(candidate.name) === normalizedName(lead.name));
+      if (!contact) {
+        contact = {
+          id: nextId('C', state.contacts), name: String(lead.name).trim(), company: company.name, companyId: company.id,
+          email: lead.email || '', phone: lead.phone || '', role: '', createdAt: now, updatedAt: now
+        };
+        ensureSchemaFields(state, 'contacts', contact);
+        state.contacts.unshift(contact);
+        created.push(`contato ${contact.name}`);
+      }
       lead.stage = 'Lead convertido';
       lead.updatedAt = now;
       const deal = {
-        id: nextId('N', state.deals), title: `Oportunidade ${lead.company}`, company: lead.company,
-        contact: lead.name, amount: 0, pipelineId: dealPipeline.id, stageId: destination.id, stage: destination.name, responsibleId: lead.responsibleId,
+        id: nextId('N', state.deals), title: `Oportunidade ${company.name}`, company: company.name, companyId: company.id,
+        contact: contact.name, contactId: contact.id, amount: 0, pipelineId: dealPipeline.id, stageId: destination.id, stage: destination.name, responsibleId: lead.responsibleId,
         team: lead.team || state.users.find(user => user.id === lead.responsibleId)?.team,
         assistants: [...(lead.assistants || [])], createdAt: now, updatedAt: now,
         stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [], quotes: []
@@ -3697,7 +3849,8 @@
       ensureSchemaFields(state, 'deals', deal);
       state.deals.unshift(deal);
       notify('Lead convertido em Negócio.', `${lead.name} → ${deal.id}`, lead.responsibleId);
-      saveState(); render(); toast(`Lead convertido. O Negócio ${deal.id} foi criado em ${destination.name}.`);
+      const createdText = created.length ? ` Também foi cadastrado: ${created.join(' e ')}.` : '';
+      saveState(); render(); toast(`Lead convertido. O Negócio ${deal.id} foi criado em ${destination.name}.${createdText}`);
     }
 
     function commitStageChange(entity, record, targetStageRef) {
@@ -4229,6 +4382,10 @@
       if (event.target.dataset.search) { const scope = event.target.dataset.search; getFilterState(scope).query = event.target.value; saveState(); render(); const input = document.querySelector(`[data-search="${scope}"]`); input?.focus(); input?.setSelectionRange(input.value.length, input.value.length); }
       if (['quoteQuantity', 'quoteUnit', 'quoteDiscount'].includes(event.target.id)) updateQuoteTotal();
       if (event.target.dataset.pipelineField) { syncPipelineEditorDraftFromDom(); pipelineEditorDirty = true; setPipelineEditorStatus('Alterações ainda não salvas.'); }
+      if (event.target.dataset.reference) {
+        event.target.setCustomValidity('');
+        if (event.target.dataset.reference === 'company') refreshContactOptions(event.target.closest('form') || document);
+      }
     });
 
     document.addEventListener('change', event => {

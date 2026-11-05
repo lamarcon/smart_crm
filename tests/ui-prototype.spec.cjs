@@ -2671,6 +2671,124 @@ async function storageEntries(page) {
     await assertCanonicalRehydration(page);
   });
 
+  await run('REF-01 Novo Negócio lista empresas e contatos cadastrados e recusa nomes livres', async page => {
+    await goTo(page, 'Negócios');
+    const before = await stateFrom(page);
+    await page.getByRole('button', { name: 'Novo Negócio' }).click();
+    const dialog = page.locator('#entityDialog');
+    const company = dialog.getByLabel('Empresa *');
+    const contact = dialog.getByLabel('Contato');
+    const companyOptions = await dialog.locator(`#${await company.getAttribute('list')} option`).evaluateAll(options => options.map(option => option.value));
+    assert.deepEqual([...companyOptions].sort(), [...before.companies.map(item => item.name)].sort());
+
+    await dialog.getByLabel('Título do Negócio *').fill('Negócio com referência');
+    await dialog.getByLabel('Valor (R$) *').fill('250');
+    await company.fill('Empresa Inexistente');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Selecione uma empresa cadastrada na lista.', { exact: true }).waitFor();
+    assert.equal(await dialog.evaluate(element => element.open), true);
+    assert.equal((await stateFrom(page)).deals.length, before.deals.length);
+
+    // Accents, case and spaces do not matter; the contact list follows the company.
+    await company.fill('  arkos   estetica ');
+    const contactOptions = await dialog.locator(`#${await contact.getAttribute('list')} option`).evaluateAll(options => options.map(option => option.value));
+    assert.deepEqual(contactOptions, ['Ana Berclay']);
+    await contact.fill('Giovani Oliveira');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Este contato não pertence à empresa Arkos Estética.', { exact: true }).waitFor();
+    assert.equal(await dialog.evaluate(element => element.open), true);
+
+    await contact.fill('ana berclay');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Negócio criado com sucesso.', { exact: true }).waitFor();
+    const deal = (await stateFrom(page)).deals.find(item => item.title === 'Negócio com referência');
+    assert.deepEqual(
+      { company: deal.company, companyId: deal.companyId, contact: deal.contact, contactId: deal.contactId },
+      { company: 'Arkos Estética', companyId: 'E-802', contact: 'Ana Berclay', contactId: 'C-2281' }
+    );
+    await assertCanonicalRehydration(page);
+  });
+
+  await run('REF-02 Negócio antigo com empresa livre continua editável sem trocar a empresa', async page => {
+    const api = apiByPage.get(page);
+    api.state.deals[0].company = 'Empresa Legada Livre';
+    delete api.state.deals[0].companyId;
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+    const legacy = api.state.deals[0];
+    await page.evaluate(id => openEntityDialog('deal', id), legacy.id);
+    const dialog = page.locator('#entityDialog');
+    await dialog.getByLabel('Título do Negócio *').fill('Título legado editado');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Negócio atualizado com sucesso.', { exact: true }).waitFor();
+    const saved = (await stateFrom(page)).deals.find(item => item.id === legacy.id);
+    assert.equal(saved.title, 'Título legado editado');
+    assert.equal(saved.company, 'Empresa Legada Livre');
+
+    await page.evaluate(id => openEntityDialog('deal', id), legacy.id);
+    await dialog.getByLabel('Empresa *').fill('Outra Empresa Livre');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Selecione uma empresa cadastrada na lista.', { exact: true }).waitFor();
+    assert.equal((await stateFrom(page)).deals.find(item => item.id === legacy.id).company, 'Empresa Legada Livre');
+  });
+
+  await run('CONV-01 conversão cria empresa e contato que faltam e não duplica na segunda vez', async page => {
+    await goTo(page, 'Leads');
+    const before = await stateFrom(page);
+    assert.equal(before.companies.some(item => item.name === 'Biocare Farmacêutica'), false);
+    page.once('dialog', dialog => dialog.accept());
+    await page.locator('#page-leads tbody tr').filter({ hasText: 'João Vilela' }).getByRole('button', { name: 'Converter' }).click();
+    await page.locator('#toastRegion').getByText(/Também foi cadastrado: empresa Biocare Farmacêutica e contato João Vilela\./).waitFor();
+    let state = await stateFrom(page);
+    const company = state.companies.find(item => item.name === 'Biocare Farmacêutica');
+    const contact = state.contacts.find(item => item.email === 'joao@biocare.com.br');
+    const deal = state.deals.find(item => item.title === 'Oportunidade Biocare Farmacêutica');
+    assert.equal(company.ownerId, 'u-paula');
+    assert.deepEqual({ name: contact.name, companyId: contact.companyId, phone: contact.phone }, { name: 'João Vilela', companyId: company.id, phone: '(11) 4020-1201' });
+    assert.deepEqual({ companyId: deal.companyId, contactId: deal.contactId, contact: deal.contact }, { companyId: company.id, contactId: contact.id, contact: 'João Vilela' });
+
+    // A second lead for the same company (other spelling) and person (other e-mail case).
+    await page.getByRole('button', { name: /Novo Lead/ }).click();
+    const dialog = page.locator('#entityDialog');
+    await dialog.getByLabel('Nome completo *').fill('Joao Vilela');
+    await dialog.getByLabel('Empresa *').fill('biocare  farmaceutica');
+    await dialog.getByLabel('E-mail *').fill('JOAO@Biocare.com.br');
+    await dialog.getByLabel('Responsável *').selectOption('u-paula');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    page.once('dialog', dialog => dialog.accept());
+    await page.locator('#page-leads tbody tr').filter({ hasText: 'Joao Vilela' }).getByRole('button', { name: 'Converter' }).click();
+    await page.locator('#toastRegion').getByText(/Lead convertido\. O Negócio N-\d+ foi criado em Em Contato\.$/).waitFor();
+    state = await stateFrom(page);
+    assert.equal(state.companies.length, before.companies.length + 1, 'nenhuma empresa duplicada');
+    assert.equal(state.contacts.length, before.contacts.length + 1, 'nenhum contato duplicado');
+    const second = state.deals.find(item => item.id !== deal.id && item.companyId === company.id);
+    assert.deepEqual({ contactId: second.contactId, company: second.company }, { contactId: contact.id, company: 'Biocare Farmacêutica' });
+    await assertCanonicalRehydration(page);
+  });
+
+  await run('DUP-01 cadastro recusa empresa com nome repetido e contato com e-mail repetido', async page => {
+    await goTo(page, 'Empresas');
+    const before = await stateFrom(page);
+    await page.getByRole('button', { name: /Novo Empresa/ }).click();
+    const dialog = page.locator('#entityDialog');
+    await dialog.getByLabel('Razão / nome da Empresa *').fill('  als  PHARMA ');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Já existe uma empresa cadastrada como ALS Pharma.', { exact: true }).waitFor();
+    assert.equal(await dialog.evaluate(element => element.open), true);
+    await dialog.getByRole('button', { name: 'Cancelar' }).click();
+
+    await goTo(page, 'Contatos');
+    await page.getByRole('button', { name: /Novo Contato/ }).click();
+    await dialog.getByLabel('Nome completo *').fill('Outra Ana');
+    await dialog.getByLabel('Empresa *').fill('Arkos Estética');
+    await dialog.getByLabel('E-mail *').fill(' ANA@arkos.com.br ');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Já existe um contato com o e-mail ana@arkos.com.br (Ana Berclay).', { exact: true }).waitFor();
+    const after = await stateFrom(page);
+    assert.equal(after.companies.length, before.companies.length);
+    assert.equal(after.contacts.length, before.contacts.length);
+  });
+
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {
     await goTo(page, 'Negócios');
     const options = await page.locator('[data-stage-filter="deals"] option').allTextContents();
@@ -3074,7 +3192,7 @@ async function storageEntries(page) {
     await page.getByRole('button', { name: 'Novo Negócio' }).click();
     const newDialog = page.locator('#entityDialog');
     await newDialog.getByLabel('Título do Negócio *').fill('Negócio com campo configurado');
-    await newDialog.getByLabel('Empresa *').fill('Empresa Nova');
+    await newDialog.getByLabel('Empresa *').fill('ALS Pharma');
     await newDialog.getByLabel('Valor (R$) *').fill('100');
     await newDialog.getByLabel('Responsável *').selectOption('u-paula');
     await newDialog.getByRole('button', { name: 'Salvar registro' }).click();
@@ -3746,7 +3864,7 @@ async function storageEntries(page) {
     const dialog = page.locator('#entityDialog');
     assert.equal(await dialog.getByLabel('Etapa *').inputValue(), DEAL_STAGE_IDS[0]);
     await dialog.getByLabel('Título do Negócio *').fill('Negócio no início configurado');
-    await dialog.getByLabel('Empresa *').fill('Empresa Pipeline');
+    await dialog.getByLabel('Empresa *').fill('ALS Pharma');
     await dialog.getByLabel('Valor (R$) *').fill('150');
     await dialog.getByLabel('Responsável *').selectOption('u-paula');
     await dialog.getByRole('button', { name: 'Salvar registro' }).click();
