@@ -1610,7 +1610,8 @@
           state = canonicalizeDealReferences(mergeDurableState(confirmedState, state));
           writeLocalState();
           render();
-          showToast('Não foi possível salvar no banco.');
+          // The server explains rule violations (e.g. duplicates); show its reason.
+          showToast(failure.status === 422 && failure.message ? `Não foi possível salvar: ${failure.message}` : 'Não foi possível salvar no banco.');
         }
       } finally {
         workspaceWriteInFlight = false;
@@ -2978,7 +2979,9 @@
         if (!text) Object.assign(result, { contact: '', contactId: null });
         else {
           const contact = resolveChoice(contactChoices(company), text);
-          if (!contact && untouched(contactInput, 'contact')) return result;
+          // A kept contact must still belong to a newly chosen company.
+          const companyChanged = company && company.id !== existing?.companyId;
+          if (!contact && untouched(contactInput, 'contact') && !(companyChanged && existing?.contactId)) return result;
           if (!contact) {
             const elsewhere = resolveChoice(contactChoices(null), text);
             return referenceProblem(contactInput, elsewhere && company

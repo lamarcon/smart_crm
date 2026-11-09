@@ -450,6 +450,11 @@ async function openFresh(options = {}) {
       if (api.writeFailure) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_unavailable', message: 'Banco de dados indisponível.', errorId: 'mock-write-failure' } }) });
       }
+      if (api.writeReject) {
+        const reject = api.writeReject;
+        api.writeReject = null;
+        return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: { code: 'validation_error', message: reject.message, path: reject.path } }) });
+      }
       if (api.writeGate) {
         const gate = api.writeGate;
         api.writeGate = null;
@@ -2776,6 +2781,46 @@ async function storageEntries(page) {
     await dialog.getByRole('button', { name: 'Salvar registro' }).click();
     await page.locator('#toastRegion').getByText('Selecione uma empresa cadastrada na lista.', { exact: true }).waitFor();
     assert.equal((await stateFrom(page)).deals.find(item => item.id === legacy.id).company, 'Empresa Legada Livre');
+  });
+
+  await run('REF-04 recusa do servidor aparece na tela e contato antigo não fica em outra empresa', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Novo Negócio' }).click();
+    const dialog = page.locator('#entityDialog');
+    await dialog.getByLabel('Título do Negócio *').fill('Negócio troca de empresa');
+    await dialog.getByLabel('Valor (R$) *').fill('300');
+    await dialog.getByLabel('Empresa *').fill('Arkos Estética');
+    await dialog.getByLabel('Contato').fill('Ana Berclay');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Negócio criado com sucesso.', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting !== 'true');
+    const created = (await stateFrom(page)).deals.find(item => item.title === 'Negócio troca de empresa');
+    const other = (await stateFrom(page)).companies.find(item => item.id !== created.companyId);
+
+    // Changing only the company must not keep a contact of the old company.
+    await page.evaluate(id => openEntityDialog('deal', id), created.id);
+    await dialog.getByLabel('Empresa *').fill(other.name);
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText(`Este contato não pertence à empresa ${other.name}.`, { exact: true }).waitFor();
+    assert.equal(await dialog.evaluate(element => element.open), true);
+    await dialog.getByLabel('Contato').fill('');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Negócio atualizado com sucesso.', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting !== 'true');
+    const moved = (await stateFrom(page)).deals.find(item => item.id === created.id);
+    assert.deepEqual({ companyId: moved.companyId, contact: moved.contact, contactId: moved.contactId ?? null }, { companyId: other.id, contact: '', contactId: null });
+
+    // When the server refuses a save, the screen shows its reason and keeps the confirmed data.
+    const writes = api.workspaceWrites.length;
+    api.writeReject = { path: 'companies[0].name', message: 'Já existe uma empresa cadastrada como Arkos Estética.' };
+    await page.evaluate(id => openEntityDialog('deal', id), created.id);
+    await dialog.getByLabel('Título do Negócio *').fill('Título recusado');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Não foi possível salvar: Já existe uma empresa cadastrada como Arkos Estética.', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting !== 'true');
+    assert.equal(api.workspaceWrites.length, writes);
+    assert.equal((await stateFrom(page)).deals.find(item => item.id === created.id).title, 'Negócio troca de empresa');
   });
 
   await run('CONV-01 conversão cria empresa e contato que faltam e não duplica na segunda vez', async page => {

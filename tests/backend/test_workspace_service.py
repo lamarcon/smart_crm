@@ -305,6 +305,37 @@ def test_invalid_reference_rejects_bootstrap_without_partial_rows(service) -> No
     assert workspace.load().initialized is False
 
 
+def test_save_rejects_unregistered_deal_company_without_writing(service) -> None:
+    workspace, _database = service
+    workspace.bootstrap(state())
+    changed = state_data()
+    changed["deals"].append({"id": "N-2", "title": "Livre", "company": "Empresa Inexistente", "amount": 1, "stage": "Em Contato", "responsibleId": "u-1"})
+    with pytest.raises(WorkspaceReferenceError) as error:
+        workspace.save(1, WorkspaceState.model_validate(changed))
+    assert error.value.path == "deals[1].companyId"
+    loaded = workspace.load()
+    assert loaded.version == 1
+    assert [deal["id"] for deal in loaded.state.deals] == ["N-1"]
+
+
+def test_save_rejects_duplicate_company_but_keeps_legacy_free_text_deals(service) -> None:
+    workspace, _database = service
+    legacy = state_data()
+    legacy["deals"][0].update(company="Livre Antiga", contact="Alguém")
+    legacy["deals"][0].pop("companyId")
+    legacy["deals"][0].pop("contactId")
+    workspace.bootstrap(WorkspaceState.model_validate(legacy))
+    edited = deepcopy(legacy)
+    edited["deals"][0]["title"] = "Antigo editado"
+    assert workspace.save(1, WorkspaceState.model_validate(edited)).version == 2
+    duplicated = deepcopy(edited)
+    duplicated["companies"].append({"id": "E-2", "name": " EMPRESA ", "city": "", "segment": "", "phone": "", "ownerId": "u-1"})
+    with pytest.raises(WorkspaceReferenceError) as error:
+        workspace.save(2, WorkspaceState.model_validate(duplicated))
+    assert error.value.path == "companies[1].name"
+    assert workspace.load().version == 2
+
+
 def test_repository_exception_rolls_back_save_and_version(service) -> None:
     workspace, database = service
     workspace.bootstrap(state())
