@@ -2983,6 +2983,7 @@ async function storageEntries(page) {
     assert.equal((await importButton.textContent()).trim(), '⇩ Importar');
     await importButton.click();
     const dialog = page.locator('#bitrixImportDialog');
+    assert.equal(await dialog.locator('h3').innerText(), 'Importação');
     assert.equal(await dialog.getByLabel('CSV de Negócios').isVisible(), true);
     assert.equal(await dialog.getByLabel('CSV de Contatos').isVisible(), true);
     assert.equal(await dialog.getByLabel('CSV de Empresas').isVisible(), true);
@@ -3013,6 +3014,8 @@ async function storageEntries(page) {
     await dialog.getByRole('button', { name: 'Importar amostra' }).click();
     await dialog.locator('#bitrixImportSummary').waitFor({ state: 'visible' });
     assert.equal(await dialog.locator('#bitrixImportSummary').innerText(), 'Criados: 10 · Atualizados: 0 · Rejeitados: 0');
+    await page.locator('#toastRegion').getByText('Importação concluída.', { exact: true }).waitFor();
+    assert.deepEqual(await dialog.locator('#bitrixImportDetails li').allInnerTexts(), ['Também cadastrados para manter os vínculos: 1 empresa(s) e 2 contato(s).']);
 
     const state = await stateFrom(page);
     const deal = state.deals.find(item => item.bitrixId === '9001');
@@ -3064,6 +3067,18 @@ async function storageEntries(page) {
     assert.deepEqual({ id: company.id, name: company.name, city: company.city, segment: company.segment, phone: company.phone, ownerId: company.ownerId, rawFields: company.bitrixFields.length }, {
       id: 'BX-COMPANY-4001', name: 'Empresa Independente', city: 'Campinas / SP', segment: 'Laboratórios', phone: '1933334444', ownerId: 'u-vitor', rawFields: 7
     });
+    // Imported contacts and deals are linked to registered companies and contacts;
+    // missing ones are created once, never duplicated.
+    const createdCompany = state.companies.find(item => item.name === 'Empresa Bitrix');
+    assert.ok(createdCompany && !createdCompany.bitrixId, 'empresa citada sem cadastro é criada');
+    assert.equal(state.companies.filter(item => item.name === 'Empresa Bitrix').length, 1);
+    assert.equal(contact.companyId, createdCompany.id);
+    assert.deepEqual(['3002', '3003'].map(id => state.contacts.find(item => item.bitrixId === id).companyId), ['BX-COMPANY-4002', 'BX-COMPANY-4003']);
+    assert.deepEqual({ companyId: deal.companyId, contactId: deal.contactId }, { companyId: createdCompany.id, contactId: 'BX-CONTACT-3001' });
+    const second = state.deals.find(item => item.bitrixId === '9002');
+    const secondContact = state.contacts.find(item => item.id === second.contactId);
+    assert.deepEqual({ companyId: second.companyId, contact: secondContact.name, contactCompanyId: secondContact.companyId }, { companyId: 'BX-COMPANY-4002', contact: 'Contato Dois', contactCompanyId: 'BX-COMPANY-4002' });
+    assert.equal(state.contacts.filter(item => item.name === 'Contato Dois').length, 1);
     const lead = state.leads.find(item => item.bitrixId === '5001');
     assert.deepEqual({ id: lead.id, name: lead.name, company: lead.company, email: lead.email, phone: lead.phone, segment: lead.segment, source: lead.source, stage: lead.stage, responsibleId: lead.responsibleId, rawFields: lead.bitrixFields.length }, {
       id: 'BX-LEAD-5001', name: 'Lead Importado', company: 'Empresa Lead', email: 'lead@teste.invalid', phone: '1133335555', segment: 'Diagnóstico', source: 'Site', stage: 'Em contato', responsibleId: 'u-vitor', rawFields: 9
@@ -3151,6 +3166,42 @@ async function storageEntries(page) {
     ]);
     assert.equal(updated.length, 3);
     assert.equal(updated[0].visibleCustomFieldKeys.includes('bitrix:campo%20futuro:1'), true);
+    // Three imports of deals naming the same company create it once and link all of them.
+    const linkedState = await stateFrom(page);
+    const shared = linkedState.companies.filter(item => item.name === 'Empresa Teste');
+    assert.equal(shared.length, 1);
+    assert.deepEqual(updated.map(item => item.companyId), [shared[0].id, shared[0].id, shared[0].id]);
+  });
+
+  await run('BITRIX-03 importação liga Negócios às empresas e contatos já cadastrados', async page => {
+    const before = await stateFrom(page);
+    const arkos = before.companies.find(item => item.name === 'Arkos Estética');
+    const other = before.companies.find(item => item.id !== arkos.id && !before.contacts.some(contact => contact.companyId === item.id && contact.name === 'Ana Berclay'));
+    await page.getByRole('button', { name: 'Importar', exact: true }).click();
+    const dialog = page.locator('#bitrixImportDialog');
+    const csv = '\ufeffID;Nome do negócio;Empresa;Contato;Fase;Total\n'
+      + `9301;Mesmo cadastro;  arkos   ESTETICA ;ana berclay;Em Contato;10\n`
+      + `9302;Homônimo em outra empresa;${other.name};Ana Berclay;Em Contato;20\n`
+      + '9303;Sem empresa;;Alguém;Em Contato;30\n';
+    await dialog.getByLabel('CSV de Negócios').setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
+    await dialog.getByRole('button', { name: 'Importar amostra' }).click();
+    await dialog.locator('#bitrixImportSummary').waitFor({ state: 'visible' });
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting !== 'true');
+    const after = await stateFrom(page);
+    const byBitrix = id => after.deals.find(item => item.bitrixId === id);
+
+    // Registered company and contact are reused (accents, case and spaces ignored).
+    assert.deepEqual({ company: byBitrix('9301').company, companyId: byBitrix('9301').companyId, contact: byBitrix('9301').contact, contactId: byBitrix('9301').contactId }, { company: 'Arkos Estética', companyId: arkos.id, contact: 'Ana Berclay', contactId: 'C-2281' });
+    // A same-name contact of another company is never borrowed: a new one is created there.
+    const homonym = after.contacts.find(item => item.id === byBitrix('9302').contactId);
+    assert.notEqual(homonym.id, 'C-2281');
+    assert.deepEqual({ name: homonym.name, companyId: homonym.companyId, dealCompanyId: byBitrix('9302').companyId }, { name: 'Ana Berclay', companyId: other.id, dealCompanyId: other.id });
+    // No company named: nothing is invented and no link is kept.
+    assert.equal(byBitrix('9303').companyId, undefined);
+    assert.equal(byBitrix('9303').contactId, undefined);
+    assert.equal(after.companies.length, before.companies.length);
+    assert.equal(after.contacts.length, before.contacts.length + 1);
+    await assertCanonicalRehydration(page);
   });
 
   await run('BCF-03 pesquisa e filtra campos adicionais em conjunto com campos padrão', async page => {
@@ -3857,11 +3908,14 @@ async function storageEntries(page) {
     const after = await stateFrom(page);
     assert.equal(after.leads.length, before.leads.length + 2);
     assert.deepEqual(after.leads.filter(item => item.bitrixId).map(item => item.bitrixId).sort(), ['5002', '5003']);
-    assert.equal(after.companies.length, before.companies.length);
+    // The rejected company file adds nothing; the deal's company is created to keep the link.
+    assert.equal(after.companies.length, before.companies.length + 1);
+    assert.equal(after.companies.some(item => item.name === 'Inválida'), false);
     assert.equal(after.contacts.length, before.contacts.length);
     assert.equal(after.deals.length, before.deals.length + 1);
     const imported = after.deals.find(item => item.bitrixId === '9004');
     assert.equal(imported.company, 'Empresa, Teste');
+    assert.equal(after.companies.find(item => item.id === imported.companyId)?.name, 'Empresa, Teste');
     assert.equal(imported.title, 'Negócio com vírgula');
   });
 

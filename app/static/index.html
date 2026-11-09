@@ -718,7 +718,7 @@
 
   <dialog id="bitrixImportDialog">
     <form id="bitrixImportForm">
-      <div class="modal-head"><div><h3>Importar amostra do Bitrix</h3><p class="hint">O teste importa até as três primeiras linhas de cada CSV.</p></div><button type="button" class="close-button" data-close="bitrixImportDialog" aria-label="Fechar">×</button></div>
+      <div class="modal-head"><div><h3>Importação</h3><p class="hint">O teste importa até as três primeiras linhas de cada CSV.</p></div><button type="button" class="close-button" data-close="bitrixImportDialog" aria-label="Fechar">×</button></div>
       <div class="modal-body">
         <div class="import-grid">
           <div class="field"><label for="bitrixDealFile">CSV de Negócios</label><input id="bitrixDealFile" type="file" accept=".csv,text/csv" data-bitrix-entity="deal"></div>
@@ -4177,8 +4177,58 @@
       document.getElementById('bitrixImportSubmit').disabled = !hasFile;
     }
 
+    // Links imported contacts and deals to registered companies and contacts (same
+    // name ignoring accents/case), creating the missing ones, so imports follow the
+    // same rule as the Novo Negócio form instead of keeping free-text names.
+    function linkBitrixReferences(records) {
+      const now = new Date().toISOString();
+      const created = { companies: 0, contacts: 0 };
+      const companyFor = (name, ownerId) => {
+        const text = String(name ?? '').trim().replace(/\s+/g, ' ');
+        if (!text) return null;
+        let company = findCompanyByName(text);
+        if (!company) {
+          company = { id: nextId('E', state.companies), name: text, city: '', segment: '', phone: '', ownerId: ownerId || state.currentUserId, createdAt: now, updatedAt: now };
+          ensureSchemaFields(state, 'companies', company);
+          state.companies.unshift(company);
+          created.companies += 1;
+        }
+        return company;
+      };
+      records.filter(item => item.entity === 'contact').forEach(({ record }) => {
+        const company = companyFor(record.company, state.currentUserId);
+        if (company) Object.assign(record, { company: company.name, companyId: company.id });
+        else delete record.companyId;
+      });
+      records.filter(item => item.entity === 'deal').forEach(({ record }) => {
+        const company = companyFor(record.company, record.responsibleId);
+        if (!company) {
+          delete record.companyId;
+          delete record.contactId;
+          return;
+        }
+        Object.assign(record, { company: company.name, companyId: company.id });
+        const name = String(record.contact ?? '').trim().replace(/\s+/g, ' ');
+        if (!name) {
+          record.contact = '';
+          delete record.contactId;
+          return;
+        }
+        let contact = state.contacts.find(candidate => contactBelongsTo(candidate, company) && normalizedName(candidate.name) === normalizedName(name));
+        if (!contact) {
+          contact = { id: nextId('C', state.contacts), name, company: company.name, companyId: company.id, email: '', phone: '', role: '', createdAt: now, updatedAt: now };
+          ensureSchemaFields(state, 'contacts', contact);
+          state.contacts.unshift(contact);
+          created.contacts += 1;
+        }
+        Object.assign(record, { contact: contact.name, contactId: contact.id });
+      });
+      return created;
+    }
+
     async function importBitrixSample(form) {
       const result = { created: 0, updated: 0, rejected: 0, details: [] };
+      const imported = [];
       const collections = { deal: 'deals', contact: 'contacts', company: 'companies', lead: 'leads' };
       const summary = document.getElementById('bitrixImportSummary');
       summary.hidden = true;
@@ -4224,19 +4274,25 @@
           });
           if (existing) {
             Object.assign(existing, record, { id: existing.id });
+            imported.push({ entity, record: existing });
             result.updated += 1;
           } else {
             state[collection].unshift(record);
+            imported.push({ entity, record });
             result.created += 1;
           }
         }
+      }
+      const linked = linkBitrixReferences(imported);
+      if (linked.companies || linked.contacts) {
+        result.details.push(`Também cadastrados para manter os vínculos: ${linked.companies} empresa(s) e ${linked.contacts} contato(s).`);
       }
       saveState();
       render();
       summary.textContent = `Criados: ${result.created} · Atualizados: ${result.updated} · Rejeitados: ${result.rejected}`;
       summary.hidden = false;
       document.getElementById('bitrixImportDetails').innerHTML = result.details.map(detail => `<li>${escapeHTML(detail)}</li>`).join('');
-      toast('Importação de amostra do Bitrix concluída.');
+      toast('Importação concluída.');
     }
 
     function openQuote(id) {
