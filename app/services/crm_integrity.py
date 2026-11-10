@@ -1,7 +1,9 @@
 """Server-side guard for company/contact links and duplicates on workspace saves.
 
-The screen already enforces these rules; this module makes the API enforce them
-too, so a direct request cannot bypass them. Only records that are new or whose
+Contacts and deals may only name registered companies (and deals registered
+contacts of that company). The screen already enforces these rules; this module
+makes the API enforce them too, so a direct request cannot bypass them. Only
+records that are new or whose
 guarded fields changed are checked, so legacy data saved before these rules
 keeps loading and saving untouched. Bitrix imports performed by a user allowed
 to import data are exempt, as they carry free-text names from the export.
@@ -97,6 +99,27 @@ def _check_contact_duplicates(contacts: list[dict], previous: dict[str, dict], p
         )
 
 
+def _check_contact_links(
+    contacts: list[dict],
+    previous: dict[str, dict],
+    companies: dict[str, dict],
+    principal: PrincipalScope,
+) -> None:
+    for index, contact in enumerate(contacts):
+        old = previous.get(str(contact.get("id")))
+        if _is_import(contact, old, principal) or not _changed(contact, old, ("company", "companyId")):
+            continue
+        company = companies.get(str(contact.get("companyId") or ""))
+        if not str(contact.get("company") or "").strip() and not contact.get("companyId"):
+            continue
+        _require(company is not None, f"contacts[{index}].companyId", "Selecione uma empresa cadastrada na lista.")
+        _require(
+            normalized_name(contact.get("company")) == normalized_name(company.get("name")),
+            f"contacts[{index}].company",
+            "A empresa do Contato não confere com o cadastro.",
+        )
+
+
 def _check_deal_links(
     deals: list[dict],
     previous: dict[str, dict],
@@ -154,6 +177,7 @@ def enforce_crm_integrity(
     after = merged.model_dump(by_alias=True, exclude_none=True)
     _check_company_duplicates(after["companies"], _by_id(before["companies"]), principal)
     _check_contact_duplicates(after["contacts"], _by_id(before["contacts"]), principal)
+    _check_contact_links(after["contacts"], _by_id(before["contacts"]), _by_id(after["companies"]), principal)
     _check_deal_links(
         after["deals"],
         _by_id(before["deals"]),

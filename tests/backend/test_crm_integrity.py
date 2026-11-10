@@ -207,6 +207,63 @@ def test_lead_conversion_creating_company_contact_and_deal_together_is_accepted(
     check(after)
 
 
+def new_contact(**fields) -> dict:
+    contact = {"id": "C-NEW", "name": "Nova Pessoa", "email": "", "phone": "", "role": ""}
+    contact.update(fields)
+    return contact
+
+
+def test_new_contact_with_registered_company_is_accepted() -> None:
+    after = base()
+    after["contacts"].append(new_contact(company=" als pharma ", companyId="E-2"))
+    check(after)
+
+
+def test_new_contact_without_company_is_accepted() -> None:
+    after = base()
+    after["contacts"].append(new_contact(company=""))
+    check(after)
+
+
+def test_new_contact_with_free_text_company_is_rejected() -> None:
+    after = base()
+    after["contacts"].append(new_contact(company="Empresa Livre"))
+    rejected(after, "contacts[3].companyId", "Selecione uma empresa cadastrada")
+
+
+def test_new_contact_with_unknown_company_id_is_rejected() -> None:
+    after = base()
+    after["contacts"].append(new_contact(company="Fantasma", companyId="E-404"))
+    rejected(after, "contacts[3].companyId", "Selecione uma empresa cadastrada")
+
+
+def test_contact_company_text_must_match_the_linked_company() -> None:
+    after = base()
+    after["contacts"].append(new_contact(company="Outra", companyId="E-2"))
+    rejected(after, "contacts[3].company", "não confere")
+
+
+def test_legacy_free_text_contact_keeps_saving_other_changes() -> None:
+    before = base()
+    before["contacts"][2]["company"] = "Livre Antiga"
+    after = deepcopy(before)
+    after["contacts"][2]["phone"] = "1199"
+    check(after, before)
+
+
+def test_changing_a_contact_company_to_free_text_is_rejected() -> None:
+    after = base()
+    after["contacts"][0].pop("companyId")
+    after["contacts"][0]["company"] = "Livre Nova"
+    rejected(after, "contacts[0].companyId", "Selecione uma empresa cadastrada")
+
+
+def test_non_admin_contact_follows_the_same_rule() -> None:
+    after = base()
+    after["contacts"].append(new_contact(company="Livre", bitrixId="9", bitrixFields={"ID": "9"}))
+    rejected(after, "contacts[3].companyId", "Selecione uma empresa cadastrada", who=SELLER)
+
+
 def bitrix_deal(**fields) -> dict:
     return new_deal(id="BX-DEAL-7", bitrixId="7", bitrixEntity="deal", bitrixFields={"ID": "7", "Empresa": "Livre Bitrix"}, company="Livre Bitrix", contact="Fulano", **fields)
 

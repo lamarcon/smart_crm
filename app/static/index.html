@@ -3002,7 +3002,7 @@
         ['responsibleId', 'Responsável', 'user', true], ['assistants', 'Assistente', 'assistant', false]
       ],
       contact: [
-        ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'companySuggest', true],
+        ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'companyRef', true],
         ['email', 'E-mail', 'email', true], ['phone', 'Telefone', 'text', false], ['role', 'Cargo', 'text', false]
       ],
       company: [
@@ -3786,9 +3786,13 @@
         if (duplicate) { showToast(`Já existe um contato com o e-mail ${normalizedEmail(data.email)} (${duplicate.name}).`); return; }
       }
       if (entity === 'contact' && data.company !== undefined) {
-        const company = findCompanyByName(data.company);
+        // Contacts only belong to registered companies, like deals. A legacy free-text
+        // company is kept while it is left untouched.
+        clearReferenceErrors(form);
+        const company = resolveChoice(companyChoices(), data.company);
+        const untouched = existing && String(data.company).trim() === String(existing.company ?? '').trim();
         if (company) Object.assign(data, { company: company.name, companyId: company.id });
-        else data.companyId = null;
+        else if (!untouched) return referenceProblem(form.querySelector('[data-reference="company"]'), 'Selecione uma empresa cadastrada na lista.');
       }
       if (entity === 'deal') {
         const references = resolveDealReferences(form, existing);

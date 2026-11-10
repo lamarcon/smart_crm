@@ -2880,6 +2880,66 @@ async function storageEntries(page) {
     assert.equal(after.contacts.length, before.contacts.length);
   });
 
+  await run('CREF-01 Contato só aceita empresa cadastrada e mantém empresa antiga sem mexer', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Contatos');
+    const before = await stateFrom(page);
+    await page.getByRole('button', { name: /Novo Contato/ }).click();
+    const dialog = page.locator('#entityDialog');
+    const company = dialog.getByLabel('Empresa *');
+    assert.equal(await company.getAttribute('data-reference'), 'company');
+    await company.focus();
+    const list = dialog.locator(`#${await company.getAttribute('aria-controls')}`);
+    await list.waitFor({ state: 'visible' });
+    assert.deepEqual((await list.locator('li[data-value]').evaluateAll(items => items.map(item => item.dataset.value))).sort(), before.companies.map(item => item.name).sort());
+    await dialog.getByLabel('Nome completo *').fill('Contato Com Empresa');
+    await dialog.getByLabel('E-mail *').fill('contato.empresa@teste.invalid');
+    await company.fill('Empresa Que Nao Existe');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Selecione uma empresa cadastrada na lista.', { exact: true }).waitFor();
+    assert.equal(await dialog.evaluate(element => element.open), true);
+    assert.equal((await stateFrom(page)).contacts.length, before.contacts.length);
+    await company.fill('ALS PHARMA');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Contato criado com sucesso.', { exact: true }).waitFor();
+    const created = (await stateFrom(page)).contacts.find(item => item.email === 'contato.empresa@teste.invalid');
+    assert.deepEqual({ company: created.company, companyId: created.companyId }, { company: 'ALS Pharma', companyId: 'E-801' });
+
+    // A legacy contact with a free-text company keeps saving while the company is untouched.
+    const legacy = api.state.contacts.find(item => item.id === 'C-2279');
+    legacy.company = 'Empresa Legada do Contato';
+    delete legacy.companyId;
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+    await page.evaluate(() => openEntityDialog('contact', 'C-2279'));
+    await dialog.getByLabel('Telefone').fill('(19) 9999-0000');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Contato atualizado com sucesso.', { exact: true }).waitFor();
+    const kept = (await stateFrom(page)).contacts.find(item => item.id === 'C-2279');
+    assert.deepEqual({ company: kept.company, phone: kept.phone, companyId: kept.companyId }, { company: 'Empresa Legada do Contato', phone: '(19) 9999-0000', companyId: undefined });
+    await page.evaluate(() => openEntityDialog('contact', 'C-2279'));
+    await dialog.getByLabel('Empresa *').fill('Outra Empresa Livre');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Selecione uma empresa cadastrada na lista.', { exact: true }).waitFor();
+    assert.equal((await stateFrom(page)).contacts.find(item => item.id === 'C-2279').company, 'Empresa Legada do Contato');
+    await assertCanonicalRehydration(page);
+  });
+
+  // Leads keep accepting a new company (only suggested); conversion registers it.
+  await run('CREF-02 Lead continua aceitando empresa nova', async page => {
+    await goTo(page, 'Leads');
+    await page.getByRole('button', { name: /Novo Lead/ }).click();
+    const dialog = page.locator('#entityDialog');
+    assert.equal(await dialog.getByLabel('Empresa *').getAttribute('data-reference'), null);
+    await dialog.getByLabel('Nome completo *').fill('Lead Empresa Nova');
+    await dialog.getByLabel('Empresa *').fill('Prospect Ainda Sem Cadastro');
+    await dialog.getByLabel('E-mail *').fill('lead.novo@teste.invalid');
+    await dialog.getByLabel('Responsável *').selectOption('u-paula');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Lead criado com sucesso.', { exact: true }).waitFor();
+    assert.equal((await stateFrom(page)).leads.find(item => item.email === 'lead.novo@teste.invalid').company, 'Prospect Ainda Sem Cadastro');
+  });
+
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {
     await goTo(page, 'Negócios');
     const options = await page.locator('[data-stage-filter="deals"] option').allTextContents();
