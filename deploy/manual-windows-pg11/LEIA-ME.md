@@ -366,6 +366,27 @@ Mantenha `smtp-password.bin`; ele e inofensivo para a release anterior e evita r
 
 Troque a senha no provedor, abra a janela `runas` de `SmartCRMService`, execute `set-smtp-password.ps1` de novo, rode o smoke test com o `server.env` ativo e reinicie a tarefa `SmartCRM` para o processo carregar o novo segredo. Nao copie a senha para chat, ticket, commit ou `server.env`.
 
+## 5.2. Balanceador (SLB) na frente do Apache (opcional)
+
+O limite de tentativas de login conta erros por IP (30 em 15 minutos bloqueiam o IP por 15 minutos). Se um balanceador de camada 7 (HTTP) fica na frente do Apache, o CRM enxerga o IP do balanceador para todos os usuarios e alguns erros somados bloqueiam o login de todos. Balanceador de camada 4 (TCP), que entrega o IP real ao Apache, nao precisa deste passo.
+
+1. Confirme o problema: no `logs\smart-crm-access.log` do Apache, se praticamente todas as linhas mostram o mesmo IP (ou poucos IPs do provedor), o balanceador e de camada 7.
+2. Obtenha com o provedor o IP ou a faixa CIDR **de onde o balanceador conecta ao servidor** e confirme que ele envia `X-Forwarded-For` com o IP do usuario.
+3. Na janela autorizada, acrescente ao `C:\ProgramData\SmartCRM\server.env` (sem `*`, sem `0.0.0.0/0`; faixas IPv4 de `/8` a `/32`):
+
+```text
+SMART_CRM_TRUSTED_PROXY_IPS=10.0.0.0/24
+```
+
+4. Valide, reinicie a tarefa e confirme no `smart-crm.log`/auditoria que os IPs dos usuarios aparecem variados:
+
+```powershell
+& C:\brbots\apps\smart-crm\deploy\manual-windows-pg11\start-smart-crm.ps1 -ValidateOnly -SkipSecretDecryption
+Stop-ScheduledTask -TaskName SmartCRM; Start-ScheduledTask -TaskName SmartCRM
+```
+
+O Apache (`127.0.0.1`) continua sempre confiavel; so os enderecos listados podem informar o IP do usuario, e um cabecalho forjado pelo proprio usuario e ignorado. Releases anteriores nao conhecem a chave: para voltar a uma delas, remova a linha antes do rollback. Sem a linha, o comportamento e o de hoje.
+
 ## 6. Migrar e trocar a tarefa na janela autorizada
 
 Este passo altera os dois schemas e troca a tarefa que atende a porta 8080. Execute somente dentro da janela aprovada.

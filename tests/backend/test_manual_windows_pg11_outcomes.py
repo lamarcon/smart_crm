@@ -1269,3 +1269,88 @@ def test_initializer_validates_without_decrypting_as_administrator():
     assert "-SkipSecretDecryption" in install
     assert '$serviceSecretDirectory = Join-Path $programData "service-secrets"' in install
     assert 'icacls $serviceSecretDirectory /inheritance:r' in install
+
+
+# --- Load balancer (SLB) in front of Apache: trusted client-IP hops ---------------
+
+
+def trusted_list(value: str) -> subprocess.CompletedProcess[str]:
+    return run_policy(
+        f"$list = ConvertTo-SmartCrmTrustedProxyList -Value {powershell_literal(value)}; "
+        "ConvertTo-Json -Compress -InputObject @($list)"
+    )
+
+
+def test_trusted_proxy_list_is_optional_and_off_by_default():
+    assert json.loads(trusted_list("").stdout) == []
+    uvicorn = run_policy("@(Get-SmartCrmUvicornArguments) | ConvertTo-Json -Compress")
+    assert json.loads(uvicorn.stdout)[-2:] == ["--forwarded-allow-ips", "127.0.0.1"]
+    assert "SMART_CRM_TRUSTED_PROXY_IPS" not in valid_server_environment()
+
+
+def test_trusted_proxy_list_accepts_addresses_and_ranges_and_feeds_uvicorn():
+    parsed = trusted_list(" 10.0.0.0/24, 198.51.100.7 ,2001:db8::/48,10.0.0.0/24")
+    assert json.loads(parsed.stdout) == ["10.0.0.0/24", "198.51.100.7", "2001:db8::/48"]
+    uvicorn = run_policy(
+        "@(Get-SmartCrmUvicornArguments -TrustedProxyIps @('10.0.0.0/24', '198.51.100.7')) | ConvertTo-Json -Compress"
+    )
+    assert json.loads(uvicorn.stdout)[-2:] == ["--forwarded-allow-ips", "127.0.0.1,10.0.0.0/24,198.51.100.7"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["*", "0.0.0.0/0", "10.0.0.0/4", "::/0", "2001:db8::/16", "slb.example.test", "10.0.0.1/33", "10.0.0/24", "10.0.0.0/24/8", "10.0.0.0/x", "10.0.0.1,"],
+)
+def test_trusted_proxy_list_rejects_wildcards_wide_ranges_and_junk(value: str):
+    result = trusted_list(value)
+    assert result.returncode != 0
+    assert "SMART_CRM_TRUSTED_PROXY_IPS" in result.stdout + result.stderr
+
+
+def test_windows_startup_accepts_a_configured_load_balancer(tmp_path: Path):
+    result = run_start_validation(tmp_path, smtp_values(SMART_CRM_TRUSTED_PROXY_IPS="10.0.0.0/24"))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "smart crm environment: VALID" in result.stdout
+
+
+def test_windows_startup_rejects_an_untrustworthy_load_balancer_setting(tmp_path: Path):
+    result = run_start_validation(tmp_path, smtp_values(SMART_CRM_TRUSTED_PROXY_IPS="*"))
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "SMART_CRM_TRUSTED_PROXY_IPS" in output
+    assert "smart crm environment: VALID" not in output
+
+
+def _client_seen_by_app(forwarded_allow_ips: str, forwarded_for: str, peer: str = "127.0.0.1") -> str:
+    import asyncio
+
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    seen: dict[str, str] = {}
+
+    async def app(scope, receive, send):  # noqa: ANN001, ANN202
+        seen["client"] = scope["client"][0]
+
+    middleware = ProxyHeadersMiddleware(app, trusted_hosts=forwarded_allow_ips)
+    scope = {
+        "type": "http",
+        "client": (peer, 50000),
+        "headers": [(b"x-forwarded-for", forwarded_for.encode())],
+    }
+    asyncio.run(middleware(scope, None, None))
+    return seen["client"]
+
+
+def test_uvicorn_sees_the_real_user_only_when_the_load_balancer_is_trusted():
+    uvicorn = run_policy(
+        "@(Get-SmartCrmUvicornArguments -TrustedProxyIps @('10.0.0.0/24')) | ConvertTo-Json -Compress"
+    )
+    trusted = json.loads(uvicorn.stdout)[-1]
+    # Apache appends the SLB address to the header the SLB sent.
+    chain = "203.0.113.9, 10.0.0.5"
+    assert _client_seen_by_app("127.0.0.1", chain) == "10.0.0.5"
+    assert _client_seen_by_app(trusted, chain) == "203.0.113.9"
+    # A forged header sent by the user stays to the left and is ignored.
+    assert _client_seen_by_app(trusted, "1.2.3.4, 203.0.113.9, 10.0.0.5") == "203.0.113.9"
+    # Requests not coming through Apache never get their header trusted.
+    assert _client_seen_by_app(trusted, "1.2.3.4", peer="198.51.100.20") == "198.51.100.20"

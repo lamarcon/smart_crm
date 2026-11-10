@@ -22,6 +22,7 @@ $allowedKeys = @(
     "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS", "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
     "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK"
 ) + @(Get-SmartCrmSmtpEnvironmentKeys)
+$optionalKeys = @(Get-SmartCrmOptionalEnvironmentKeys)
 
 $runtimeKeys = @(
     "SMART_CRM_CONTROL_DATABASE_URL", "SMART_CRM_TENANT_SECRET_STORE",
@@ -47,7 +48,7 @@ function Read-SmartCrmEnvironment {
         if ($key -eq "SMART_CRM_SMTP_PASSWORD") {
             throw "A senha SMTP nao pode ficar no server.env; use set-smtp-password.ps1 (DPAPI)."
         }
-        if ($key -notin $allowedKeys) { throw "Variavel nao permitida: $key" }
+        if ($key -notin $allowedKeys -and $key -notin $optionalKeys) { throw "Variavel nao permitida: $key" }
         if ($values.ContainsKey($key)) { throw "Variavel duplicada: $key" }
         $values[$key] = $Matches.Value.Trim()
     }
@@ -106,6 +107,8 @@ if (-not [double]::TryParse(
     throw "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS deve ser positivo."
 }
 
+$trustedProxyIps = ConvertTo-SmartCrmTrustedProxyList -Value $settings["SMART_CRM_TRUSTED_PROXY_IPS"]
+
 Assert-SmartCrmSmtpSettings -Settings $settings -SecretFile $SmtpPasswordSecretFile
 if ($SkipSecretDecryption -and -not $ValidateOnly) {
     throw "-SkipSecretDecryption so pode ser usado com -ValidateOnly."
@@ -146,7 +149,7 @@ $logPath = Join-Path $LogDirectory "smart-crm.log"
 
 Push-Location $AppRoot
 try {
-    $uvicornArguments = Get-SmartCrmUvicornArguments
+    $uvicornArguments = Get-SmartCrmUvicornArguments -TrustedProxyIps $trustedProxyIps
     $exitCode = Invoke-SmartCrmLoggedProcess `
         -FilePath $python `
         -ArgumentList $uvicornArguments `

@@ -111,7 +111,51 @@ function Get-SmartCrmEnvironmentAllowedKeys {
         "SMART_CRM_TENANT_POOL_TIMEOUT_SECONDS",
         "SMART_CRM_TENANT_CONNECT_TIMEOUT_SECONDS",
         "SMART_CRM_ALLOW_INSECURE_TENANT_LOOPBACK"
-    ) + @(Get-SmartCrmSmtpEnvironmentKeys)
+    ) + @(Get-SmartCrmSmtpEnvironmentKeys) + @(Get-SmartCrmOptionalEnvironmentKeys)
+}
+
+function Get-SmartCrmOptionalEnvironmentKeys {
+    # Allowed in server.env but not required.
+    return @("SMART_CRM_TRUSTED_PROXY_IPS")
+}
+
+function ConvertTo-SmartCrmTrustedProxyList {
+    # Addresses or CIDR ranges of the load balancer in front of Apache, comma
+    # separated. Only these hops are trusted to report the real client IP in
+    # X-Forwarded-For; empty keeps trusting Apache (127.0.0.1) alone.
+    param([AllowEmptyString()][AllowNull()][string]$Value)
+    $entries = @()
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return ,$entries
+    }
+    foreach ($rawEntry in $Value.Split(",")) {
+        $entry = $rawEntry.Trim()
+        $address = $entry
+        $prefix = $null
+        if ($entry.Contains("/")) {
+            $parts = $entry.Split("/")
+            if ($parts.Count -ne 2) { throw "SMART_CRM_TRUSTED_PROXY_IPS invalida: $entry." }
+            $address = $parts[0]
+            $parsedPrefix = 0
+            if (-not [int]::TryParse($parts[1], [ref]$parsedPrefix)) {
+                throw "SMART_CRM_TRUSTED_PROXY_IPS invalida: $entry."
+            }
+            $prefix = $parsedPrefix
+        }
+        $ip = $null
+        if (-not $address -or -not [System.Net.IPAddress]::TryParse($address, [ref]$ip) -or
+            $ip.ToString() -ne $address) {
+            throw "SMART_CRM_TRUSTED_PROXY_IPS invalida: $entry."
+        }
+        $isV4 = $ip.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork
+        $minimum = if ($isV4) { 8 } else { 32 }
+        $maximum = if ($isV4) { 32 } else { 128 }
+        if ($null -ne $prefix -and ($prefix -lt $minimum -or $prefix -gt $maximum)) {
+            throw "SMART_CRM_TRUSTED_PROXY_IPS: faixa ampla demais ou invalida ($entry)."
+        }
+        if ($entry -notin $entries) { $entries += $entry }
+    }
+    return ,$entries
 }
 
 function Read-SmartCrmEnvironment {
@@ -189,10 +233,13 @@ function Assert-SmartCrmAlembicRevision {
 }
 
 function Get-SmartCrmUvicornArguments {
+    param([string[]]$TrustedProxyIps = @())
+    # Apache (127.0.0.1) is always trusted; a load balancer only when configured.
+    $trusted = @("127.0.0.1") + @($TrustedProxyIps | Where-Object { $_ -and $_ -ne "127.0.0.1" })
     return @(
         "-m", "uvicorn", "app.server:create_central_app", "--factory",
         "--host", "127.0.0.1", "--port", "8080",
-        "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"
+        "--proxy-headers", "--forwarded-allow-ips", ($trusted -join ",")
     )
 }
 
