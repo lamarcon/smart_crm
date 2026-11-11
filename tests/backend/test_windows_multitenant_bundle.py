@@ -118,7 +118,7 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
     assert project["tool"]["setuptools"]["dynamic"]["version"] == {
         "attr": "app.version.APP_VERSION"
     }
-    assert APP_VERSION == "0.3.6"
+    assert APP_VERSION == "0.3.7"
 
     archive, digest_file = builder.build(
         PROJECT_ROOT,
@@ -167,7 +167,7 @@ def test_bundle_contains_multitenant_runtime_manifest_and_no_real_secret(tmp_pat
         assert "app/services/deal_automation.py" in manifest
         assert "app/static/index.html" in manifest
         assert "app/version.py" in manifest
-        assert b'APP_VERSION = "0.3.6"' in bundle.read("app/version.py")
+        assert b'APP_VERSION = "0.3.7"' in bundle.read("app/version.py")
         assert "app/fleet.py" in manifest
         assert "app/fleet_cli.py" in manifest
         assert "argon2_cffi_bindings-25.1.0-cp39-abi3-win_amd64.whl" in manifest
