@@ -12,6 +12,24 @@ TEST_DATABASE_URL = os.getenv(
 )
 
 
+@pytest.fixture(autouse=True, scope="session")
+def windows_powershell_starts_clean():
+    """Start Windows PowerShell 5.1 subprocesses with their own module path.
+
+    When pytest runs under PowerShell 7 (the release workflow uses ``shell: pwsh``),
+    the inherited PSModulePath points 5.1 at PowerShell 7-only modules, so it fails
+    to autoload Microsoft.PowerShell.Security (Get-Acl). On the server 5.1 starts
+    directly with its default path; the deployment tests must see the same.
+    """
+
+    inherited = os.environ.pop("PSModulePath", None)
+    try:
+        yield
+    finally:
+        if inherited is not None:
+            os.environ["PSModulePath"] = inherited
+
+
 @pytest.fixture
 def technical_probe_table() -> None:
     """Provide the migration-preservation probe without relying on prior test runs."""
