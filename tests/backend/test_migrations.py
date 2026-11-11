@@ -328,15 +328,18 @@ def test_upgrade_current_database_preserves_existing_probe(
     engine = create_engine(TEST_DATABASE_URL)
     with engine.begin() as connection:
         before = connection.scalar(text("SELECT count(*) FROM _smartcrm_test_probe"))
-        connection.execute(
-            text(
-                "INSERT INTO tenant_identity "
-                "(singleton_key, control_tenant_id, workspace_id, schema_contract) "
-                "VALUES ('identity', :tenant_id, 'default', 'tenant-v1') "
-                "ON CONFLICT (singleton_key) DO NOTHING"
-            ),
-            {"tenant_id": uuid.UUID("0704e2f5-38f2-440d-9ef2-1d9e91a77508")},
-        )
+        # An already-migrated database needs its tenant identity for the deploy
+        # repair. A fresh database (as in CI) has no tables yet and nothing to repair.
+        if connection.scalar(text("SELECT to_regclass('tenant_identity') IS NOT NULL")):
+            connection.execute(
+                text(
+                    "INSERT INTO tenant_identity "
+                    "(singleton_key, control_tenant_id, workspace_id, schema_contract) "
+                    "VALUES ('identity', :tenant_id, 'default', 'tenant-v1') "
+                    "ON CONFLICT (singleton_key) DO NOTHING"
+                ),
+                {"tenant_id": uuid.UUID("0704e2f5-38f2-440d-9ef2-1d9e91a77508")},
+            )
 
     command.upgrade(alembic_config(), "head")
 
