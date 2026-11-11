@@ -292,6 +292,13 @@
     .company-deal-row .entity-link { text-align: left; }
     .company-deal-row small { display: block; margin-top: 4px; color: var(--slate-400); }
     .company-deal-value { text-align: right; }
+    .company-contact-list { display: grid; gap: 9px; }
+    .company-contact-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; align-items: center; padding: 13px 14px; border: 1px solid var(--slate-200); border-radius: 11px; background: white; }
+    .company-contact-row .entity-link { text-align: left; }
+    .company-contact-row small { display: block; margin-top: 4px; color: var(--slate-400); overflow-wrap: anywhere; }
+    .company-contact-reach { display: grid; gap: 3px; justify-items: end; text-align: right; font-size: 12px; overflow-wrap: anywhere; }
+    .company-contact-reach a { color: var(--blue-600, #1570ef); }
+    @media (max-width: 640px) { .company-contact-row { grid-template-columns: 1fr; } .company-contact-reach { justify-items: start; text-align: left; } }
     .drawer-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 21px; border-top: 1px solid var(--slate-200); background: var(--slate-50); }
     .drawer-tabs { display: flex; gap: 4px; margin: -5px 0 20px; padding: 4px; border-radius: 10px; background: var(--slate-100); }
     .drawer-tabs button { flex: 1; min-height: 36px; border: 0; border-radius: 8px; color: var(--slate-500); background: transparent; font-weight: 750; }
@@ -666,10 +673,13 @@
               </div>
             </section>
             <section id="drawerCompanyWorkspace" hidden>
-              <div class="drawer-region-head"><div><h4>Relacionamento da empresa</h4><p>Negócios vinculados e histórico próprio da empresa.</p></div></div>
-              <div class="drawer-context-tabs" role="tablist" aria-label="Visões da empresa"><button id="drawerCompanyDealsTab" type="button" role="tab" data-action="company-workspace-tab" data-company-workspace-tab="deals" aria-controls="drawerCompanyDealsPanel" aria-selected="true">Negócios</button><button id="drawerCompanyHistoryTab" type="button" role="tab" data-action="company-workspace-tab" data-company-workspace-tab="history" aria-controls="drawerCompanyHistoryPanel" aria-selected="false">Histórico</button></div>
+              <div class="drawer-region-head"><div><h4>Relacionamento da empresa</h4><p>Negócios, contatos vinculados e histórico próprio da empresa.</p></div></div>
+              <div class="drawer-context-tabs" role="tablist" aria-label="Visões da empresa"><button id="drawerCompanyDealsTab" type="button" role="tab" data-action="company-workspace-tab" data-company-workspace-tab="deals" aria-controls="drawerCompanyDealsPanel" aria-selected="true">Negócios</button><button id="drawerCompanyContactsTab" type="button" role="tab" data-action="company-workspace-tab" data-company-workspace-tab="contacts" aria-controls="drawerCompanyContactsPanel" aria-selected="false">Contatos</button><button id="drawerCompanyHistoryTab" type="button" role="tab" data-action="company-workspace-tab" data-company-workspace-tab="history" aria-controls="drawerCompanyHistoryPanel" aria-selected="false">Histórico</button></div>
               <section id="drawerCompanyDealsPanel" role="tabpanel" aria-labelledby="drawerCompanyDealsTab">
                 <div class="company-deal-panel"><div class="activity-status" id="companyDealsStatus" role="status" aria-live="polite"></div><div class="company-deal-metrics" id="companyDealSummary" role="group" aria-label="Resumo dos negócios da empresa"></div><div class="company-deal-list" id="companyDealList"></div></div>
+              </section>
+              <section id="drawerCompanyContactsPanel" role="tabpanel" aria-labelledby="drawerCompanyContactsTab" hidden>
+                <div class="company-deal-panel"><div class="activity-status" id="companyContactsStatus" role="status" aria-live="polite"></div><div class="company-contact-list" id="companyContactList"></div></div>
               </section>
               <section id="drawerCompanyHistoryPanel" role="tabpanel" aria-labelledby="drawerCompanyHistoryTab" hidden>
                 <div class="deal-activity-panel">
@@ -1593,7 +1603,10 @@
         flushQueuedToasts();
         const drawer = document.getElementById('entityDrawer');
         const drawerForm = document.getElementById('drawerForm');
-        if (drawer.classList.contains('open') && drawerForm.dataset.entity === 'company') loadCompanyDeals(drawerForm.dataset.id);
+        if (drawer.classList.contains('open') && drawerForm.dataset.entity === 'company') {
+          loadCompanyDeals(drawerForm.dataset.id);
+          renderCompanyContacts();
+        }
       } catch (failure) {
         queuedToasts = [];
         if (failure.status === 409) {
@@ -3467,6 +3480,37 @@
       renderCompanyDeals();
     }
 
+    // Contacts linked to the company open from its drawer, like its deals.
+    function companyContacts(companyId) {
+      const company = (state.companies || []).find(item => item.id === companyId);
+      if (!company) return [];
+      return (state.contacts || [])
+        .filter(contact => contactBelongsTo(contact, company))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
+    }
+
+    function renderCompanyContacts() {
+      const form = document.getElementById('drawerForm');
+      const status = document.getElementById('companyContactsStatus');
+      const list = document.getElementById('companyContactList');
+      if (!status || !list || form.dataset.entity !== 'company') return;
+      const contacts = companyContacts(form.dataset.id);
+      status.className = 'activity-status';
+      status.textContent = `${contacts.length} contato(s) vinculado(s).`;
+      list.innerHTML = contacts.length ? contacts.map(contact => `
+        <article class="company-contact-row" data-company-contact="${escapeHTML(contact.id)}">
+          <div><button type="button" class="entity-link" data-action="open-company-contact" data-id="${escapeHTML(contact.id)}">${escapeHTML(contact.name || 'Sem nome')}</button><small>${escapeHTML(contact.role || 'Sem cargo informado')}</small></div>
+          <div class="company-contact-reach">${contact.email ? `<a href="mailto:${escapeHTML(contact.email)}">${escapeHTML(contact.email)}</a>` : '<small>Sem e-mail</small>'}${contact.phone ? `<span>${escapeHTML(contact.phone)}</span>` : ''}</div>
+        </article>`).join('') : '<div class="drawer-shell-empty"><b>Nenhum contato vinculado a esta empresa.</b><p>Cadastre um contato escolhendo esta empresa para vê-lo aqui.</p></div>';
+    }
+
+    function openCompanyContact(contactId) {
+      const form = document.getElementById('drawerForm');
+      if (form.dataset.entity !== 'company') return;
+      drawerParentContext = { companyId: form.dataset.id, tab: companyWorkspaceTab, returnFocus: drawerReturnFocus };
+      openEntityDrawer('contact', contactId, { preserveReturnFocus: true });
+    }
+
     function openCompanyDeal(dealId) {
       const form = document.getElementById('drawerForm');
       if (form.dataset.entity !== 'company') return;
@@ -3510,7 +3554,7 @@
       form.dataset.id = id;
       document.getElementById('entityDrawerTitle').textContent = `Editar ${entityLabel(entity)}`;
       document.getElementById('entityDrawerSubtitle').textContent = `${id}`;
-      document.getElementById('drawerBackToCompany').hidden = !(entity === 'deal' && drawerParentContext);
+      document.getElementById('drawerBackToCompany').hidden = !(['deal', 'contact'].includes(entity) && drawerParentContext);
       const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
       document.getElementById('drawerFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
       renderDrawerCompanySummary(entity, record);
@@ -3680,10 +3724,12 @@
     }
 
     function setCompanyWorkspaceTab(tab) {
-      companyWorkspaceTab = tab === 'history' ? 'history' : 'deals';
+      companyWorkspaceTab = ['history', 'contacts'].includes(tab) ? tab : 'deals';
       document.querySelectorAll('[data-company-workspace-tab]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.companyWorkspaceTab === companyWorkspaceTab)));
       document.getElementById('drawerCompanyDealsPanel').hidden = companyWorkspaceTab !== 'deals';
       document.getElementById('drawerCompanyHistoryPanel').hidden = companyWorkspaceTab !== 'history';
+      document.getElementById('drawerCompanyContactsPanel').hidden = companyWorkspaceTab !== 'contacts';
+      if (companyWorkspaceTab === 'contacts') renderCompanyContacts();
       const form = document.getElementById('drawerForm');
       if (companyWorkspaceTab === 'history' && form.dataset.entity === 'company') {
         if (companyActivityState.companyId !== form.dataset.id || companyActivityState.status === 'idle') loadCompanyActivities(form.dataset.id, { category: null });
@@ -3700,7 +3746,7 @@
       if (!drawer.classList.contains('open')) return true;
       const form = document.getElementById('drawerForm');
       if (!force && formSignature(form) !== drawerInitialValue && !confirm('Descartar as alterações não salvas?')) return false;
-      if (form.dataset.entity === 'deal' && drawerParentContext) return restoreCompanyDrawer();
+      if (['deal', 'contact'].includes(form.dataset.entity) && drawerParentContext) return restoreCompanyDrawer();
       drawer.classList.remove('open');
       drawer.setAttribute('aria-hidden', 'true');
       document.getElementById('entityDrawerOverlay').classList.remove('open');
@@ -4437,6 +4483,7 @@
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
       if (action === 'open-company-deal') openCompanyDeal(button.dataset.id);
+      if (action === 'open-company-contact') openCompanyContact(button.dataset.id);
       if (action === 'back-to-company') restoreCompanyDrawer();
       if (action === 'drawer-tab') setDrawerTab(button.dataset.drawerTab);
       if (action === 'company-workspace-tab') setCompanyWorkspaceTab(button.dataset.companyWorkspaceTab);

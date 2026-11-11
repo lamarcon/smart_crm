@@ -1808,7 +1808,7 @@ async function storageEntries(page) {
     const companyWorkspace = drawer.getByRole('region', { name: 'Relacionamento da empresa' });
     assert.equal(await companyWorkspace.isVisible(), true);
     const companyTabs = companyWorkspace.getByRole('tab');
-    assert.deepEqual(await companyTabs.allTextContents(), ['Negócios', 'Histórico']);
+    assert.deepEqual(await companyTabs.allTextContents(), ['Negócios', 'Contatos', 'Histórico']);
     assert.equal(await companyWorkspace.getByRole('tabpanel', { name: 'Negócios' }).isVisible(), true);
     assert.equal(await companyWorkspace.getByRole('tabpanel', { name: 'Histórico' }).isVisible(), false);
     await companyWorkspace.getByRole('tab', { name: 'Histórico' }).click();
@@ -2940,6 +2940,56 @@ async function storageEntries(page) {
     assert.equal((await stateFrom(page)).leads.find(item => item.email === 'lead.novo@teste.invalid').company, 'Prospect Ainda Sem Cadastro');
   });
 
+  await run('CCON-01 painel da empresa lista os contatos vinculados e volta à empresa', async page => {
+    const api = apiByPage.get(page);
+    // A contact linked only by the company name (legacy) also belongs to the company.
+    api.state.contacts.push({ id: 'C-9001', name: 'Bruno Legado', company: '  arkos  estetica ', email: '', phone: '(11) 90000-0001', role: '' });
+    api.state.companies.push({ id: 'E-9001', name: 'Empresa Sem Contatos', city: '', segment: '', phone: '', ownerId: 'u-paula' });
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+
+    await goTo(page, 'Empresas');
+    await page.getByRole('button', { name: 'Arkos Estética', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    const workspace = drawer.getByRole('region', { name: 'Relacionamento da empresa' });
+    await workspace.getByRole('tab', { name: 'Contatos' }).click();
+    const panel = workspace.getByRole('tabpanel', { name: 'Contatos' });
+    assert.equal(await panel.isVisible(), true);
+    assert.equal(await workspace.getByRole('tabpanel', { name: 'Negócios' }).isVisible(), false);
+    assert.equal(await panel.locator('#companyContactsStatus').innerText(), '2 contato(s) vinculado(s).');
+    assert.deepEqual(await panel.locator('[data-company-contact]').evaluateAll(rows => rows.map(row => row.dataset.companyContact)), ['C-2281', 'C-9001']);
+    const ana = panel.locator('[data-company-contact="C-2281"]');
+    assert.match(await ana.innerText(), /Compradora/);
+    assert.equal(await ana.getByRole('link', { name: 'ana@arkos.com.br' }).getAttribute('href'), 'mailto:ana@arkos.com.br');
+    assert.match(await ana.innerText(), /\(11\) 3456-7788/);
+    assert.match(await panel.locator('[data-company-contact="C-9001"]').innerText(), /Sem e-mail/);
+    // Contacts of other companies stay out.
+    assert.equal(await panel.getByText('Giovani Oliveira').count(), 0);
+
+    // Opening a contact keeps the way back to the company, on the same tab.
+    await panel.getByRole('button', { name: 'Ana Berclay' }).click();
+    assert.equal(await drawer.getAttribute('data-entity'), 'contact');
+    assert.equal(await drawer.getByRole('button', { name: 'Voltar à empresa' }).isVisible(), true);
+    await drawer.getByLabel('Telefone').fill('(11) 98888-7777');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Contato atualizado com sucesso.', { exact: true }).waitFor();
+    assert.equal(await drawer.getAttribute('data-entity'), 'company');
+    assert.equal(await workspace.getByRole('tab', { name: 'Contatos' }).getAttribute('aria-selected'), 'true');
+    await page.waitForFunction(() => document.querySelector('[data-company-contact="C-2281"]')?.textContent.includes('(11) 98888-7777'));
+    assert.equal((await stateFrom(page)).contacts.find(item => item.id === 'C-2281').phone, '(11) 98888-7777');
+
+    await panel.getByRole('button', { name: 'Bruno Legado' }).click();
+    await drawer.getByRole('button', { name: 'Voltar à empresa' }).click();
+    assert.equal(await drawer.getAttribute('data-entity'), 'company');
+    assert.equal(await workspace.getByRole('tab', { name: 'Contatos' }).getAttribute('aria-selected'), 'true');
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('button', { name: 'Empresa Sem Contatos', exact: true }).click();
+    await workspace.getByRole('tab', { name: 'Contatos' }).click();
+    assert.equal(await panel.locator('#companyContactsStatus').innerText(), '0 contato(s) vinculado(s).');
+    await panel.getByText('Nenhum contato vinculado a esta empresa.').waitFor();
+  });
+
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {
     await goTo(page, 'Negócios');
     const options = await page.locator('[data-stage-filter="deals"] option').allTextContents();
@@ -3348,7 +3398,8 @@ async function storageEntries(page) {
     assert.deepEqual((await stateFrom(page)).deals.map(deal => [deal.id, deal.contact]), before.deals.map(deal => [deal.id, deal.contact]));
     for (const deal of before.deals) {
       await page.getByRole('button', { name: deal.title }).click();
-      assert.equal(await drawer.getByLabel('Contato').count(), 0, `${deal.id} ainda exibiu Contato`);
+      // Exact label: the company drawer's hidden "Contatos" tab panel is not the deal field.
+      assert.equal(await drawer.getByLabel('Contato', { exact: true }).count(), 0, `${deal.id} ainda exibiu Contato`);
       await drawer.getByRole('button', { name: 'Fechar painel' }).click();
     }
 
@@ -3356,7 +3407,7 @@ async function storageEntries(page) {
     await dialog.getByLabel('Contato').check();
     await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
     await page.getByRole('button', { name: firstDeal.title }).click();
-    assert.equal(await drawer.getByLabel('Contato').inputValue(), firstDeal.contact);
+    assert.equal(await drawer.getByLabel('Contato', { exact: true }).inputValue(), firstDeal.contact);
     await drawer.getByRole('button', { name: 'Fechar painel' }).click();
 
     await manage.click();
