@@ -15,6 +15,35 @@ Este documento nao autoriza uma mudanca no servidor. A execucao exige autorizaca
 - Os databases preexistentes `DW_CMS` e `DW_PRODUTOS` continuam atendendo seus clientes remotos, nao recebem migracao do Smart CRM e nao podem ter listener, role, schema, regra HBA ou dado alterado por este corte.
 - Nao existe cadastro publico de empresa ou primeiro administrador.
 
+## Como executar os blocos
+
+- Use Windows PowerShell 5.1 aberto com "Executar como administrador", salvo onde a secao pede uma janela de `SmartCRMService`.
+- Antes de colar, aperte `Esc` e confira que a linha do prompt esta vazia; texto que sobrou na linha se junta ao bloco colado.
+- Colado direto no console, cada linha roda mesmo depois de um erro. Para parar no primeiro erro, envolva o bloco em `. {` e `}` com `$ErrorActionPreference = "Stop"` na primeira linha; o ponto mantem as variaveis (`$releaseRoot`, `$serviceAccount`, `$pgHbaPath`) na janela para os passos seguintes.
+- O Windows Server 2016 nao usa TLS 1.2 por padrao: antes de acessar o GitHub, execute `[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12` (a secao 3 ja faz isso).
+- Ao fechar a janela, recrie as variaveis: `$releaseRoot = "C:\brbots\apps\smart-crm-vX.Y.Z"` e `$serviceAccount = "$env:COMPUTERNAME\SmartCRMService"`.
+
+## Roteiro de atualizacao (servidor ja multiempresa)
+
+Quando a tarefa `SmartCRM` ja roda uma release multiempresa como `SmartCRMService` e o `server.env` ja tem `SMART_CRM_CONTROL_DATABASE_URL`, a atualizacao usa somente:
+
+1. secao 1 (autorizacao e backup);
+2. secao 3 (baixar a release lado a lado);
+3. secao 3.1 apenas para obter `$pgHbaPath` (as regras ja existem);
+4. secao 4 (instalar sem publicar);
+5. secao 5.1, se o `server.env` ainda nao tem SMTP;
+6. secao 6 (migrar e trocar a tarefa);
+7. secao 8 (UAT), incluindo um convite e uma recuperacao de senha de teste.
+
+As secoes 2, 5 e 7 ja foram feitas no primeiro corte e nao se repetem. Para conferir o estado antes de comecar, sem alterar nada:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/api/version
+$t = Get-ScheduledTask -TaskName SmartCRM
+"$($t.State) | $($t.Principal.UserId) | $($t.Actions[0].WorkingDirectory)"
+Get-Content C:\ProgramData\SmartCRM\server.env | Where-Object { $_ -match '^[A-Z]' } | ForEach-Object { ($_ -split '=', 2)[0] }
+```
+
 ## 1. Autorizar e registrar a mudanca
 
 Antes de qualquer comando em producao, registre:
@@ -113,26 +142,26 @@ A pasta nova deve conter `app`, `migrations`, `migrations_control`, `wheelhouse`
 
 O listener global da instancia permanece como esta porque `DW_CMS` e `DW_PRODUTOS` dependem de acesso remoto. Nao altere `listen_addresses`, nao reinicie o servico PostgreSQL e nao mude as regras existentes desses databases.
 
-Descubra o arquivo ativo sem imprimir senha:
+Descubra o arquivo ativo pela configuracao do servico, sem senha e sem consultar o banco (`SHOW hba_file` exige superusuario ou `pg_read_all_settings`, que a role `smartcrm` corretamente nao tem):
 
 ```powershell
-. "$releaseRoot\deploy\manual-windows-pg11\deployment-policy.ps1"
-$settings = Read-SmartCrmEnvironment `
-    -Path C:\ProgramData\SmartCRM\server.env `
-    -AllowedKeys @(Get-SmartCrmEnvironmentAllowedKeys)
-$env:PGPASSWORD = $settings.SMART_CRM_DB_PASSWORD
-try {
-    $pgHbaPath = (& "C:\Program Files\PostgreSQL\11\bin\psql.exe" `
-        -h 127.0.0.1 -p 5432 -U smartcrm -d smartcrm -At `
-        -c "SHOW hba_file;").Trim()
+$svc = Get-CimInstance Win32_Service -Filter "Name='postgresql-x64-11'"
+if ($svc.PathName -notmatch '-D\s+"?([^"]+?)"?(\s+-|$)') {
+    throw "Nao foi possivel ler a pasta de dados do PostgreSQL: $($svc.PathName)"
 }
-finally {
-    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
-    Remove-Variable settings -ErrorAction SilentlyContinue
-}
+$dataDir = $Matches[1].Trim()
+$custom = Select-String -LiteralPath (Join-Path $dataDir "postgresql.conf") `
+    -Pattern "^\s*hba_file\s*=\s*'([^']+)'" | Select-Object -Last 1
+$pgHbaPath = if ($custom) { $custom.Matches[0].Groups[1].Value } else { Join-Path $dataDir "pg_hba.conf" }
 if (-not (Test-Path -LiteralPath $pgHbaPath -PathType Leaf)) {
     throw "pg_hba.conf ativo nao foi localizado."
 }
+$pgHbaPath
+```
+
+Em uma atualizacao, se o arquivo ja contem `BEGIN SMARTCRM LOCAL ONLY`, as regras ja existem: pule o restante desta secao e use apenas `$pgHbaPath` na secao 4. Caso contrario, guarde uma copia:
+
+```powershell
 Copy-Item -LiteralPath $pgHbaPath -Destination "$pgHbaPath.pre-smartcrm-multitenant"
 ```
 
@@ -485,6 +514,14 @@ Valide primeiro no loopback e depois pelo Apache existente:
 Invoke-RestMethod http://127.0.0.1:8080/health
 curl.exe -I https://sc2030.brbots.com/
 curl.exe --user crm-homologacao https://sc2030.brbots.com/health
+```
+
+O Windows Server 2016 nao traz `curl.exe`. Nele, confira o Apache pelo PowerShell (esperado `401` enquanto a autenticacao de homologacao estiver ativa) e valide o restante pelo navegador:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+try { (Invoke-WebRequest https://sc2030.brbots.com/ -UseBasicParsing -TimeoutSec 15).StatusCode }
+catch { [int]$_.Exception.Response.StatusCode }
 ```
 
 Sem usar `-k` ou `--insecure`, confirme:

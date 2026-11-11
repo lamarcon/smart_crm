@@ -5,10 +5,11 @@ Este documento fornece contexto técnico suficiente para outra IA colaborar sem 
 ## Repositório e estado seguro
 
 - Repositório: `https://github.com/lamarcon/smart_crm.git`
-- Branch de integração atual: `codex/deploy-hardening-v0.3.4`
-- Commit local de referência: `944cf5e` (`feat(users): implement invitation lifecycle`)
-- Versão atualmente publicada no servidor: `0.3.3`
-- Próxima versão planejada: `0.3.4`; não alterar `APP_VERSION`, criar tag ou publicar release sem autorização explícita.
+- Branch de integração atual: `main` (contém `codex/deploy-hardening-v0.3.4` e os branches `ai2/*` até a release `v0.3.7`)
+- Commit de referência: `7efe86d` (`chore(release): bump application version to 0.3.7`)
+- Versão atualmente publicada no servidor: `0.3.7` (implantada em 2026-11-11, com SMTP `mail.brbots.com:465`)
+- As tags `v0.3.4`, `v0.3.5` e `v0.3.6` existem sem GitHub Release: o workflow falhou por diferenças do ambiente de CI (banco vazio, tempo de toast e `PSModulePath` do `pwsh`), corrigidas até a `v0.3.7`. Não reutilize esses números.
+- Próxima versão: `0.3.8`; não alterar `APP_VERSION`, criar tag ou publicar release sem autorização explícita.
 - A branch de integração pode conter commits ainda não enviados ao GitHub. Confirme com o responsável antes de escolher a base remota.
 
 ## Arquivos que devem ser lidos primeiro
