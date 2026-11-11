@@ -3743,6 +3743,10 @@ async function storageEntries(page) {
     const canceled = (await stateFrom(page)).users.find(user => user.email === 'rafael@teste.invalid');
     assert.equal(canceled.status, 'Cancelado');
     assert.equal((await assignableUserIds(page)).includes(canceled.id), false);
+    // The re-invitation shows the same text as the first invitation; let the first
+    // notice expire so the next wait can only match the new one (fast CI runners
+    // otherwise see both on screen at once).
+    await page.locator('#toastRegion').getByText('Convite enviado para rafael@teste.invalid.', { exact: true }).waitFor({ state: 'detached' });
 
     await page.getByRole('button', { name: 'Convidar funcionário' }).click();
     await dialog.getByLabel('Nome completo').fill('Rafael Reativado');
