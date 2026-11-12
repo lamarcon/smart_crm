@@ -131,9 +131,17 @@ def _check_deal_links(
         old = previous.get(str(deal.get("id")))
         if _is_import(deal, old, principal):
             continue
-        company_changed = _changed(deal, old, ("company", "companyId"))
-        contact_changed = _changed(deal, old, ("contact", "contactId"))
         company = companies.get(str(deal.get("companyId") or ""))
+        linked_contact = contacts.get(str(deal.get("contactId") or ""))
+        # A name that only follows a rename of the linked record is not a change.
+        company_changed = _changed(deal, old, ("companyId",)) or (
+            _changed(deal, old, ("company",))
+            and not (company and normalized_name(deal.get("company")) == normalized_name(company.get("name")))
+        )
+        contact_changed = _changed(deal, old, ("contactId",)) or (
+            _changed(deal, old, ("contact",))
+            and not (linked_contact and normalized_name(deal.get("contact")) == normalized_name(linked_contact.get("name")))
+        )
         if company_changed:
             _require(company is not None, f"deals[{index}].companyId", "Selecione uma empresa cadastrada na lista.")
             _require(
@@ -164,6 +172,45 @@ def _check_deal_links(
                 f"deals[{index}].contactId",
                 f"Este contato não pertence à empresa {company.get('name')}.",
             )
+
+
+def propagate_renames(canonical: WorkspaceState, merged: WorkspaceState) -> WorkspaceState:
+    """Copy renamed company/contact names into every record linked by id.
+
+    Deals and contacts keep the name as text next to the id, and records of
+    other users are not sent by a non-admin client, so the server keeps every
+    linked copy in step with the renamed company or contact.
+    """
+
+    before = canonical.model_dump(by_alias=True, exclude_none=True)
+    after = merged.model_dump(by_alias=True, exclude_none=True)
+
+    def renames(module: str) -> dict[str, str]:
+        old_names = {str(item.get("id")): item.get("name") for item in before[module]}
+        return {
+            str(item.get("id")): item.get("name")
+            for item in after[module]
+            if str(item.get("id")) in old_names
+            and item.get("name")
+            and old_names[str(item.get("id"))] != item.get("name")
+        }
+
+    company_names = renames("companies")
+    contact_names = renames("contacts")
+    if not company_names and not contact_names:
+        return merged
+    for contact in after["contacts"]:
+        new_name = company_names.get(str(contact.get("companyId") or ""))
+        if new_name:
+            contact["company"] = new_name
+    for deal in after["deals"]:
+        new_company = company_names.get(str(deal.get("companyId") or ""))
+        if new_company:
+            deal["company"] = new_company
+        new_contact = contact_names.get(str(deal.get("contactId") or ""))
+        if new_contact:
+            deal["contact"] = new_contact
+    return WorkspaceState.model_validate(after)
 
 
 def enforce_crm_integrity(

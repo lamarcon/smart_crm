@@ -115,6 +115,33 @@ def _unpack(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     return int(payload.get("position", 0)), dict(payload.get("record") or {})
 
 
+def _resolved_link(
+    explicit: Any, text: str, names: dict[str, str], current: str | None
+) -> str | None:
+    """Link a record to a company/contact without losing it on a rename.
+
+    An explicit id wins, then an exact name match. When the record names
+    something that no longer matches (e.g. the company was renamed), the link
+    already stored is kept instead of being cleared; an empty name clears it.
+    """
+
+    if explicit:
+        return explicit
+    if not str(text or "").strip():
+        return None
+    return names.get(text) or current
+
+
+def _with_stored_links(record: dict[str, Any], row: Any) -> dict[str, Any]:
+    """Expose stored links of legacy records (saved before ids were kept)."""
+
+    for field, column in (("companyId", "company_id"), ("contactId", "contact_id")):
+        stored = getattr(row, column, None)
+        if stored and not record.get(field):
+            record[field] = stored
+    return record
+
+
 def team_id_for_name(name: str) -> str:
     digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:20]
     return f"team-{digest}"
@@ -275,13 +302,15 @@ class WorkspaceRepository:
                 model.deleted_at.is_(None),
             )
         ).all()
-        unpacked = sorted(
-            (
-                self._deal_record(row) if model is Deal else _unpack(row.payload)
-                for row in rows
-            ),
-            key=lambda pair: pair[0],
-        )
+        def read(row):  # noqa: ANN001, ANN202
+            if model is Deal:
+                return self._deal_record(row)
+            position, record = _unpack(row.payload)
+            if model is Contact:
+                record = _with_stored_links(record, row)
+            return position, record
+
+        unpacked = sorted((read(row) for row in rows), key=lambda pair: pair[0])
         return [record for _position, record in unpacked]
 
     def _read_users(self) -> list[dict[str, Any]]:
@@ -342,7 +371,7 @@ class WorkspaceRepository:
 
     def _deal_record(self, row: Deal) -> tuple[int, dict[str, Any]]:
         position, record = _unpack(row.payload)
-        canonical = deepcopy(record)
+        canonical = _with_stored_links(deepcopy(record), row)
         canonical.update(
             {
                 "pipelineId": str(row.pipeline_id),
@@ -500,7 +529,12 @@ class WorkspaceRepository:
             company_text = record.get("company", "")
             values = dict(
                 workspace_id=self.workspace_id,
-                company_id=record.get("companyId") or company_names.get(company_text),
+                company_id=_resolved_link(
+                    record.get("companyId"),
+                    company_text,
+                    company_names,
+                    row.company_id if row is not None else None,
+                ),
                 name=record.get("name", ""),
                 company_text=company_text,
                 email=record.get("email", ""),
@@ -575,8 +609,18 @@ class WorkspaceRepository:
             contact_text = record.get("contact", "")
             values = dict(
                 workspace_id=self.workspace_id,
-                company_id=record.get("companyId") or company_names.get(company_text),
-                contact_id=record.get("contactId") or contact_names.get(contact_text),
+                company_id=_resolved_link(
+                    record.get("companyId"),
+                    company_text,
+                    company_names,
+                    row.company_id if row is not None else None,
+                ),
+                contact_id=_resolved_link(
+                    record.get("contactId"),
+                    contact_text,
+                    contact_names,
+                    row.contact_id if row is not None else None,
+                ),
                 responsible_id=record.get("responsibleId"),
                 team_id=teams.get(record.get("team")),
                 title=record.get("title", ""),

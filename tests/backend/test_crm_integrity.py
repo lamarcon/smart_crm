@@ -7,7 +7,8 @@ import pytest
 
 from app.policies import PrincipalScope
 from app.schemas import WorkspaceReferenceError, WorkspaceState
-from app.services.crm_integrity import enforce_crm_integrity, normalized_name
+from app.repositories.workspace import _resolved_link
+from app.services.crm_integrity import enforce_crm_integrity, normalized_name, propagate_renames
 
 
 def principal(role: str = "Administrador") -> PrincipalScope:
@@ -288,3 +289,55 @@ def test_editing_an_imported_deal_without_reimport_follows_the_rule() -> None:
     after["deals"][2]["company"] = "Outra Livre"
     with pytest.raises(WorkspaceReferenceError):
         check(after, before)
+
+
+def test_company_rename_reaches_every_linked_deal_and_contact() -> None:
+    after = base()
+    after["companies"][0]["name"] = "Grupo Jack Daniels"
+    result = propagate_renames(ws(base()), ws(after)).model_dump(by_alias=True, exclude_none=True)
+    assert result["deals"][0]["company"] == "Grupo Jack Daniels"
+    assert result["contacts"][0]["company"] == "Grupo Jack Daniels"
+    # Records not linked by id are left alone (legacy free text, other company).
+    assert result["deals"][1]["company"] == "Empresa Livre Antiga"
+    assert result["contacts"][1]["company"] == "ALS Pharma"
+    assert result["contacts"][2]["company"] == "Jack Daniels"
+    check(result)
+
+
+def test_contact_rename_reaches_linked_deals() -> None:
+    after = base()
+    after["contacts"][0]["name"] = "Maria Souza"
+    result = propagate_renames(ws(base()), ws(after)).model_dump(by_alias=True, exclude_none=True)
+    assert result["deals"][0]["contact"] == "Maria Souza"
+    assert result["deals"][1]["contact"] == "Alguém"
+    check(result)
+
+
+def test_no_rename_returns_the_same_state() -> None:
+    merged = ws(base())
+    assert propagate_renames(ws(base()), merged) is merged
+
+
+def test_a_name_sync_does_not_reopen_checks_on_inconsistent_legacy_deals() -> None:
+    before = base()
+    # Legacy inconsistency: the deal's contact belongs to another company.
+    before["deals"][0].update(contact="João", contactId="C-2")
+    after = deepcopy(before)
+    after["companies"][0]["name"] = "Grupo Jack Daniels"
+    synced = propagate_renames(ws(before), ws(after))
+    check(synced.model_dump(by_alias=True, exclude_none=True), before)
+
+
+def test_stale_text_alone_is_still_checked() -> None:
+    after = base()
+    after["deals"][0]["company"] = "Nome Errado"
+    rejected(after, "deals[0].company", "não confere")
+
+
+def test_link_survives_a_name_that_no_longer_matches() -> None:
+    names = {"Grupo Jack Daniels": "E-1"}
+    assert _resolved_link("E-9", "Jack Daniels", names, "E-1") == "E-9"
+    assert _resolved_link(None, "Grupo Jack Daniels", names, None) == "E-1"
+    assert _resolved_link(None, "Jack Daniels", names, "E-1") == "E-1"
+    assert _resolved_link(None, "", names, "E-1") is None
+    assert _resolved_link(None, "Jack Daniels", names, None) is None

@@ -2990,6 +2990,53 @@ async function storageEntries(page) {
     await panel.getByText('Nenhum contato vinculado a esta empresa.').waitFor();
   });
 
+  await run('RENAME-01 renomear empresa e contato atualiza negócios, contatos e leads sem perder o vínculo', async page => {
+    const api = apiByPage.get(page);
+    // Legacy records: linked to Arkos Estética / Ana Berclay by name only.
+    api.state.leads.push({ id: 'L-9001', name: 'Lead Arkos', company: 'arkos estetica', email: 'lead.arkos@teste.invalid', phone: '', segment: '', source: '', stage: 'Em contato', responsibleId: 'u-paula', team: 'Vendas CMS', assistants: [] });
+    api.state.leads.push({ id: 'L-9002', name: 'Lead Outro', company: 'Outra Empresa', email: 'lead.outro@teste.invalid', phone: '', segment: '', source: '', stage: 'Em contato', responsibleId: 'u-paula', team: 'Vendas CMS', assistants: [] });
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+
+    await goTo(page, 'Empresas');
+    await page.getByRole('button', { name: 'Arkos Estética', exact: true }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByLabel('Razão / nome da Empresa *').fill('Grupo Arkos Estética');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Empresa atualizado com sucesso.', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting !== 'true');
+
+    let state = await stateFrom(page);
+    const deal = state.deals.find(item => item.id === 'N-16312');
+    assert.deepEqual({ company: deal.company, companyId: deal.companyId }, { company: 'Grupo Arkos Estética', companyId: 'E-802' });
+    const contact = state.contacts.find(item => item.id === 'C-2281');
+    assert.deepEqual({ company: contact.company, companyId: contact.companyId }, { company: 'Grupo Arkos Estética', companyId: 'E-802' });
+    assert.equal(state.leads.find(item => item.id === 'L-9001').company, 'Grupo Arkos Estética');
+    assert.equal(state.leads.find(item => item.id === 'L-9002').company, 'Outra Empresa');
+    assert.equal(state.deals.filter(item => item.company === 'Arkos Estética').length, 0);
+    // The deal list shows the new name without opening the deal.
+    await goTo(page, 'Negócios');
+    await page.locator('#page-deals').getByText('Grupo Arkos Estética').filter({ visible: true }).first().waitFor();
+
+    // Renaming the contact reaches the deal too.
+    await goTo(page, 'Contatos');
+    await page.getByRole('button', { name: 'Ana Berclay' }).click();
+    await drawer.getByLabel('Nome completo *').fill('Ana Berclay Souza');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Contato atualizado com sucesso.', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceWriting !== 'true');
+    state = await stateFrom(page);
+    const renamed = state.deals.find(item => item.id === 'N-16312');
+    assert.deepEqual({ contact: renamed.contact, contactId: renamed.contactId }, { contact: 'Ana Berclay Souza', contactId: 'C-2281' });
+
+    // The deal still opens with the company and contact it is linked to.
+    await page.evaluate(() => openEntityDialog('deal', 'N-16312'));
+    const dialog = page.locator('#entityDialog');
+    assert.equal(await dialog.getByLabel('Empresa *').inputValue(), 'Grupo Arkos Estética');
+    assert.equal(await dialog.getByLabel('Contato', { exact: true }).inputValue(), 'Ana Berclay Souza');
+    await assertCanonicalRehydration(page);
+  });
+
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {
     await goTo(page, 'Negócios');
     const options = await page.locator('[data-stage-filter="deals"] option').allTextContents();

@@ -336,6 +336,56 @@ def test_save_rejects_duplicate_company_but_keeps_legacy_free_text_deals(service
     assert workspace.load().version == 2
 
 
+def test_renaming_a_company_keeps_legacy_deal_links_and_updates_the_names(service) -> None:
+    workspace, database = service
+    legacy = state_data()
+    # Saved before ids were kept: the deal and the contact name the company only.
+    for record in (legacy["deals"][0], legacy["contacts"][0]):
+        record.pop("companyId")
+    legacy["deals"][0].pop("contactId")
+    workspace.bootstrap(WorkspaceState.model_validate(legacy))
+    loaded = workspace.load().state
+    assert (loaded.deals[0]["companyId"], loaded.deals[0]["contactId"], loaded.contacts[0]["companyId"]) == ("E-1", "C-1", "E-1")
+
+    renamed = loaded.model_dump(by_alias=True, exclude_none=True)
+    renamed["companies"][0]["name"] = "Grupo Empresa"
+    renamed["contacts"][0]["name"] = "Contato Renomeado"
+    result = workspace.save(workspace.load().version, WorkspaceState.model_validate(renamed))
+
+    deal = result.state.deals[0]
+    assert (deal["company"], deal["companyId"], deal["contact"], deal["contactId"]) == ("Grupo Empresa", "E-1", "Contato Renomeado", "C-1")
+    assert result.state.contacts[0]["company"] == "Grupo Empresa"
+    with database.session_scope() as session:
+        row = session.scalar(select(Deal).where(Deal.id == "N-1"))
+        assert (row.company_id, row.contact_id) == ("E-1", "C-1")
+
+
+def test_non_admin_company_rename_also_reaches_deals_they_cannot_see(service) -> None:
+    workspace, database = service
+    initial = state_data()
+    hidden = deepcopy(initial["deals"][0])
+    hidden.update(id="N-hidden", title="Negócio de outro", assistants=[], quotes=[])
+    initial["deals"].append(hidden)
+    workspace.bootstrap(WorkspaceState.model_validate(initial))
+    assistant = PrincipalScope(
+        tenant_id=TEST_PRINCIPAL.tenant_id,
+        workspace_id="default",
+        user_id="u-2",
+        role="Assistente",
+        team_id=team_id_for_name("Vendas"),
+        auth_version=1,
+    )
+    core = WorkspaceService()
+    with database.session_scope() as session:
+        projected = core.load(session, assistant).state
+        assert [item["id"] for item in projected.deals] == ["N-1"]
+        projected.companies[0]["name"] = "Empresa Renomeada"
+        assert core.save(session, assistant, 1, projected).version == 2
+
+    names = {item["id"]: item["company"] for item in workspace.load().state.deals}
+    assert names == {"N-1": "Empresa Renomeada", "N-hidden": "Empresa Renomeada"}
+
+
 def test_repository_exception_rolls_back_save_and_version(service) -> None:
     workspace, database = service
     workspace.bootstrap(state())

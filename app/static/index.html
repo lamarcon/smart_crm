@@ -3808,6 +3808,23 @@
       return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><input id="${idPrefix}-${name}" name="${name}" type="${type}" ${type === 'number' ? 'min="0" step="0.01"' : ''} value="${escapeHTML(value ?? '')}" ${requiredAttr}></div>`;
     }
 
+    // Deals, contacts and leads keep the company/contact name as text next to the
+    // link; a rename updates every copy (and links legacy records found by name).
+    function propagateCompanyRename(company, oldName) {
+      const old = normalizedName(oldName);
+      const linked = record => record.companyId === company.id || (!record.companyId && normalizedName(record.company) === old);
+      (state.deals || []).filter(linked).forEach(deal => Object.assign(deal, { company: company.name, companyId: company.id }));
+      (state.contacts || []).filter(linked).forEach(contact => Object.assign(contact, { company: company.name, companyId: company.id }));
+      (state.leads || []).filter(lead => normalizedName(lead.company) === old).forEach(lead => { lead.company = company.name; });
+    }
+    function propagateContactRename(contact, oldName) {
+      const old = normalizedName(oldName);
+      const sameCompany = deal => contact.companyId ? deal.companyId === contact.companyId : normalizedName(deal.company) === normalizedName(contact.company);
+      (state.deals || [])
+        .filter(deal => deal.contactId === contact.id || (!deal.contactId && normalizedName(deal.contact) === old && sameCompany(deal)))
+        .forEach(deal => Object.assign(deal, { contact: contact.name, contactId: contact.id }));
+    }
+
     function saveEntity(form) {
       const entity = form.dataset.entity;
       const collection = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' }[entity];
@@ -3858,8 +3875,11 @@
       if (['lead', 'deal'].includes(entity)) data.team = state.users.find(user => user.id === data.responsibleId)?.team || currentUser().team;
       const dropEmptyReferences = record => ['companyId', 'contactId'].forEach(key => { if (record[key] === null) delete record[key]; });
       if (existing) {
+        const previousName = existing.name;
         Object.assign(existing, data, { updatedAt: new Date().toISOString() });
         dropEmptyReferences(existing);
+        if (entity === 'company' && previousName && existing.name !== previousName) propagateCompanyRename(existing, previousName);
+        if (entity === 'contact' && previousName && existing.name !== previousName) propagateContactRename(existing, previousName);
         if (Array.isArray(existing.customFields) && form.id === 'drawerForm') {
           const previousVisible = new Set(existing.visibleCustomFieldKeys || []);
           const globallyHidden = new Set(state.moduleFieldSettings[collection]?.hiddenCustomFieldKeys || []);

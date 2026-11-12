@@ -24,7 +24,7 @@ from app.repositories.workspace import WorkspaceRepository, team_id_for_name
 from app.repositories.activity import ActivityRepository
 from app.repositories.pipeline import DealPipelineAggregate, DealPipelineRepository
 from app.schemas import PersistedCounts, WorkspaceState, count_state, validate_references
-from app.services.crm_integrity import enforce_crm_integrity
+from app.services.crm_integrity import enforce_crm_integrity, propagate_renames
 from app.services.activity import (
     collect_company_changes,
     collect_deal_transitions,
@@ -425,6 +425,7 @@ class WorkspaceService:
         state = _preserve_server_stage_metadata(canonical, state)
         state = _strip_untrusted_activity_metadata(state)
         merged = merge_authorized_state(canonical, state, principal)
+        merged = propagate_renames(canonical, merged)
         enforce_crm_integrity(canonical, merged, principal)
         occurred_at = self.clock()
         merged = self._canonicalize_deal_stages(
