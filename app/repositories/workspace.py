@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -130,6 +130,18 @@ def _resolved_link(
     if not str(text or "").strip():
         return None
     return names.get(text) or current
+
+
+def _deal_currency_values(record: dict[str, Any]) -> dict[str, Any]:
+    """Currency of a deal and the PTAX rate frozen when it was won (if any)."""
+
+    raw_rate = record.get("fxRate")
+    raw_date = record.get("fxRateDate")
+    return {
+        "currency": str(record.get("currency") or "BRL").upper(),
+        "fx_rate": Decimal(str(raw_rate)) if raw_rate not in (None, "") else None,
+        "fx_rate_date": date.fromisoformat(str(raw_date)[:10]) if raw_date else None,
+    }
 
 
 def _with_stored_links(record: dict[str, Any], row: Any) -> dict[str, Any]:
@@ -372,6 +384,13 @@ class WorkspaceRepository:
     def _deal_record(self, row: Deal) -> tuple[int, dict[str, Any]]:
         position, record = _unpack(row.payload)
         canonical = _with_stored_links(deepcopy(record), row)
+        canonical["currency"] = row.currency or "BRL"
+        if row.fx_rate is not None and row.fx_rate_date is not None:
+            canonical["fxRate"] = format(row.fx_rate.normalize(), "f")
+            canonical["fxRateDate"] = row.fx_rate_date.isoformat()
+        else:
+            canonical.pop("fxRate", None)
+            canonical.pop("fxRateDate", None)
         canonical.update(
             {
                 "pipelineId": str(row.pipeline_id),
@@ -627,6 +646,7 @@ class WorkspaceRepository:
                 company_text=company_text,
                 contact_text=contact_text,
                 amount=Decimal(str(record.get("amount", 0))),
+                **_deal_currency_values(record),
                 stage=record.get("stage", ""),
                 pipeline_id=pipeline_id,
                 stage_id=stage_id,

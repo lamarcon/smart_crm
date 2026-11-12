@@ -103,6 +103,8 @@ def without_pipeline_metadata(state_value: dict) -> dict:
     comparable = deepcopy(state_value)
     for deal in comparable.get("deals", []):
         deal.pop("pipelineId", None)
+        if deal.get("currency") == "BRL":
+            deal.pop("currency")  # server default for deals saved without a currency
         deal.pop("stageId", None)
         if deal.get("stageHistory") == []:
             deal.pop("stageHistory")

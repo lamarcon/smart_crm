@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -12,6 +12,7 @@ from sqlalchemy import (
     CHAR,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -368,6 +369,8 @@ class Deal(Base, TimestampMixin, SoftDeleteMixin):
         Index("ix_deals_workspace_responsible", "workspace_id", "responsible_id"),
         Index("ix_deals_workspace_created", "workspace_id", "created_at"),
         Index("ix_deals_workspace_bitrix", "workspace_id", "bitrix_id"),
+        CheckConstraint("currency IN ('BRL', 'USD', 'EUR')", name="valid_currency"),
+        CheckConstraint("fx_rate IS NULL OR fx_rate > 0", name="positive_fx_rate"),
     )
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -380,6 +383,9 @@ class Deal(Base, TimestampMixin, SoftDeleteMixin):
     company_text: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     contact_text: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, default=0)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False, default="BRL", server_default="BRL")
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    fx_rate_date: Mapped[date | None] = mapped_column(Date)
     stage: Mapped[str] = mapped_column(String(128), nullable=False)
     pipeline_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
     stage_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)

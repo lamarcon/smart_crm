@@ -441,7 +441,7 @@ $expectedVersion = (& "$releaseRoot\.venv\Scripts\python.exe" `
 O inicializador executa, nesta ordem:
 
 1. `alembic-control.ini` ate `d5f0a8c3e7b2` e confirma exatamente esse head;
-2. executa a migracao tenant ate o head empacotado (`b4e2c9a7d6f1`) por uma tarefa temporaria sob `SmartCRMService`, usando `FleetService` e os segredos DPAPI;
+2. executa a migracao tenant ate o head empacotado (`c3d9a1f4b7e2`) por uma tarefa temporaria sob `SmartCRMService`, usando `FleetService` e os segredos DPAPI;
 3. exige evidencia de que o tenant e o perfil central chegaram ao mesmo head antes de alterar a tarefa web;
 4. exporta a tarefa anterior para a pasta de recuperacao, para a tarefa e confirma que a porta 8080 foi liberada;
 5. registra a tarefa `SmartCRM` na release imutavel usando `SmartCRMService`;
@@ -449,7 +449,7 @@ O inicializador executa, nesta ordem:
 
 A revisao corretiva `a8d4e6f2b1c9` repara de forma idempotente funil e payloads
 incompletos sob FORCE RLS, sem SQL manual. A linhagem tenant desta release termina em
-`b4e2c9a7d6f1`, que cria `account_action_tokens` (convites e recuperacao de senha) com RLS. Nao execute
+`c3d9a1f4b7e2`, que acrescenta moeda (`BRL`/`USD`/`EUR`) e cotacao congelada aos Negocios; antes dela, `b4e2c9a7d6f1` cria `account_action_tokens` (convites e recuperacao de senha) com RLS. Nao execute
 `alembic.ini` diretamente e nao altere `expected_tenant_revision` manualmente.
 
 Qualquer falha antes da troca deixa a tarefa atual intacta. Se uma falha ocorrer
@@ -550,4 +550,4 @@ Nao use `git reset --hard`, nao execute downgrade Alembic improvisado e nao apag
 
 ## 10. Proximas empresas
 
-Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `b4e2c9a7d6f1` pelo fluxo de frota, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.
+Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `c3d9a1f4b7e2` pelo fluxo de frota, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.

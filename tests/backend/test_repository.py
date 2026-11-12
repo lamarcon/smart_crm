@@ -89,6 +89,8 @@ def without_pipeline_metadata(state: dict) -> dict:
     comparable = deepcopy(state)
     for deal in comparable.get("deals", []):
         deal.pop("pipelineId", None)
+        if deal.get("currency") == "BRL":
+            deal.pop("currency")  # server default for deals saved without a currency
         deal.pop("stageId", None)
         for history in deal.get("stageHistory") or []:
             history.pop("fromStageId", None)
@@ -576,3 +578,54 @@ def test_pending_invitee_cannot_be_made_assignable_by_a_crafted_snapshot(reposit
     assert (row.status, row.auth_enabled, row.password_hash) == ("Pendente", False, None)
     assignable = {user_id for user_id, user in loaded.items() if user["status"] == "Ativo"}
     assert "u-real" not in assignable
+
+
+def test_deal_currency_and_frozen_rate_round_trip(repository) -> None:
+    repo, session = repository
+    state = sample_state()
+    state["deals"][0].update(currency="usd", amount=1000, fxRate="5.5606", fxRateDate="2026-11-11")
+    persist(repo, state)
+    deal = repo.read_active().deals[0]
+    assert (deal["currency"], deal["fxRate"], deal["fxRateDate"]) == ("USD", "5.5606", "2026-11-11")
+    row = session.execute(text("SELECT currency, fx_rate, fx_rate_date FROM deals WHERE id = 'N-1'")).one()
+    assert (row.currency, str(row.fx_rate), row.fx_rate_date.isoformat()) == ("USD", "5.560600", "2026-11-11")
+
+    state["deals"][0].update(currency="EUR")
+    state["deals"][0].pop("fxRate")
+    state["deals"][0].pop("fxRateDate")
+    persist(repo, state)
+    deal = repo.read_active().deals[0]
+    assert deal["currency"] == "EUR"
+    assert "fxRate" not in deal and "fxRateDate" not in deal
+
+
+def test_deals_without_currency_are_real(repository) -> None:
+    repo, _session = repository
+    persist(repo, sample_state())
+    assert repo.read_active().deals[0]["currency"] == "BRL"
+
+
+@pytest.mark.parametrize("bad", [{"currency": "GBP"}, {"currency": "USD", "fxRate": "0", "fxRateDate": "2026-11-11"}])
+def test_database_refuses_unknown_currency_or_zero_rate(repository, bad) -> None:  # noqa: ANN001
+    from sqlalchemy.exc import IntegrityError
+
+    repo, session = repository
+    state = sample_state()
+    state["deals"][0].update(bad)
+    with pytest.raises(IntegrityError):
+        persist(repo, state)
+    session.rollback()
+
+
+def test_the_frozen_rate_columns_are_the_source_of_truth_on_read(repository) -> None:
+    repo, session = repository
+    state = sample_state()
+    state["deals"][0].update(currency="USD", fxRate="5.5606", fxRateDate="2026-11-11")
+    persist(repo, state)
+    # Server-side writes (e.g. pipeline transfers) update the columns directly.
+    session.execute(text("UPDATE deals SET fx_rate = 5.61, fx_rate_date = '2026-11-12' WHERE id = 'N-1'"))
+    deal = repo.read_active().deals[0]
+    assert (deal["fxRate"], deal["fxRateDate"]) == ("5.61", "2026-11-12")
+    session.execute(text("UPDATE deals SET fx_rate = NULL, fx_rate_date = NULL WHERE id = 'N-1'"))
+    deal = repo.read_active().deals[0]
+    assert "fxRate" not in deal and "fxRateDate" not in deal
