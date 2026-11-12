@@ -16,6 +16,7 @@ from typing import Any
 
 from app.policies import Action, PrincipalScope, can_perform_action
 from app.schemas import WorkspaceReferenceError, WorkspaceState
+from app.services.exchange_rates import SUPPORTED_CURRENCIES
 
 
 def normalized_name(value: Any) -> str:
@@ -96,6 +97,16 @@ def _check_contact_duplicates(contacts: list[dict], previous: dict[str, dict], p
             clash is None,
             f"contacts[{index}].email",
             f"Já existe um contato com o e-mail {key} ({clash.get('name') if clash else ''}).",
+        )
+
+
+def _check_deal_currencies(deals: list[dict]) -> None:
+    for index, deal in enumerate(deals):
+        currency = deal.get("currency")
+        _require(
+            currency in (None, "") or str(currency).upper() in SUPPORTED_CURRENCIES,
+            f"deals[{index}].currency",
+            "Moeda não suportada. Use BRL, USD ou EUR.",
         )
 
 
@@ -225,6 +236,7 @@ def enforce_crm_integrity(
     _check_company_duplicates(after["companies"], _by_id(before["companies"]), principal)
     _check_contact_duplicates(after["contacts"], _by_id(before["contacts"]), principal)
     _check_contact_links(after["contacts"], _by_id(before["contacts"]), _by_id(after["companies"]), principal)
+    _check_deal_currencies(after["deals"])
     _check_deal_links(
         after["deals"],
         _by_id(before["deals"]),

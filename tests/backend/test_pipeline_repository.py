@@ -5,7 +5,8 @@ import json
 import os
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from decimal import Decimal
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -260,6 +261,30 @@ def test_transfer_to_non_won_clears_relational_and_packed_won_at(
         assert "wonAt" not in deal.payload["record"]
         assert len(deal.payload["record"]["stageHistory"]) == 2
         assert session.scalar(select(func.count()).select_from(DealStageHistory)) == 2
+
+
+def test_transfer_out_of_won_clears_the_frozen_exchange_rate(
+    pipeline_database_url: str,
+) -> None:
+    first_at = datetime(2026, 11, 12, 15, 30, tzinfo=timezone.utc)
+    second_at = datetime(2026, 11, 13, 16, 0, tzinfo=timezone.utc)
+    with repository_scope(pipeline_database_url) as (repository, session):
+        stages = _stages(repository)
+        _seed_deal(session, deal_id="deal", stage=stages["Em Contato"])
+        session.flush()
+        repository.transfer_deals(stages["Em Contato"].id, stages["Ganho"], ACTOR_ID, first_at)
+        session.expire_all()
+        deal = session.get(Deal, "deal")
+        deal.currency, deal.fx_rate, deal.fx_rate_date = "USD", Decimal("5.5606"), date(2026, 11, 12)
+        deal.payload = {**deal.payload, "record": {**deal.payload["record"], "currency": "USD", "fxRate": "5.5606", "fxRateDate": "2026-11-12"}}
+        session.flush()
+        repository.transfer_deals(stages["Ganho"].id, stages["Analisar falha"], ACTOR_ID, second_at)
+        session.expire_all()
+        deal = session.get(Deal, "deal")
+
+        assert (deal.currency, deal.fx_rate, deal.fx_rate_date) == ("USD", None, None)
+        assert "fxRate" not in deal.payload["record"] and "fxRateDate" not in deal.payload["record"]
+        assert deal.payload["record"]["currency"] == "USD"
 
 
 def test_transfer_failure_rolls_back_all_deal_and_history_writes(

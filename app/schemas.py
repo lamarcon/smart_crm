@@ -397,10 +397,17 @@ class CompanyDealRow(PipelineContractModel):
     responsible_id: str | None = Field(default=None, alias="responsibleId", max_length=128)
     responsible_name: str | None = Field(default=None, alias="responsibleName", max_length=255)
     amount: Decimal
+    currency: Literal["BRL", "USD", "EUR"] = "BRL"
+    # Value in BRL: frozen PTAX rate when won, current rate otherwise (None if unknown).
+    amount_brl: Decimal | None = Field(default=None, alias="amountBrl")
 
     @field_serializer("amount")
     def serialize_amount(self, value: Decimal) -> str:
         return format(value.quantize(Decimal("0.01")), "f")
+
+    @field_serializer("amount_brl")
+    def serialize_amount_brl(self, value: Decimal | None) -> str | None:
+        return None if value is None else format(value.quantize(Decimal("0.01")), "f")
 
 
 class CompanyDealSummaryResponse(PipelineContractModel):
@@ -408,6 +415,8 @@ class CompanyDealSummaryResponse(PipelineContractModel):
     open: CompanyDealMetricResponse
     won: CompanyDealMetricResponse
     lost: CompanyDealMetricResponse
+    # True when some foreign-currency deal could not be converted (no rate yet).
+    rates_unavailable: bool = Field(default=False, alias="ratesUnavailable")
     items: list[CompanyDealRow]
 
 

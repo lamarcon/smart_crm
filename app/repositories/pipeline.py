@@ -276,6 +276,10 @@ class DealPipelineRepository:
             else:
                 deal.won_at = None
                 record.pop("wonAt", None)
+                deal.fx_rate = None
+                deal.fx_rate_date = None
+                record.pop("fxRate", None)
+                record.pop("fxRateDate", None)
 
             deal.pipeline_id = canonical_target.pipeline_id
             deal.stage_id = canonical_target.id

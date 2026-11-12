@@ -33,6 +33,15 @@ LOOKBACK_DAYS = 10
 STALE_AFTER = timedelta(days=5)
 
 
+BRASILIA = timezone(timedelta(hours=-3))
+
+
+def brasilia_today(now: datetime) -> date:
+    """PTAX dates follow the Brasilia calendar day."""
+
+    return now.astimezone(BRASILIA).date()
+
+
 class ExchangeRateUnavailable(RuntimeError):
     """The PTAX closing rate could not be obtained."""
 
@@ -131,6 +140,7 @@ class ExchangeRateService:
         self._fetched_at: datetime | None = None
         self._last_attempt: datetime | None = None
         self._last_failed = False
+        self._history: dict[tuple[str, date], ExchangeRate] = {}
 
     def _due(self, now: datetime) -> bool:
         if self._last_attempt is None:
@@ -141,7 +151,7 @@ class ExchangeRateService:
     def _refresh(self, now: datetime) -> None:
         self._last_attempt = now
         failed = False
-        today = now.astimezone(timezone(timedelta(hours=-3))).date()
+        today = brasilia_today(now)
         for currency in FOREIGN_CURRENCIES:
             try:
                 self._rates[currency] = self._source.latest_closing(currency, today)
@@ -157,7 +167,7 @@ class ExchangeRateService:
             if self._due(now):
                 self._refresh(now)
             rates = dict(self._rates)
-            today = now.astimezone(timezone(timedelta(hours=-3))).date()
+            today = brasilia_today(now)
             outdated = any(today - rate.date > STALE_AFTER for rate in rates.values())
             stale = self._last_failed or outdated or len(rates) != len(FOREIGN_CURRENCIES)
             return ExchangeRateSnapshot(rates=rates, fetched_at=self._fetched_at, stale=stale)
@@ -168,6 +178,30 @@ class ExchangeRateService:
         if currency == BASE_CURRENCY:
             return ExchangeRate(currency=BASE_CURRENCY, rate=Decimal("1"), date=self._clock().date())
         return self.snapshot().rates.get(currency)
+
+    def rate_on(self, currency: str, day: date) -> ExchangeRate | None:
+        """PTAX closing in force on ``day`` (that day's or the last before it).
+
+        Used to freeze the rate of a deal on the date it was won. Past days are
+        final and cached; today (or later) follows the self-refreshing snapshot.
+        """
+
+        if currency not in FOREIGN_CURRENCIES:
+            return None
+        if day >= brasilia_today(self._clock()):
+            return self.rate_for(currency)
+        key = (currency, day)
+        with self._lock:
+            cached = self._history.get(key)
+        if cached is not None:
+            return cached
+        try:
+            rate = self._source.latest_closing(currency, day)
+        except ExchangeRateUnavailable:
+            return None
+        with self._lock:
+            self._history[key] = rate
+        return rate
 
 
 def snapshot_payload(snapshot: ExchangeRateSnapshot) -> dict:

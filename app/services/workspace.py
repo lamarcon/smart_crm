@@ -20,11 +20,12 @@ from app.policies import (
     can_perform_action,
     can_read_record,
 )
-from app.repositories.workspace import WorkspaceRepository, team_id_for_name
+from app.repositories.workspace import WorkspaceRepository, _date as parse_timestamp, team_id_for_name
 from app.repositories.activity import ActivityRepository
 from app.repositories.pipeline import DealPipelineAggregate, DealPipelineRepository
 from app.schemas import PersistedCounts, WorkspaceState, count_state, validate_references
 from app.services.crm_integrity import enforce_crm_integrity, propagate_renames
+from app.services.exchange_rates import BASE_CURRENCY, BRASILIA, ExchangeRateService
 from app.services.activity import (
     collect_company_changes,
     collect_deal_transitions,
@@ -279,6 +280,9 @@ def _preserve_server_stage_metadata(
         "stageChangedAt",
         "stageChangedById",
         "wonAt",
+        # The frozen exchange rate is decided by the server, never by the client.
+        "fxRate",
+        "fxRateDate",
     )
     for record in data["deals"]:
         existing = canonical_deals.get(str(record.get("id")))
@@ -342,6 +346,7 @@ class WorkspaceService:
             [Session, str], ActivityRepository
         ] = ActivityRepository,
         automation_executor: DealAutomationExecutor | None = None,
+        exchange_rates: ExchangeRateService | None = None,
     ) -> None:
         self.repository_factory = repository_factory
         self.pipeline_repository_factory = pipeline_repository_factory
@@ -350,6 +355,31 @@ class WorkspaceService:
         self.automation_executor = automation_executor or DealAutomationExecutor(
             clock=self.clock
         )
+        self.exchange_rates = exchange_rates
+
+    def _apply_exchange_rate(self, record: dict, existing: dict | None, won: bool) -> None:
+        """Freeze a foreign-currency deal's PTAX rate on the day it was won."""
+
+        currency = str(record.get("currency") or BASE_CURRENCY).upper()
+        record["currency"] = currency
+        if not won or currency == BASE_CURRENCY:
+            record.pop("fxRate", None)
+            record.pop("fxRateDate", None)
+            return
+        same_currency = existing is not None and str(existing.get("currency") or BASE_CURRENCY).upper() == currency
+        if same_currency and record.get("fxRate") and record.get("fxRateDate"):
+            return
+        record.pop("fxRate", None)
+        record.pop("fxRateDate", None)
+        if self.exchange_rates is None:
+            return
+        won_at = parse_timestamp(record.get("wonAt")) or self.clock()
+        if won_at.tzinfo is None:
+            won_at = won_at.replace(tzinfo=timezone.utc)
+        rate = self.exchange_rates.rate_on(currency, won_at.astimezone(BRASILIA).date())
+        if rate is not None:
+            record["fxRate"] = format(rate.rate.normalize(), "f")
+            record["fxRateDate"] = rate.date.isoformat()
 
     def _repository(
         self,
@@ -679,6 +709,7 @@ class WorkspaceService:
                 record["wonAt"] = previous_won_at or now_text
             else:
                 record.pop("wonAt", None)
+            self._apply_exchange_rate(record, existing, stage.semantic_type == "won")
         return WorkspaceState.model_validate(data)
 
     @staticmethod

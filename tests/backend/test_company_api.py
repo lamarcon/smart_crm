@@ -418,7 +418,7 @@ def test_company_deals_api_returns_exact_admin_totals_empty_state_and_semantic_r
         "open": {"count": 2, "amount": "50.50"},
         "won": {"count": 1, "amount": "20.20"},
         "lost": {"count": 1, "amount": "30.30"},
-        "items": [],
+        "items": [],        "ratesUnavailable": False,
     }
     empty = client.get("/api/companies/empty-company/deals")
     assert empty.status_code == 200
@@ -427,7 +427,7 @@ def test_company_deals_api_returns_exact_admin_totals_empty_state_and_semantic_r
         "open": {"count": 0, "amount": "0.00"},
         "won": {"count": 0, "amount": "0.00"},
         "lost": {"count": 0, "amount": "0.00"},
-        "items": [],
+        "items": [],        "ratesUnavailable": False,
     }
 
     engine = create_engine(company_api_database_url, poolclass=NullPool)

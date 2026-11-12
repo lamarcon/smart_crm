@@ -219,10 +219,12 @@ def create_app(
     active_exchange_rates = exchange_rate_service or ExchangeRateService()
     active_database = database_instance or database
     active_health_check = health_check or active_database.check_database
-    service = workspace_service or WorkspaceService()
+    service = workspace_service or WorkspaceService(exchange_rates=active_exchange_rates)
     active_pipeline_service = pipeline_service or DealPipelineService()
     active_activity_service = activity_service or ActivityService()
-    active_company_deal_service = company_deal_service or CompanyDealService()
+    active_company_deal_service = company_deal_service or CompanyDealService(
+        exchange_rates=active_exchange_rates
+    )
     active_auth_settings = auth_settings or AuthSettings(
         expected_origin="https://sc2030.brbots.com"
     )

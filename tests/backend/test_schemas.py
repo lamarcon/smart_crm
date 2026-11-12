@@ -622,8 +622,11 @@ def test_company_deal_summary_serializes_exact_money_and_stage_semantics() -> No
                 "responsibleId": "u-1",
                 "responsibleName": "Ana",
                 "amount": "1234.50",
+                "currency": "BRL",
+                "amountBrl": None,
             }
         ],
+        "ratesUnavailable": False,
     }
 
 
