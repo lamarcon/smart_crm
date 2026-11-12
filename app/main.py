@@ -84,6 +84,7 @@ from app.services.activity import (
     ActivityValidationError,
 )
 from app.services.company_deals import CompanyDealNotFoundError, CompanyDealService
+from app.services.exchange_rates import ExchangeRateService, snapshot_payload
 from app.services.pipeline import (
     DealPipelineAuthorizationError,
     DealPipelineService,
@@ -212,8 +213,10 @@ def create_app(
     principal_dependency: Callable | None = None,
     health_check: Callable[[], bool] | None = None,
     account_access_service: AccountAccessService | None = None,
+    exchange_rate_service: ExchangeRateService | None = None,
 ) -> FastAPI:
     del settings
+    active_exchange_rates = exchange_rate_service or ExchangeRateService()
     active_database = database_instance or database
     active_health_check = health_check or active_database.check_database
     service = workspace_service or WorkspaceService()
@@ -996,6 +999,16 @@ def create_app(
                 run_password_reset_request, payload.slug, payload.email, source_ip(request)
             )
         return ForgotPasswordResponse()
+
+    @app.get("/api/exchange-rates")
+    def exchange_rates(
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> JSONResponse:
+        require_action(principal, Action.READ)
+        return JSONResponse(
+            content=snapshot_payload(active_exchange_rates.snapshot()),
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/api/workspace")
     def load_workspace(
