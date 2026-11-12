@@ -140,6 +140,10 @@ async function openFresh(options = {}) {
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
+  api.exchangeRates = api.exchangeRates || { base: 'BRL', rates: { USD: { rate: '5.5606', date: '2026-11-11' }, EUR: { rate: '6.1706', date: '2026-11-11' } }, source: 'PTAX/BCB', stale: false };
+  await context.route('**/api/exchange-rates', route => route.fulfill(api.exchangeRatesFailure
+    ? { status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'unavailable', message: 'Indisponível.' } }) }
+    : { status: 200, contentType: 'application/json', body: JSON.stringify(api.exchangeRates) }));
   await context.route('**/api/version', route => route.fulfill({
     status: api.versionFailure ? 503 : 200,
     contentType: 'application/json',
@@ -276,14 +280,21 @@ async function openFresh(options = {}) {
         id: deal.id, title: deal.title, stageId: stage.id, stageName: stage.name,
         semanticType: stage.semanticType, responsibleId: deal.responsibleId,
         responsibleName: api.state.users.find(user => user.id === deal.responsibleId)?.name || null,
-        amount: Number(deal.amount || 0).toFixed(2)
+        amount: Number(deal.amount || 0).toFixed(2),
+        currency: String(deal.currency || 'BRL').toUpperCase(),
+        amountBrl: (() => {
+          const currency = String(deal.currency || 'BRL').toUpperCase();
+          if (currency === 'BRL') return Number(deal.amount || 0).toFixed(2);
+          const rate = stage.semanticType === 'won' && deal.fxRate ? Number(deal.fxRate) : Number(api.exchangeRatesFailure ? NaN : api.exchangeRates.rates[currency]?.rate);
+          return Number.isFinite(rate) ? (Number(deal.amount || 0) * rate).toFixed(2) : null;
+        })()
       };
     });
     const metric = semanticType => {
       const subset = items.filter(item => item.semanticType === semanticType);
-      return { count: subset.length, amount: subset.reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2) };
+      return { count: subset.length, amount: subset.reduce((sum, item) => sum + Number(item.amountBrl ?? 0), 0).toFixed(2) };
     };
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ totalCount: items.length, open: metric('open'), won: metric('won'), lost: metric('lost'), items }) });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ totalCount: items.length, open: metric('open'), won: metric('won'), lost: metric('lost'), items, ratesUnavailable: items.some(item => item.amountBrl === null) }) });
   });
   await context.route('**/api/deal-pipeline/history**', route => {
     const request = route.request();
@@ -466,6 +477,19 @@ async function openFresh(options = {}) {
       }
       api.workspaceWrites.push(clone(payload));
       const next = durableState(payload.state);
+      for (const nextDeal of next.deals) {
+        const previousDeal = api.state.deals.find(candidate => candidate.id === nextDeal.id);
+        const currency = String(nextDeal.currency || 'BRL').toUpperCase();
+        if (nextDeal.currency) nextDeal.currency = currency;
+        const won = api.pipeline.stages.find(stage => stage.id === nextDeal.stageId)?.semanticType === 'won';
+        const kept = won && previousDeal?.fxRate && String(previousDeal.currency || 'BRL').toUpperCase() === currency;
+        delete nextDeal.fxRate;
+        delete nextDeal.fxRateDate;
+        if (kept) Object.assign(nextDeal, { fxRate: previousDeal.fxRate, fxRateDate: previousDeal.fxRateDate });
+        else if (won && currency !== 'BRL' && api.exchangeRates.rates[currency]) {
+          Object.assign(nextDeal, { fxRate: api.exchangeRates.rates[currency].rate, fxRateDate: api.exchangeRates.rates[currency].date });
+        }
+      }
       for (const nextDeal of next.deals) {
         const previousDeal = api.state.deals.find(candidate => candidate.id === nextDeal.id);
         const nextStage = api.pipeline.stages.find(stage => stage.id === nextDeal.stageId);
@@ -2056,7 +2080,7 @@ async function storageEntries(page) {
     await drawer.locator('[data-company-deal="N-16312"]').getByRole('button', { name: 'Implantação Arkos Estética' }).click();
     assert.equal(await drawer.getAttribute('data-entity'), 'deal');
     assert.equal(await drawer.getByRole('button', { name: 'Voltar à empresa' }).isVisible(), true);
-    await drawer.getByLabel('Valor (R$)').fill('50000');
+    await drawer.getByLabel('Valor *', { exact: true }).fill('50000');
     await drawer.getByRole('button', { name: 'Salvar registro' }).click();
     await drawer.getByRole('tabpanel', { name: 'Negócios' }).waitFor();
     assert.equal(await drawer.getAttribute('data-entity'), 'company');
@@ -2699,7 +2723,7 @@ async function storageEntries(page) {
     assert.ok(Math.abs(listBox.x - fieldBox.x) <= 2);
 
     await dialog.getByLabel('Título do Negócio *').fill('Negócio com referência');
-    await dialog.getByLabel('Valor (R$) *').fill('250');
+    await dialog.getByLabel('Valor *', { exact: true }).fill('250');
     await company.fill('Empresa Inexistente');
     await dialog.getByRole('button', { name: 'Salvar registro' }).click();
     await page.locator('#toastRegion').getByText('Selecione uma empresa cadastrada na lista.', { exact: true }).waitFor();
@@ -2789,7 +2813,7 @@ async function storageEntries(page) {
     await page.getByRole('button', { name: 'Novo Negócio' }).click();
     const dialog = page.locator('#entityDialog');
     await dialog.getByLabel('Título do Negócio *').fill('Negócio troca de empresa');
-    await dialog.getByLabel('Valor (R$) *').fill('300');
+    await dialog.getByLabel('Valor *', { exact: true }).fill('300');
     await dialog.getByLabel('Empresa *').fill('Arkos Estética');
     await dialog.getByLabel('Contato').fill('Ana Berclay');
     await dialog.getByRole('button', { name: 'Salvar registro' }).click();
@@ -3035,6 +3059,86 @@ async function storageEntries(page) {
     assert.equal(await dialog.getByLabel('Empresa *').inputValue(), 'Grupo Arkos Estética');
     assert.equal(await dialog.getByLabel('Contato', { exact: true }).inputValue(), 'Ana Berclay Souza');
     await assertCanonicalRehydration(page);
+  });
+
+  await run('FX-01 Negócio em dólar converte pela PTAX, congela no ganho e avisa sem cotação', async page => {
+    const api = apiByPage.get(page);
+    const brl = text => Number(String(text).replace(/[^\d,]/g, '').replace(',', '.'));
+    const pipelineTotal = async () => {
+      await goTo(page, 'Visão geral');
+      return brl((await page.locator('.stat').filter({ hasText: 'Negócios abertos' }).locator('small').innerText()).split(' em pipeline')[0]);
+    };
+    const before = await pipelineTotal();
+
+    // New deal in US$: currency is a field next to the value.
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Novo Negócio' }).click();
+    const dialog = page.locator('#entityDialog');
+    await dialog.getByLabel('Título do Negócio *').fill('Exportação em dólar');
+    await dialog.getByLabel('Empresa *').fill('ALS Pharma');
+    await dialog.getByLabel('Valor *', { exact: true }).fill('1000');
+    assert.deepEqual(await dialog.getByLabel('Moeda *').locator('option').allTextContents(), ['R$ · Real', 'US$ · Dólar', '€ · Euro']);
+    assert.equal(await dialog.getByLabel('Moeda *').inputValue(), 'BRL');
+    await dialog.getByLabel('Moeda *').selectOption('USD');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Negócio criado com sucesso.', { exact: true }).waitFor();
+    let deal = (await stateFrom(page)).deals.find(item => item.title === 'Exportação em dólar');
+    assert.deepEqual({ currency: deal.currency, amount: deal.amount, fxRate: deal.fxRate }, { currency: 'USD', amount: 1000, fxRate: undefined });
+
+    // List: original value plus the BRL equivalent with the PTAX source.
+    const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Exportação em dólar' });
+    assert.match(await row.innerText(), /US\$\s1\.000,00/);
+    const equivalent = row.locator('[data-fx-brl]');
+    assert.match(await equivalent.innerText(), /≈ R\$\s5\.560,60/);
+    assert.equal(await equivalent.getAttribute('title'), 'Cotação PTAX (Banco Central) de 11/11/2026: 1 USD = R$ 5,5606');
+    // Dashboard sums in BRL.
+    assert.equal(Math.round((await pipelineTotal() - before) * 100), 556060);
+
+    // Quote in the deal currency.
+    await goTo(page, 'Negócios');
+    await row.getByRole('button', { name: 'Orçamento', exact: true }).click();
+    const quote = page.locator('#quoteDialog');
+    await quote.getByLabel('Valor unitário (US$) *').fill('200');
+    await quote.getByLabel('Quantidade *').fill('2');
+    assert.match(await quote.locator('#quoteTotal').innerText(), /^US\$\s400,00 ≈ R\$\s2\.224,24$/);
+    await quote.getByRole('button', { name: 'Cancelar' }).click();
+
+    // Won: the server freezes today's PTAX; a later dollar move does not change it.
+    page.once('dialog', confirmation => confirmation.accept());
+    await row.locator('[data-stage-segment="Ganho"]').click();
+    await waitForMockState(page, state => state.deals.find(item => item.id === deal.id)?.fxRate === '5.5606');
+    deal = (await stateFrom(page)).deals.find(item => item.id === deal.id);
+    assert.deepEqual({ fxRate: deal.fxRate, fxRateDate: deal.fxRateDate }, { fxRate: '5.5606', fxRateDate: '2026-11-11' });
+    api.exchangeRates = { ...api.exchangeRates, rates: { USD: { rate: '6.0000', date: '2026-11-12' }, EUR: { rate: '7.0000', date: '2026-11-12' } } };
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+    await goTo(page, 'Negócios');
+    const frozen = page.locator('#page-deals tbody tr').filter({ hasText: 'Exportação em dólar' }).locator('[data-fx-brl]');
+    await page.waitForFunction(() => document.querySelector('[data-fx-brl]')?.title.includes('congelada'));
+    assert.match(await frozen.innerText(), /≈ R\$\s5\.560,60/);
+    assert.equal(await frozen.getAttribute('title'), 'Cotação PTAX (Banco Central) de 11/11/2026: 1 USD = R$ 5,5606 · congelada no ganho');
+
+    // Company summary shows the original currency and BRL.
+    await goTo(page, 'Empresas');
+    await page.getByRole('button', { name: 'ALS Pharma', exact: true }).click();
+    const company = page.locator('#entityDrawer [data-company-deal="' + deal.id + '"]');
+    await company.waitFor();
+    assert.match(await company.innerText(), /US\$\s1\.000,00\s*≈ R\$\s5\.560,60/);
+    await page.keyboard.press('Escape');
+
+    // Without any rate: shown as unavailable and left out of the BRL totals.
+    api.exchangeRatesFailure = true;
+    api.state.deals.find(item => item.id === deal.id).stageId = api.pipeline.stages[0].id;
+    api.state.deals.find(item => item.id === deal.id).stage = api.pipeline.stages[0].name;
+    delete api.state.deals.find(item => item.id === deal.id).fxRate;
+    delete api.state.deals.find(item => item.id === deal.id).wonAt;
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+    await goTo(page, 'Negócios');
+    const unavailable = page.locator('#page-deals tbody tr').filter({ hasText: 'Exportação em dólar' }).locator('[data-fx-brl]');
+    assert.equal(await unavailable.innerText(), '≈ cotação indisponível');
+    await goTo(page, 'Visão geral');
+    assert.match(await page.locator('.stat').filter({ hasText: 'Negócios abertos' }).locator('small').innerText(), /· 1 sem cotação$/);
   });
 
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {
@@ -3336,10 +3440,10 @@ async function storageEntries(page) {
     const other = before.companies.find(item => item.id !== arkos.id && !before.contacts.some(contact => contact.companyId === item.id && contact.name === 'Ana Berclay'));
     await page.getByRole('button', { name: 'Importar', exact: true }).click();
     const dialog = page.locator('#bitrixImportDialog');
-    const csv = '\ufeffID;Nome do negócio;Empresa;Contato;Fase;Total\n'
-      + `9301;Mesmo cadastro;  arkos   ESTETICA ;ana berclay;Em Contato;10\n`
-      + `9302;Homônimo em outra empresa;${other.name};Ana Berclay;Em Contato;20\n`
-      + '9303;Sem empresa;;Alguém;Em Contato;30\n';
+    const csv = '\ufeffID;Nome do negócio;Empresa;Contato;Fase;Total;Moeda\n'
+      + `9301;Mesmo cadastro;  arkos   ESTETICA ;ana berclay;Em Contato;10;Real brasileiro\n`
+      + `9302;Homônimo em outra empresa;${other.name};Ana Berclay;Em Contato;20;Dólar Americano\n`
+      + '9303;Sem empresa;;Alguém;Em Contato;30;EUR\n';
     await dialog.getByLabel('CSV de Negócios').setInputFiles({ name: 'deal.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
     await dialog.getByRole('button', { name: 'Importar amostra' }).click();
     await dialog.locator('#bitrixImportSummary').waitFor({ state: 'visible' });
@@ -3353,6 +3457,8 @@ async function storageEntries(page) {
     const homonym = after.contacts.find(item => item.id === byBitrix('9302').contactId);
     assert.notEqual(homonym.id, 'C-2281');
     assert.deepEqual({ name: homonym.name, companyId: homonym.companyId, dealCompanyId: byBitrix('9302').companyId }, { name: 'Ana Berclay', companyId: other.id, dealCompanyId: other.id });
+    // The Bitrix "Moeda" column sets the deal currency.
+    assert.deepEqual(['9301', '9302', '9303'].map(id => byBitrix(id).currency), ['BRL', 'USD', 'EUR']);
     // No company named: nothing is invented and no link is kept.
     assert.equal(byBitrix('9303').companyId, undefined);
     assert.equal(byBitrix('9303').contactId, undefined);
@@ -3428,7 +3534,7 @@ async function storageEntries(page) {
     await dialog.waitFor({ state: 'visible' });
     assert.equal(await dialog.getByText('Nenhum campo personalizado criado.').count(), 1);
     assert.deepEqual(await dialog.locator('[data-standard-field]').evaluateAll(inputs => inputs.map(input => [input.closest('label').textContent.trim(), input.checked])), [
-      ['Título do Negócio', true], ['Empresa', true], ['Contato', true], ['Valor (R$)', true],
+      ['Título do Negócio', true], ['Empresa', true], ['Contato', true], ['Valor', true], ['Moeda', true],
       ['Etapa', true], ['Responsável', true], ['Assistente', true]
     ]);
 
@@ -3493,7 +3599,7 @@ async function storageEntries(page) {
     const newDialog = page.locator('#entityDialog');
     await newDialog.getByLabel('Título do Negócio *').fill('Negócio com campo configurado');
     await newDialog.getByLabel('Empresa *').fill('ALS Pharma');
-    await newDialog.getByLabel('Valor (R$) *').fill('100');
+    await newDialog.getByLabel('Valor *', { exact: true }).fill('100');
     await newDialog.getByLabel('Responsável *').selectOption('u-paula');
     await newDialog.getByRole('button', { name: 'Salvar registro' }).click();
     const created = (await stateFrom(page)).deals.find(deal => deal.title === 'Negócio com campo configurado');
@@ -4172,7 +4278,7 @@ async function storageEntries(page) {
     assert.equal(await dialog.getByLabel('Etapa *').inputValue(), DEAL_STAGE_IDS[0]);
     await dialog.getByLabel('Título do Negócio *').fill('Negócio no início configurado');
     await dialog.getByLabel('Empresa *').fill('ALS Pharma');
-    await dialog.getByLabel('Valor (R$) *').fill('150');
+    await dialog.getByLabel('Valor *', { exact: true }).fill('150');
     await dialog.getByLabel('Responsável *').selectOption('u-paula');
     await dialog.getByRole('button', { name: 'Salvar registro' }).click();
     const created = (await stateFrom(page)).deals.find(candidate => candidate.title === 'Negócio no início configurado');

@@ -292,6 +292,8 @@
     .company-deal-row .entity-link { text-align: left; }
     .company-deal-row small { display: block; margin-top: 4px; color: var(--slate-400); }
     .company-deal-value { text-align: right; }
+    .fx-brl { display: block; margin-top: 2px; color: var(--slate-500); font-size: 11px; font-weight: 600; cursor: help; }
+    .company-deal-value .fx-brl { font-size: 11px; }
     .company-contact-list { display: grid; gap: 9px; }
     .company-contact-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; align-items: center; padding: 13px 14px; border: 1px solid var(--slate-200); border-radius: 11px; background: white; }
     .company-contact-row .entity-link { text-align: left; }
@@ -1003,6 +1005,9 @@
     let persistenceScheduled = false;
     let workspaceWriteInFlight = false;
     let pendingPersistenceEndpoint = '/api/workspace';
+    // PTAX exchange rates served by /api/exchange-rates (refreshed hourly).
+    let exchangeRates = { rates: {}, stale: true, loaded: false };
+    let exchangeRateTimer = null;
     let queuedToasts = [];
     let activeView = 'dashboard';
     function defaultUiState(users) {
@@ -1633,6 +1638,7 @@
     }
     async function initializeWorkspace() {
       setWorkspaceAccess(false, false, 'Conectando ao workspace...', 'loading');
+      loadExchangeRates();
       const localCandidate = state;
       try {
         const payload = await responseJson(await apiFetch('/api/workspace', { headers: { Accept: 'application/json' } }));
@@ -1708,7 +1714,57 @@
     function userName(id) { return id === sessionIdentity?.user_id ? sessionIdentity.user_name : state.users.find(user => user.id === id)?.name || 'Sem responsável'; }
     function initials(name) { return String(name || '?').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase(); }
     function escapeHTML(value) { return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]); }
-    function money(value) { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+    function money(value, currency = 'BRL') { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency }); }
+    const DEAL_CURRENCIES = [['BRL', 'R$ · Real'], ['USD', 'US$ · Dólar'], ['EUR', '€ · Euro']];
+    const CURRENCY_SYMBOLS = { BRL: 'R$', USD: 'US$', EUR: '€' };
+    function dealCurrency(deal) {
+      const currency = String(deal?.currency || 'BRL').toUpperCase();
+      return CURRENCY_SYMBOLS[currency] ? currency : 'BRL';
+    }
+    // BRL conversion: the rate frozen on win, otherwise today's PTAX; null when unknown.
+    function dealRateInfo(deal) {
+      const currency = dealCurrency(deal);
+      if (currency === 'BRL') return { rate: 1, date: null, frozen: false };
+      if (isWon(deal) && Number(deal.fxRate) > 0) return { rate: Number(deal.fxRate), date: deal.fxRateDate, frozen: true };
+      const current = exchangeRates.rates?.[currency];
+      return current && Number(current.rate) > 0 ? { rate: Number(current.rate), date: current.date, frozen: false } : null;
+    }
+    function amountInBRL(deal, amount = deal?.amount) {
+      const info = dealRateInfo(deal);
+      return info ? Number(amount || 0) * info.rate : null;
+    }
+    function sumInBRL(deals) { return deals.reduce((sum, deal) => sum + (amountInBRL(deal) ?? 0), 0); }
+    function brDate(iso) { return iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : ''; }
+    function dealRateTitle(deal) {
+      const info = dealRateInfo(deal);
+      if (!info) return 'Cotação PTAX indisponível no momento; o valor não entra nos totais em R$.';
+      const rate = info.rate.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+      const note = info.frozen ? ' · congelada no ganho' : exchangeRates.stale ? ' · última cotação disponível' : '';
+      return `Cotação PTAX (Banco Central) de ${brDate(info.date)}: 1 ${dealCurrency(deal)} = R$ ${rate}${note}`;
+    }
+    function dealMoneyText(deal, amount = deal?.amount) {
+      const currency = dealCurrency(deal);
+      if (currency === 'BRL') return money(amount);
+      const brl = amountInBRL(deal, amount);
+      return `${money(amount, currency)} ≈ ${brl === null ? 'cotação indisponível' : money(brl)}`;
+    }
+    function dealMoneyHTML(deal) {
+      const currency = dealCurrency(deal);
+      const base = `<b>${escapeHTML(money(deal.amount, currency))}</b>`;
+      if (currency === 'BRL') return base;
+      const brl = amountInBRL(deal);
+      return `${base}<small class="fx-brl" data-fx-brl title="${escapeHTML(dealRateTitle(deal))}">≈ ${escapeHTML(brl === null ? 'cotação indisponível' : money(brl))}</small>`;
+    }
+    async function loadExchangeRates() {
+      try {
+        const payload = await responseJson(await apiFetch('/api/exchange-rates', { headers: { Accept: 'application/json' } }));
+        exchangeRates = { rates: payload.rates || {}, stale: Boolean(payload.stale), loaded: true };
+      } catch (_) {
+        exchangeRates = { ...exchangeRates, stale: true, loaded: true };
+      }
+      if (!exchangeRateTimer) exchangeRateTimer = setInterval(loadExchangeRates, 60 * 60 * 1000);
+      if (document.documentElement.dataset.workspaceReady === 'true') render();
+    }
     function nextId(prefix, items) { return `${prefix}-${Math.max(0, ...items.map(item => Number(String(item.id).split('-')[1]) || 0)) + 1}`; }
     function canSee(record) {
       const user = currentUser();
@@ -2124,19 +2180,20 @@
       const dashboard = dashboardRecords();
       const { leads, deals } = dashboard;
       const openDeals = deals.filter(isOpen);
-      const total = openDeals.reduce((sum, item) => sum + item.amount, 0);
+      const total = sumInBRL(openDeals);
       const wonDeals = deals.filter(isWon);
-      const won = wonDeals.reduce((sum, item) => sum + item.amount, 0);
+      const won = sumInBRL(wonDeals);
+      const unconverted = openDeals.concat(wonDeals).filter(item => amountInBRL(item) === null).length;
       const stages = activeDealStages();
       const maxCount = Math.max(1, ...stages.map(stage => deals.filter(item => item.stageId === stage.id).length));
       const pipeline = stages.map(stage => {
         const records = deals.filter(item => item.stageId === stage.id);
-        const amount = records.reduce((sum, item) => sum + item.amount, 0);
+        const amount = sumInBRL(records);
         return `<div class="pipeline-row" data-pipeline-stage="${escapeHTML(stage.id)}"><span title="${escapeHTML(stage.name)}">${escapeHTML(stage.name)}</span><div class="pipeline-track"><div class="pipeline-bar" style="width:${Math.max(4, records.length / maxCount * 100)}%;background:${escapeHTML(stage.color)}"></div></div><b>${money(amount)}</b></div>`;
       }).join('');
       const recent = [
         ...leads.map(item => ({ type: 'Lead', title: item.name, subtitle: item.company, createdAt: item.createdAt })),
-        ...deals.map(item => ({ type: 'Negócio', title: item.title, subtitle: `${item.company} · ${money(item.amount)}`, createdAt: item.createdAt }))
+        ...deals.map(item => ({ type: 'Negócio', title: item.title, subtitle: `${item.company} · ${dealMoneyText(item)}`, createdAt: item.createdAt }))
       ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 5);
       const dashboardFilterCount = activeFilterCount(`dashboard_${dashboard.scope}`);
       const scopeLabel = ({ all: 'Todos', leads: 'Leads', deals: 'Negócios' })[dashboard.scope];
@@ -2144,7 +2201,7 @@
         <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions">${currentUser().role === 'Administrador' ? '<button class="button" data-action="open-deleted">↺ Recuperar excluídos</button><button class="button" data-action="open-bitrix-import" aria-label="Importar">⇩ Importar</button>' : ''}<button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar dados iniciais</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
         <div class="stats">
           <article class="stat" style="--stat-color:var(--blue-100)"><div class="stat-top"><span>Leads em contato</span><span class="stat-icon">◎</span></div><strong>${leads.filter(item => item.stage === 'Em contato').length}</strong><small><b>Dados locais</b> deste perfil</small></article>
-          <article class="stat" style="--stat-color:var(--purple-100)"><div class="stat-top"><span>Negócios abertos</span><span class="stat-icon">◇</span></div><strong>${openDeals.length}</strong><small>${money(total)} em pipeline</small></article>
+          <article class="stat" style="--stat-color:var(--purple-100)"><div class="stat-top"><span>Negócios abertos</span><span class="stat-icon">◇</span></div><strong>${openDeals.length}</strong><small>${money(total)} em pipeline${unconverted ? ` · ${unconverted} sem cotação` : ''}</small></article>
           <article class="stat" style="--stat-color:var(--green-100)"><div class="stat-top"><span>Receita ganha</span><span class="stat-icon">↗</span></div><strong>${money(won)}</strong><small>Dados do conjunto visível</small></article>
           <article class="stat" style="--stat-color:var(--amber-100)"><div class="stat-top"><span>Conversão de Deals</span><span class="stat-icon">%</span></div><strong>${deals.length ? Math.round(wonDeals.length / deals.length * 100) : 0}%</strong><small>Negócios ganhos no conjunto visível</small></article>
         </div>
@@ -2224,7 +2281,7 @@
         const stageRecords = records.filter(record => isLead ? record.stage === stage.id : record.stageId === stage.id);
         const cards = stageRecords.map(record => {
           const title = isLead ? record.name : record.title;
-          const subtitle = isLead ? `${record.id} · ${record.company}` : `${record.id} · ${money(record.amount)}`;
+          const subtitle = isLead ? `${record.id} · ${record.company}` : `${record.id} · ${dealMoneyText(record)}`;
           const options = stages.map(option => `<option value="${escapeHTML(option.id)}" ${(isLead ? option.id === record.stage : option.id === record.stageId) ? 'selected' : ''}>${escapeHTML(option.name)}</option>`).join('');
           return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small>${!isLead ? dealRelationshipsHTML(record) : ''}<div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}">${options}</select>${!isLead ? `<div class="kanban-actions"><button class="button small" data-action="quote" data-id="${record.id}">Orçamento</button></div>` : ''}</article>`;
         }).join('');
@@ -2276,7 +2333,7 @@
       const records = applyRecordFilters('deals', visibleDeals());
       const stages = activeDealStages();
       if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Funil configurado da empresa com acompanhamento por etapas.', renderKanban('deals', records), records.length, stages);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td><b>${money(item.amount)}</b><br><small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(stages, item.stageId, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td>${dealMoneyHTML(item)}<small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(stages, item.stageId, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Negócio</th><th>Empresa e Contato</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
       return listShell('deals', 'Negócios', 'Funil configurado da empresa com acompanhamento por etapas.', table, records.length, stages);
     }
@@ -3024,7 +3081,7 @@
       ],
       deal: [
         ['title', 'Título do Negócio', 'text', true], ['company', 'Empresa', 'companyRef', true],
-        ['contact', 'Contato', 'contactRef', false], ['amount', 'Valor (R$)', 'number', true],
+        ['contact', 'Contato', 'contactRef', false], ['amount', 'Valor', 'number', true], ['currency', 'Moeda', 'currency', true],
         ['stage', 'Etapa', 'stage', true], ['responsibleId', 'Responsável', 'user', true],
         ['assistants', 'Assistente', 'assistant', false]
       ]
@@ -3438,7 +3495,7 @@
       }
       const payload = companyDealState.summary;
       if (!payload) return;
-      status.textContent = `${payload.totalCount} Negócio(s) visível(is).`;
+      status.textContent = `${payload.totalCount} Negócio(s) visível(is).${payload.ratesUnavailable ? ' Valores em moeda estrangeira sem cotação ficaram fora dos totais em R$.' : ''}`;
       const totalAmount = ['open', 'won', 'lost'].reduce((sum, key) => sum + Number(payload[key].amount), 0);
       const metrics = [
         ['total', 'Total de negócios', payload.totalCount, money(totalAmount)],
@@ -3451,7 +3508,9 @@
         <article class="company-deal-row" data-company-deal="${escapeHTML(item.id)}">
           <div><button type="button" class="entity-link" data-action="open-company-deal" data-id="${escapeHTML(item.id)}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.stageName)}</small></div>
           <div><span class="tag ${item.semanticType === 'won' ? 'green' : item.semanticType === 'lost' ? 'red' : ''}">${escapeHTML(companySemanticLabel(item.semanticType))}</span><small>${escapeHTML(item.responsibleName || 'Sem responsável')}</small></div>
-          <strong class="company-deal-value">${money(item.amount)}</strong>
+          <strong class="company-deal-value">${item.currency && item.currency !== 'BRL'
+            ? `${escapeHTML(money(item.amount, item.currency))}<small class="fx-brl" data-fx-brl>≈ ${escapeHTML(item.amountBrl == null ? 'cotação indisponível' : money(item.amountBrl))}</small>`
+            : money(item.amount)}</strong>
         </article>`).join('') : '<div class="drawer-shell-empty"><b>Nenhum Negócio visível para esta empresa.</b><p>Os contadores permanecem zerados.</p></div>';
     }
 
@@ -3629,7 +3688,7 @@
     }
     function renderDrawerQuotes(deal) {
       const quotes = Array.isArray(deal?.quotes) ? deal.quotes : [];
-      document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div><button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button></div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${money(quote.total)}</strong><span></span><span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
+      document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div><button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button></div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${escapeHTML(money(quote.total, dealCurrency(deal)))}</strong><span></span><span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
     }
 
     function customFieldHTML(field) {
@@ -3791,6 +3850,10 @@
         const assistants = state.users.filter(user => user.status === 'Ativo' && user.role === 'Assistente');
         const selected = Array.isArray(value) ? value[0] : '';
         return `<div class="field"><label for="${idPrefix}-${name}">${label}</label><select id="${idPrefix}-${name}" name="${name}"><option value="">Nenhum</option>${assistants.map(user => `<option value="${user.id}" ${user.id === selected ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
+      }
+      if (type === 'currency') {
+        const selected = dealCurrency({ currency: value });
+        return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><select id="${idPrefix}-${name}" name="${name}" ${requiredAttr}>${DEAL_CURRENCIES.map(([code, text]) => `<option value="${code}" ${code === selected ? 'selected' : ''}>${escapeHTML(text)}</option>`).join('')}</select><small class="field-hint">Dólar e Euro são convertidos pela cotação PTAX do Banco Central.</small></div>`;
       }
       if (['companyRef', 'companySuggest', 'contactRef'].includes(type)) {
         const listId = `${idPrefix}-${name}-options`;
@@ -4158,6 +4221,14 @@
       return state.users.find(user => normalizeBitrixHeader(user.name) === expected)?.id || fallback || state.currentUserId;
     }
 
+    function bitrixCurrency(value) {
+      const text = normalizedName(value);
+      if (!text) return 'BRL';
+      if (['usd', 'us$', 'dolar', 'dolar americano', 'dollar'].includes(text) || text.startsWith('usd')) return 'USD';
+      if (['eur', 'euro', '€'].includes(text) || text.startsWith('eur')) return 'EUR';
+      return 'BRL';
+    }
+
     function bitrixCoreRecord(entity, fields, existing) {
       const now = new Date().toISOString();
       const bitrixId = bitrixFieldValue(fields, 'ID');
@@ -4183,6 +4254,7 @@
           company: bitrixFieldValue(fields, 'Empresa'),
           contact: bitrixFieldValue(fields, 'Contato'),
           amount: parseBitrixMoney(bitrixFieldValue(fields, 'Total', 'Valor', 'Montante')),
+          currency: bitrixCurrency(bitrixFieldValue(fields, 'Moeda', 'Currency')),
           pipelineId: dealPipeline.id,
           stageId: importedStage.id,
           stage: importedStage.name,
@@ -4370,6 +4442,9 @@
       if (!deal) return;
       document.getElementById('quoteForm').reset();
       document.getElementById('quoteDealId').value = id;
+      const symbol = CURRENCY_SYMBOLS[dealCurrency(deal)];
+      document.querySelector('label[for="quoteUnit"]').textContent = `Valor unitário (${symbol}) *`;
+      document.querySelector('label[for="quoteDiscount"]').textContent = `Desconto (${symbol})`;
       document.getElementById('quoteQuantity').value = 1;
       updateQuoteTotal();
       document.getElementById('quoteDialog').showModal();
@@ -4379,7 +4454,10 @@
       const quantity = Number(document.getElementById('quoteQuantity').value || 0);
       const unit = Number(document.getElementById('quoteUnit').value || 0);
       const discount = Number(document.getElementById('quoteDiscount').value || 0);
-      document.getElementById('quoteTotal').textContent = money(Math.max(0, quantity * unit - discount));
+      const quoteDeal = state.deals.find(item => item.id === document.getElementById('quoteDealId').value);
+      document.getElementById('quoteTotal').textContent = quoteDeal && dealCurrency(quoteDeal) !== 'BRL'
+        ? dealMoneyText(quoteDeal, Math.max(0, quantity * unit - discount))
+        : money(Math.max(0, quantity * unit - discount));
     }
 
     function saveQuote(form) {
@@ -4394,7 +4472,7 @@
       const total = Math.max(0, quantity * unitPrice - discount);
       deal.quotes.push({ id: nextId('ORC', deal.quotes), description: data.get('description'), quantity, unitPrice, discount, total, validity: data.get('validity'), state: 'Rascunho', pdf: file?.name || '' });
       deal.amount = total; deal.updatedAt = new Date().toISOString();
-      notify('Orçamento adicionado ao Negócio.', `${deal.id} · ${money(total)}`, deal.responsibleId);
+      notify('Orçamento adicionado ao Negócio.', `${deal.id} · ${money(total, dealCurrency(deal))}`, deal.responsibleId);
       saveState(); document.getElementById('quoteDialog').close(); render();
       const drawer = document.getElementById('entityDrawer');
       const drawerForm = document.getElementById('drawerForm');
@@ -4402,7 +4480,7 @@
         renderDrawerQuotes(deal);
         setDrawerTab(drawerActiveTab);
       }
-      toast(`Orçamento de ${money(total)} adicionado${file ? ` com ${file.name}` : ' sem anexo'}.`);
+      toast(`Orçamento de ${money(total, dealCurrency(deal))} adicionado${file ? ` com ${file.name}` : ' sem anexo'}.`);
     }
 
     function markRead(id) { const item = state.notifications.find(note => note.id === id); if (item) item.read = true; saveState(); render(); }
