@@ -52,6 +52,8 @@
     .auth-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at top, #233354, var(--navy-950) 68%); }
     .auth-card { width: min(100%, 430px); padding: 32px; border: 1px solid rgba(255,255,255,.12); border-radius: 18px; color: var(--navy-900); background: white; box-shadow: 0 28px 70px rgba(0,0,0,.28); }
     .auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+    .auth-brand .locale-select { margin-left: auto; }
+    .locale-select { min-height: 32px; padding: 4px 8px; border: 1px solid var(--slate-200); border-radius: 8px; color: var(--navy-800); background: white; font: inherit; font-size: 12px; cursor: pointer; }
     .auth-card h1 { margin: 0 0 8px; font-size: 25px; }
     .auth-card p { margin: 0 0 22px; color: var(--slate-500); line-height: 1.5; }
     .auth-form { display: grid; gap: 16px; }
@@ -505,7 +507,7 @@
 <body>
   <section class="auth-screen" id="tenantLocator" hidden>
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1>Acesse sua empresa</h1>
       <p>Informe o identificador ou a URL fornecida pela sua empresa.</p>
       <form class="auth-form" id="tenantLocatorForm">
@@ -518,7 +520,7 @@
 
   <section class="auth-screen" id="tenantLogin" hidden>
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1>Entrar em <span id="tenantLoginName"></span></h1>
       <p>Use suas credenciais corporativas para continuar.</p>
       <form class="auth-form" id="tenantLoginForm">
@@ -534,7 +536,7 @@
 
   <section class="auth-screen" id="tenantForgot" hidden>
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1>Recuperar senha</h1>
       <p>Informe o e-mail cadastrado em <span id="tenantForgotName"></span>. Se ele existir, enviaremos um link para criar uma nova senha.</p>
       <form class="auth-form" id="tenantForgotForm" novalidate>
@@ -549,7 +551,7 @@
 
   <section class="auth-screen" id="accountAction" hidden>
     <div class="auth-card" aria-busy="false" id="accountActionCard">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1 id="accountActionTitle">Criar senha</h1>
       <p id="accountActionStatus" role="status" aria-live="polite"></p>
       <div id="accountActionInvalid" hidden>
@@ -599,6 +601,7 @@
             <div class="avatar" id="profileAvatar">AM</div>
             <div class="session-profile"><strong id="sessionUserName"></strong><small id="sessionUserRole"></small></div>
           </div>
+          <select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select>
           <button class="icon-button" data-view="notifications" aria-label="Notificações">♢<span class="badge-count" id="topNoticeCount">0</span></button>
           <button class="button small" type="button" id="logoutButton">Sair</button>
         </div>
@@ -800,7 +803,8 @@
         <div class="field"><label for="userEmail">E-mail</label><input id="userEmail" name="email" type="email" required></div>
         <div class="field"><label for="userJobTitle">Cargo profissional</label><input id="userJobTitle" name="jobTitle" required></div>
         <div class="field"><label for="userTeam">Equipe</label><input id="userTeam" name="team" required></div>
-        <div class="field full"><label for="userRole">Perfil de acesso</label><select id="userRole" name="role" required><option>Administrador</option><option>Gestor</option><option selected>Vendedor</option><option>Assistente</option><option>Faturamento</option></select><span class="hint">O perfil define permissões; o cargo descreve a função profissional.</span></div>
+        <div class="field full"><label for="userRole">Perfil de acesso</label><select id="userRole" name="role" required><option value="Administrador">Administrador</option><option value="Gestor">Gestor</option><option value="Vendedor" selected>Vendedor</option><option value="Assistente">Assistente</option><option value="Faturamento">Faturamento</option></select><span class="hint">O perfil define permissões; o cargo descreve a função profissional.</span></div>
+        <div class="field full" id="userLocaleField"><label for="userLocale">Idioma do convite</label><select id="userLocale" name="locale" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select><span class="hint">O e-mail de convite e a tela começam neste idioma.</span></div>
       </div><p class="field-manager-error" id="userDialogError" role="alert"></p></div>
       <div class="modal-foot"><button type="button" class="button" data-close="userDialog">Fechar</button><button type="submit" class="button primary" id="userSubmitButton">Enviar convite</button></div>
     </form>
@@ -834,8 +838,178 @@
 
   <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
+  <script src="/i18n/en.js"></script>
+  <script src="/i18n/es.js"></script>
   <script>
     'use strict';
+
+    // Interface language --------------------------------------------------------
+    // Portuguese is the source language. Each dictionary maps the Portuguese text
+    // to its translation; "{name}" marks a variable part. A pass over the rendered
+    // DOM translates text nodes and labels, so the rendering code keeps writing
+    // Portuguese and stored values (stages, roles, channels) never change.
+    const UI_LOCALES = ['pt-BR', 'en', 'es'];
+    const LOCALE_STORAGE_KEY = 'smart-crm-locale';
+    const NUMBER_LOCALES = { 'pt-BR': 'pt-BR', en: 'en-US', es: 'es-ES' };
+    const I18N_ATTRIBUTES = ['placeholder', 'title', 'aria-label', 'alt'];
+    const i18nTables = new Map();
+    const i18nSources = new WeakMap();
+    let uiLocale = initialLocale();
+    let i18nApplied = false;
+    function supportedLocale(value) {
+      const text = String(value || '').toLowerCase();
+      if (text.startsWith('pt')) return 'pt-BR';
+      if (text.startsWith('en')) return 'en';
+      if (text.startsWith('es')) return 'es';
+      return null;
+    }
+    function initialLocale() {
+      try {
+        const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
+        if (UI_LOCALES.includes(saved)) return saved;
+      } catch (_) { /* storage blocked: fall back to the browser */ }
+      for (const language of navigator.languages || [navigator.language]) {
+        const locale = supportedLocale(language);
+        if (locale) return locale;
+      }
+      return 'pt-BR';
+    }
+    function currentLocale() { return uiLocale; }
+    function numberLocale() { return NUMBER_LOCALES[uiLocale] || 'pt-BR'; }
+    function i18nTable(locale) {
+      if (i18nTables.has(locale)) return i18nTables.get(locale);
+      const exact = new Map();
+      const patterns = new Map();
+      const entries = Object.entries((window.SMART_CRM_I18N || {})[locale] || {});
+      for (const [source, target] of entries) {
+        if (!/\{\w+\}/.test(source)) { exact.set(source, target); continue; }
+        const names = [];
+        const literal = source.split(/\{(\w+)\}/);
+        let regex = '^';
+        literal.forEach((part, index) => {
+          if (index % 2) { names.push(part); regex += '([\\s\\S]*?)'; }
+          else regex += part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        });
+        const prefix = literal[0];
+        const bucket = prefix.charAt(0);
+        if (!patterns.has(bucket)) patterns.set(bucket, []);
+        patterns.get(bucket).push({ prefix, regex: new RegExp(regex + '$'), names, target });
+      }
+      // Longer literal prefixes first, so the most specific pattern wins.
+      patterns.forEach(list => list.sort((a, b) => b.prefix.length - a.prefix.length));
+      const table = { exact, patterns };
+      i18nTables.set(locale, table);
+      return table;
+    }
+    function translateCore(core, locale) {
+      const table = i18nTable(locale);
+      const exact = table.exact.get(core);
+      if (exact !== undefined) return exact;
+      for (const bucket of [core.charAt(0), '']) {
+        for (const pattern of table.patterns.get(bucket) || []) {
+          if (!core.startsWith(pattern.prefix)) continue;
+          const match = core.match(pattern.regex);
+          if (!match) continue;
+          const values = {};
+          pattern.names.forEach((name, index) => { values[name] = translateText(match[index + 1], locale); });
+          return pattern.target.replace(/\{(\w+)\}/g, (whole, name) => (name in values ? values[name] : whole));
+        }
+      }
+      return undefined;
+    }
+    // Translates a Portuguese text, keeping its surrounding spaces; unknown text is kept.
+    function translateText(text, locale = uiLocale) {
+      if (locale === 'pt-BR' || typeof text !== 'string' || !/[A-Za-zÀ-ÿ]/.test(text)) return text;
+      const [, lead, core, trail] = text.match(/^(\s*)([\s\S]*?)(\s*)$/);
+      const translated = translateCore(core, locale);
+      return translated === undefined ? text : lead + translated + trail;
+    }
+    // For text that never reaches the DOM as is (clipboard, title).
+    function t(text) { return translateText(text); }
+    // Native dialogs are not part of the DOM: translate their messages on the way out.
+    const nativeConfirm = window.confirm.bind(window);
+    const nativePrompt = window.prompt.bind(window);
+    const nativeAlert = window.alert.bind(window);
+    window.confirm = message => nativeConfirm(translateText(String(message ?? '')));
+    window.prompt = (message, value) => nativePrompt(translateText(String(message ?? '')), value);
+    window.alert = message => nativeAlert(translateText(String(message ?? '')));
+    function skipTranslation(element) {
+      return !element || element.closest('script, style, textarea, [translate="no"]');
+    }
+    function skipAttributes(element) {
+      return !element || element.closest('script, style, [translate="no"]');
+    }
+    function translateNode(node) {
+      let record = i18nSources.get(node);
+      const shown = node.nodeValue;
+      if (!record || record.shown !== shown) record = { source: shown };
+      const next = translateText(record.source);
+      record.shown = next;
+      i18nSources.set(node, record);
+      if (next !== shown) node.nodeValue = next;
+    }
+    function translateAttributes(element) {
+      let records = i18nSources.get(element);
+      for (const name of I18N_ATTRIBUTES) {
+        if (!element.hasAttribute(name)) continue;
+        const shown = element.getAttribute(name);
+        let record = records?.[name];
+        if (!record || record.shown !== shown) record = { source: shown };
+        const next = translateText(record.source);
+        record.shown = next;
+        records = { ...(records || {}), [name]: record };
+        if (next !== shown) element.setAttribute(name, next);
+      }
+      if (records) i18nSources.set(element, records);
+    }
+    function translateTree(root) {
+      if (!root || (uiLocale === 'pt-BR' && !i18nApplied)) return;
+      i18nApplied = true;
+      if (root.nodeType === Node.TEXT_NODE) {
+        if (!skipTranslation(root.parentElement)) translateNode(root);
+        return;
+      }
+      if (root.nodeType !== Node.ELEMENT_NODE || skipAttributes(root)) return;
+      translateAttributes(root);
+      if (root.matches('textarea')) return;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+        acceptNode: node => {
+          if (node.nodeType !== Node.ELEMENT_NODE) return NodeFilter.FILTER_ACCEPT;
+          if (node.matches('script, style, [translate="no"]')) return NodeFilter.FILTER_REJECT;
+          // A text area's attributes are translated, its typed content is not.
+          if (node.matches('textarea')) { translateAttributes(node); return NodeFilter.FILTER_REJECT; }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.nodeType === Node.TEXT_NODE) translateNode(node);
+        else translateAttributes(node);
+      }
+    }
+    const i18nObserver = new MutationObserver(mutations => {
+      if (uiLocale === 'pt-BR' && !i18nApplied) return;
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList') mutation.addedNodes.forEach(translateTree);
+        else if (mutation.type === 'characterData') translateTree(mutation.target);
+        else if (mutation.type === 'attributes' && !skipAttributes(mutation.target)) translateAttributes(mutation.target);
+      }
+    });
+    function syncLocaleControls() {
+      document.documentElement.lang = uiLocale;
+      document.querySelectorAll('[data-locale-select]').forEach(select => { select.value = uiLocale; });
+    }
+    // Applies a language to the whole page; persist=false when it came from the server.
+    function setLocale(locale, { persist = true } = {}) {
+      if (!UI_LOCALES.includes(locale)) return;
+      const changed = locale !== uiLocale;
+      uiLocale = locale;
+      try { localStorage.setItem(LOCALE_STORAGE_KEY, locale); } catch (_) { /* optional */ }
+      syncLocaleControls();
+      if (!changed) return;
+      if (typeof render === 'function' && document.documentElement.dataset.authenticated === 'true') render();
+      translateTree(document.body);
+      if (persist && typeof saveLocalePreference === 'function') void saveLocalePreference(locale);
+    }
 
     const UI_STORAGE_PREFIX = 'smart-crm-ui-v1';
     const LEGACY_STORAGE_KEYS = ['smart-crm-demo-v1', 'smart-crm-confirmed-v1'];
@@ -1260,8 +1434,23 @@
       }
       return payload;
     }
+    let localeChosenBeforeLogin = false;
+    async function saveLocalePreference(locale) {
+      if (!sessionIdentity) { localeChosenBeforeLogin = true; return; }
+      try {
+        await responseJson(await apiFetch('/api/me/preferences', {
+          method: 'PUT',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locale })
+        }));
+      } catch (_) {
+        toast('Não foi possível salvar o idioma no seu perfil.');
+      }
+    }
     function apiFetch(input, init = {}) {
-      return fetch(input, { ...init, credentials: 'same-origin' });
+      const headers = new Headers(init.headers || {});
+      headers.set('Accept-Language', uiLocale);
+      return fetch(input, { ...init, headers, credentials: 'same-origin' });
     }
     async function loadApplicationVersion() {
       const element = document.getElementById('appVersion');
@@ -1295,6 +1484,11 @@
     async function activateSession(session, expectedSlug) {
       if (!session?.tenant_slug || session.tenant_slug !== expectedSlug) throw new Error('Tenant da sessão não corresponde à rota.');
       sessionIdentity = Object.freeze({ ...session });
+      // A language picked on the login screen is kept and saved for the user;
+      // otherwise the user's saved language applies.
+      if (localeChosenBeforeLogin) void saveLocalePreference(uiLocale);
+      else if (UI_LOCALES.includes(session.locale)) setLocale(session.locale, { persist: false });
+      localeChosenBeforeLogin = false;
       state.currentUserId = sessionIdentity.user_id;
       state.ui = loadUiPreferences(state.users);
       writeLocalState();
@@ -1760,7 +1954,7 @@
     function userName(id) { return id === sessionIdentity?.user_id ? sessionIdentity.user_name : state.users.find(user => user.id === id)?.name || 'Sem responsável'; }
     function initials(name) { return String(name || '?').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase(); }
     function escapeHTML(value) { return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]); }
-    function money(value, currency = 'BRL') { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency }); }
+    function money(value, currency = 'BRL') { return Number(value || 0).toLocaleString(numberLocale(), { style: 'currency', currency }); }
     const DEAL_CURRENCIES = [['BRL', 'R$ · Real'], ['USD', 'US$ · Dólar'], ['EUR', '€ · Euro']];
     const CURRENCY_SYMBOLS = { BRL: 'R$', USD: 'US$', EUR: '€' };
     const LEAD_CHANNELS = ['Site', 'Instagram', 'WhatsApp', 'Google Ads', 'Meta Ads', 'Busca orgânica', 'Redes sociais', 'E-mail', 'Indicação', 'Evento', 'Telefone', 'Outro'];
@@ -1791,7 +1985,7 @@
     function dealRateTitle(deal) {
       const info = dealRateInfo(deal);
       if (!info) return 'Cotação PTAX indisponível no momento; o valor não entra nos totais em R$.';
-      const rate = info.rate.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+      const rate = info.rate.toLocaleString(numberLocale(), { minimumFractionDigits: 4, maximumFractionDigits: 4 });
       const note = info.frozen ? ' · congelada no ganho' : exchangeRates.stale ? ' · última cotação disponível' : '';
       return `Cotação PTAX (Banco Central) de ${brDate(info.date)}: 1 ${dealCurrency(deal)} = R$ ${rate}${note}`;
     }
@@ -2260,7 +2454,7 @@
         </div>
         <div class="grid-two">
           <article class="card"><div class="card-head"><div><h3>Pipeline Vendas CMS</h3><p>Distribuição dos Negócios por etapa</p></div><button class="button small" data-view="deals">Ver Negócios</button></div><div class="card-body pipeline">${pipeline}</div></article>
-          <article class="card"><div class="card-head"><div><h3>Movimentações recentes</h3><p>Registros dentro do recorte atual</p></div></div><div class="card-body activity-list">${recent.map(item => `<div class="activity"><span class="activity-icon">${item.type === 'Lead' ? '◎' : '◇'}</span><p><b>${escapeHTML(item.title)}</b><br>${escapeHTML(item.subtitle)}</p><small>${escapeHTML(new Date(item.createdAt).toLocaleDateString('pt-BR'))}</small></div>`).join('') || '<div class="empty">Nenhum registro visível.</div>'}</div></article>
+          <article class="card"><div class="card-head"><div><h3>Movimentações recentes</h3><p>Registros dentro do recorte atual</p></div></div><div class="card-body activity-list">${recent.map(item => `<div class="activity"><span class="activity-icon">${item.type === 'Lead' ? '◎' : '◇'}</span><p><b>${escapeHTML(item.title)}</b><br>${escapeHTML(item.subtitle)}</p><small>${escapeHTML(new Date(item.createdAt).toLocaleDateString(numberLocale()))}</small></div>`).join('') || '<div class="empty">Nenhum registro visível.</div>'}</div></article>
         </div>`;
     }
 
@@ -2425,7 +2619,7 @@
       else if (stateView.error) body = `<p class="bootstrap-error" role="alert">${escapeHTML(stateView.error)}</p>`;
       else if (stateView.items?.length) {
         body = `<div class="pipeline-history-list">${stateView.items.map(item => {
-          const when = item.createdAt ? new Date(item.createdAt).toLocaleString('pt-BR') : 'Instante indisponível';
+          const when = item.createdAt ? new Date(item.createdAt).toLocaleString(numberLocale()) : 'Instante indisponível';
           const transfers = (item.transferSummary || []).map(summary => `${Number(summary.count || 0)} ${Number(summary.count || 0) === 1 ? 'negócio' : 'negócios'}: ${summary.sourceStageId} → ${summary.targetStageId}`).join(' · ') || 'Sem transferência de negócios';
           return `<article class="pipeline-history-item" data-pipeline-history-item="${escapeHTML(item.id)}">
             <div class="pipeline-history-meta"><span><strong>${escapeHTML(item.action || 'pipeline.updated')}</strong> · versão ${escapeHTML(item.pipelineVersion)}</span><span>${escapeHTML(item.actorUserId || 'ator indisponível')} · ${escapeHTML(when)}</span></div>
@@ -2889,6 +3083,9 @@
       document.getElementById('userJobTitle').value = user?.jobTitle || '';
       document.getElementById('userTeam').value = user?.team || '';
       document.getElementById('userRole').value = user?.role || 'Vendedor';
+      // The invitation language only applies to new invitations.
+      document.getElementById('userLocale').value = currentLocale();
+      document.getElementById('userLocaleField').hidden = Boolean(user);
       document.getElementById('userDialogError').textContent = '';
       document.getElementById('userDialog').showModal();
       return true;
@@ -2965,7 +3162,7 @@
       try {
         const payload = await postUserAction('/api/users/invitations', {
           name: data.name.trim(), email: data.email.trim(), jobTitle: data.jobTitle.trim(),
-          team: data.team.trim() || null, role: data.role
+          team: data.team.trim() || null, role: data.role, locale: data.locale || 'pt-BR'
         });
         const user = applyServerUser(payload.user);
         adoptWorkspaceVersion(payload.workspaceVersion);
@@ -3389,7 +3586,7 @@
     function activityTime(value) {
       const instant = new Date(value);
       if (Number.isNaN(instant.getTime())) return '';
-      return new Intl.DateTimeFormat('pt-BR', {
+      return new Intl.DateTimeFormat(numberLocale(), {
         timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'
       }).format(instant);
     }
@@ -3884,7 +4081,7 @@
     ];
     function trackingDateTime(value) {
       const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(numberLocale(), { dateStyle: 'short', timeStyle: 'short' });
     }
     function renderDrawerLeadTracking(entity, record) {
       const section = document.getElementById('drawerLeadTracking');
@@ -4743,7 +4940,7 @@
       if (source === target) hint.textContent = `Preço do catálogo: ${original} / ${product.unit || 'un'}.`;
       else if (converted === null) hint.textContent = `Cotação PTAX indisponível: mantido o preço original de ${original}. Ajuste o valor para ${CURRENCY_SYMBOLS[target]}.`;
       else {
-        const rates = [source, target].filter(code => code !== 'BRL').map(code => `1 ${code} = R$ ${Number(exchangeRates.rates[code].rate).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`);
+        const rates = [source, target].filter(code => code !== 'BRL').map(code => `1 ${code} = R$ ${Number(exchangeRates.rates[code].rate).toLocaleString(numberLocale(), { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`);
         hint.textContent = `Convertido de ${original} pela PTAX de ${brDate(exchangeRates.rates[source === 'BRL' ? target : source].date)} (${rates.join('; ')}). Confira antes de salvar.`;
       }
       hint.dataset.quoteProductHint = source === target ? 'catalog' : converted === null ? 'unavailable' : 'converted';
@@ -5078,6 +5275,15 @@
       if (button.dataset.authAction === 'back-to-login') backToLogin();
     }));
     document.getElementById('logoutButton').addEventListener('click', logout);
+
+    document.addEventListener('change', event => {
+      if (event.target.matches?.('[data-locale-select]')) setLocale(event.target.value);
+    });
+    syncLocaleControls();
+    translateTree(document.body);
+    i18nObserver.observe(document.documentElement, {
+      childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: I18N_ATTRIBUTES
+    });
 
     loadApplicationVersion();
     // A second e-mail link opened in the same tab only changes the fragment, which

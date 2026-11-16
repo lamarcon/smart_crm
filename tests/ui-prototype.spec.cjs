@@ -116,7 +116,7 @@ async function waitForPipelineWrites(page, count, timeoutMs = 5000) {
 }
 
 async function openFresh(options = {}) {
-  const context = await browser.newContext({ viewport: options.viewport || { width: 1366, height: 768 } });
+  const context = await browser.newContext({ locale: 'pt-BR', viewport: options.viewport || { width: 1366, height: 768 } });
   const page = await context.newPage();
   const pipeline = clone(options.pipeline || defaultDealPipeline());
   const initialState = options.preloadState ? attachCanonicalDealStages(durableState(options.preloadState), pipeline) : null;
@@ -138,6 +138,7 @@ async function openFresh(options = {}) {
     disableBillingAutomation: Boolean(options.disableBillingAutomation),
     userRequests: [], inviteDeliveryStatus: 'sent', userActionFailure: null, userActionGate: null,
     intakeKeys: [], intakeRequests: [], intakeFailure: null,
+    preferenceRequests: [], preferenceFailure: false,
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], products: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
@@ -156,6 +157,16 @@ async function openFresh(options = {}) {
     status: 200, contentType: 'application/json',
     body: JSON.stringify(api.session)
   }));
+  await context.route('**/api/me/preferences', route => {
+    const request = route.request();
+    const body = request.postDataJSON();
+    api.preferenceRequests.push({ method: request.method(), body, language: request.headers()['accept-language'] });
+    if (api.preferenceFailure) {
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'tenant_unavailable', message: 'Banco da empresa temporariamente indisponível.' } }) });
+    }
+    api.session = { ...api.session, locale: body.locale };
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ locale: body.locale }) });
+  });
   await context.route('**/api/deals/*/activities**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -606,7 +617,7 @@ async function assertCanonicalRehydration(page) {
   await reloadReady(page);
   assert.deepEqual(durableState(await stateFrom(page)), expected, 'recarga não reidratou o estado canônico');
 
-  const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  const context = await browser.newContext({ locale: 'pt-BR', viewport: { width: 1366, height: 768 } });
   try {
     const independent = await context.newPage();
     const mirrorApi = {
@@ -682,7 +693,7 @@ async function run(name, test, options = {}) {
 }
 
 async function openAuthPage(pathname, options = {}) {
-  const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  const context = await browser.newContext({ locale: 'pt-BR', viewport: { width: 1366, height: 768 } });
   if (options.storageEntries) {
     await context.addInitScript(entries => {
       Object.entries(entries).forEach(([key, value]) => localStorage.setItem(key, value));
@@ -746,6 +757,13 @@ async function openAuthPage(pathname, options = {}) {
     }
     return route.fulfill({ status: 404 });
   });
+  const preferenceRequests = [];
+  await context.route('**/api/me/preferences', route => {
+    const body = route.request().postDataJSON();
+    preferenceRequests.push(body);
+    session.locale = body.locale;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
   await context.route('**/api/workspace**', route => {
     workspaceRequests.push(route.request().url());
     const workspaceState = options.workspaceState ? clone(options.workspaceState) : null;
@@ -764,7 +782,7 @@ async function openAuthPage(pathname, options = {}) {
     });
   }
   await page.goto(target, { waitUntil: 'domcontentloaded' });
-  return { context, page, authRequests, workspaceRequests };
+  return { context, page, authRequests, workspaceRequests, preferenceRequests };
 }
 
 async function runAuth(name, pathname, test, options = {}) {
@@ -780,6 +798,40 @@ async function runAuth(name, pathname, test, options = {}) {
   } finally {
     await opened.context.close();
   }
+}
+
+// Text still in Portuguese after switching the interface language. Demo records
+// are data, not interface, and stay as typed.
+const PORTUGUESE_TEXT = /[ãõçêôâ]|(?<!\p{L})(não|você|nenhum|nenhuma|do|dos|das|em|sem|uma|seu|sua|ao|são|já|também)(?!\p{L})/iu;
+async function untranslatedTexts(page) {
+  return page.evaluate(({ source }) => {
+    const pattern = new RegExp(source, 'iu');
+    const dictionary = (window.SMART_CRM_I18N || {}).en || {};
+    const allowed = [];
+    const gather = value => {
+      if (typeof value === 'string') { if (value.length >= 2 && !(value in dictionary)) allowed.push(value); }
+      else if (Array.isArray(value)) value.forEach(gather);
+      else if (value && typeof value === 'object') Object.values(value).forEach(gather);
+    };
+    gather(['leads', 'contacts', 'companies', 'deals', 'products', 'notifications', 'users'].map(key => state[key]));
+    gather((dealPipeline?.stages || []).map(stage => stage.name));
+    const found = new Set();
+    const keep = text => {
+      const value = String(text || '').replace(/\s+/g, ' ').trim();
+      if (value && pattern.test(value) && !allowed.some(item => value.includes(item))) found.add(value);
+    };
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const element = node.parentElement;
+      if (!element || element.closest('script, style, textarea, [translate="no"]')) continue;
+      keep(node.nodeValue);
+    }
+    document.querySelectorAll('[placeholder], [title], [aria-label], [alt]').forEach(element => {
+      if (element.closest('[translate="no"]')) return;
+      ['placeholder', 'title', 'aria-label', 'alt'].forEach(name => keep(element.getAttribute(name)));
+    });
+    return [...found];
+  }, { source: PORTUGUESE_TEXT.source });
 }
 
 async function goTo(page, name) {
@@ -977,6 +1029,31 @@ async function storageEntries(page) {
     assert.equal(await page.locator('#loginError').innerText(), 'Não foi possível entrar com os dados informados.');
     assert.equal(await page.locator('#crmApp').isHidden(), true);
   });
+
+  await runAuth('I18N-05 login em espanhol antes de entrar e idioma salvo no perfil depois', '/cliente-a', async ({ page, preferenceRequests }) => {
+    const card = page.locator('#tenantLogin');
+    await card.locator('[data-locale-select]').selectOption('es');
+    assert.match(await card.locator('h1').innerText(), /^Iniciar sesión en/);
+    await card.getByLabel('Contraseña').fill('senha incorreta 123');
+    await card.getByLabel('Correo electrónico').fill('ana@cliente.test');
+    await card.getByRole('button', { name: 'Iniciar sesión', exact: true }).click();
+    await page.locator('#loginError').getByText('No fue posible iniciar sesión con los datos informados.').waitFor();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await card.waitFor({ state: 'visible' });
+    assert.match(await card.locator('h1').innerText(), /^Iniciar sesión en/);
+    assert.equal(preferenceRequests.length, 0);
+  });
+
+  await runAuth('I18N-05 idioma escolhido no login é salvo no perfil ao entrar', '/cliente-a', async ({ page, preferenceRequests }) => {
+    const card = page.locator('#tenantLogin');
+    await card.locator('[data-locale-select]').selectOption('en');
+    await card.getByLabel('Email').fill('ana@cliente.test');
+    await card.getByLabel('Password').fill('senha segura 123');
+    await card.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await page.locator('#crmApp').waitFor({ state: 'visible' });
+    assert.deepEqual(preferenceRequests, [{ locale: 'en' }]);
+    assert.match(await page.locator('.nav [data-view="dashboard"]').innerText(), /Overview/);
+  }, { loginSuccess: true });
 
   await runAuth('MT-03 sessão de outro tenant não troca a rota', '/cliente-a', async ({ page, workspaceRequests }) => {
     await page.locator('#tenantLogin').waitFor({ state: 'visible' });
@@ -1416,7 +1493,7 @@ async function storageEntries(page) {
     assert.equal(api.version, beforeVersion + 1);
     assert.equal(api.state.notifications.length, beforeNotifications + 1);
 
-    const secondContext = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+    const secondContext = await browser.newContext({ locale: 'pt-BR', viewport: { width: 1366, height: 768 } });
     await secondContext.route('**/api/auth/session', route => route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify(AUTH_SESSION)
@@ -3453,6 +3530,168 @@ async function storageEntries(page) {
     assert.equal(api.intakeRequests.length, 0);
   });
 
+  await run('I18N-01 inglês e espanhol não deixam texto da interface em português', async page => {
+    const leftovers = new Set();
+    const collect = async label => { (await untranslatedTexts(page)).forEach(text => leftovers.add(`${label} | ${text}`)); };
+    const step = async (label, action) => {
+      try { await action(); await page.waitForTimeout(150); await collect(label); }
+      catch (error) { throw new Error(`${label}: ${error.message.split('\n')[0]}`); }
+      await page.keyboard.press('Escape').catch(() => {});
+      await page.evaluate(() => document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close()));
+    };
+    for (const locale of ['en', 'es']) {
+      await page.locator('.top-actions [data-locale-select]').selectOption(locale);
+      for (const view of ['dashboard', 'leads', 'contacts', 'companies', 'products', 'deals', 'notifications', 'pipeline-admin', 'admin']) {
+        await step(`${locale} view ${view}`, () => page.locator(`.nav [data-view="${view}"]`).click());
+      }
+      for (const view of ['leads', 'contacts', 'companies', 'products', 'deals']) {
+        await step(`${locale} new ${view}`, async () => {
+          await page.locator(`.nav [data-view="${view}"]`).click();
+          await page.locator(`#page-${view} [data-action="new"]`).first().click();
+        });
+        if (view !== 'products') await step(`${locale} filters ${view}`, async () => {
+          await page.locator(`.nav [data-view="${view}"]`).click();
+          await page.locator(`#page-${view} [data-action="open-filters"]`).first().click();
+        });
+        if (view !== 'products') await step(`${locale} fields ${view}`, async () => {
+          await page.locator(`.nav [data-view="${view}"]`).click();
+          await page.locator(`#page-${view} [data-action="manage-fields"]`).first().click();
+        });
+        await step(`${locale} drawer ${view}`, async () => {
+          await page.locator(`.nav [data-view="${view}"]`).click();
+          await page.locator(`#page-${view} [data-action="open-record"]`).first().click();
+          for (const tab of await page.locator('#entityDrawer [data-action="drawer-tab"], #entityDrawer [data-action="company-workspace-tab"]').all()) {
+            if (await tab.isVisible()) { await tab.click(); await page.waitForTimeout(100); await collect(`${locale} drawer ${view} tab`); }
+          }
+        });
+      }
+      await step(`${locale} kanban deals`, async () => {
+        await page.locator('.nav [data-view="deals"]').click();
+        await page.locator('#page-deals [data-action="set-view-mode"]').last().click();
+      });
+      await step(`${locale} quote`, async () => {
+        await page.locator('.nav [data-view="deals"]').click();
+        await page.locator('#page-deals [data-action="set-view-mode"]').first().click();
+        await page.locator('#page-deals [data-action="quote"]').first().click();
+        await page.locator('#quoteDescription').fill('lic');
+      });
+      await step(`${locale} deleted`, async () => {
+        await page.locator('.nav [data-view="dashboard"]').click();
+        await page.locator('[data-action="open-deleted"]').first().click();
+      });
+      await step(`${locale} import`, async () => {
+        await page.locator('.nav [data-view="dashboard"]').click();
+        await page.locator('[data-action="open-bitrix-import"]').first().click();
+      });
+      await step(`${locale} dashboard filters`, async () => {
+        await page.locator('.nav [data-view="dashboard"]').click();
+        await page.locator('[data-action="open-dashboard-filters"]').first().click();
+      });
+      await step(`${locale} invite`, async () => {
+        await page.locator('.nav [data-view="admin"]').click();
+        await page.locator('[data-action="new-user"]').first().click();
+      });
+      await step(`${locale} intake key`, async () => {
+        await page.locator('.nav [data-view="admin"]').click();
+        await page.locator('[data-action="new-intake-key"]').first().click();
+      });
+    }
+    assert.deepEqual([...leftovers].sort(), []);
+  });
+
+  await run('I18N-02 troca de idioma redesenha a tela, salva no perfil e respeita o idioma do servidor', async page => {
+    const api = apiByPage.get(page);
+    const nav = view => page.locator(`.nav [data-view="${view}"]`);
+    assert.equal(await page.evaluate(() => document.documentElement.lang), 'pt-BR');
+    assert.match(await nav('dashboard').innerText(), /Visão geral/);
+    assert.equal(api.preferenceRequests.length, 0);
+
+    await page.locator('.top-actions [data-locale-select]').selectOption('en');
+    assert.equal(await page.evaluate(() => document.documentElement.lang), 'en');
+    assert.match(await nav('dashboard').innerText(), /Overview/);
+    assert.match(await nav('deals').innerText(), /Deals/);
+    assert.equal(await page.locator('#topTitle').innerText(), 'Overview');
+    await page.waitForFunction(() => true);
+    assert.deepEqual(api.preferenceRequests.map(item => [item.method, item.body.locale, item.language]), [['PUT', 'en', 'en']]);
+
+    // Money and dates follow the language; stored values do not change.
+    await nav('deals').click();
+    assert.match(await page.locator('#page-deals tbody').innerText(), /R\$\s?48,500\.00/);
+    assert.equal(await page.locator('#page-deals [data-action="new"]').innerText(), '＋ New Deal');
+    assert.equal((await stateFrom(page)).deals.every(deal => !/Won|Lost/.test(deal.stage)), true);
+
+    // Native confirmation dialogs and toasts are translated too.
+    await nav('leads').click();
+    let message = '';
+    page.once('dialog', dialog => { message = dialog.message(); dialog.dismiss(); });
+    await page.locator('#page-leads [data-action="delete"]').first().click();
+    assert.equal(message, 'Delete this Lead?');
+    await nav('notifications').click();
+    await page.locator('#page-notifications [data-action="read-all"]').click();
+    await page.locator('#toastRegion').getByText('Notifications marked as read.', { exact: true }).waitFor();
+
+    // The choice survives a reload (it is the user's, on the server).
+    await reloadReady(page);
+    assert.match(await nav('dashboard').innerText(), /Overview/);
+    assert.equal(await page.locator('.top-actions [data-locale-select]').inputValue(), 'en');
+
+    // The server's language wins over this browser's last choice.
+    api.session = { ...api.session, locale: 'es' };
+    await reloadReady(page);
+    assert.match(await nav('dashboard').innerText(), /Resumen/);
+    assert.equal(api.preferenceRequests.length, 1);
+
+    // Back to Portuguese: the original texts come back without a reload.
+    await page.locator('.top-actions [data-locale-select]').selectOption('pt-BR');
+    assert.match(await nav('dashboard').innerText(), /Visão geral/);
+    assert.equal(await page.locator('#topTitle').innerText(), 'Visão geral');
+    await nav('leads').click();
+    assert.match(await page.locator('#page-leads').innerText(), /Novo Lead/);
+    assert.deepEqual(api.preferenceRequests.at(-1).body, { locale: 'pt-BR' });
+
+    // A failed save keeps the language on screen and says so.
+    api.preferenceFailure = true;
+    await page.locator('.top-actions [data-locale-select]').selectOption('en');
+    await page.locator('#toastRegion').getByText('Could not save the language to your profile.', { exact: true }).waitFor();
+    assert.match(await nav('dashboard').innerText(), /Overview/);
+  });
+
+  await run('I18N-03 convite em inglês envia o perfil interno e o idioma escolhido', async page => {
+    const api = apiByPage.get(page);
+    await page.locator('.top-actions [data-locale-select]').selectOption('en');
+    await page.locator('.nav [data-view="admin"]').click();
+    await page.locator('[data-action="new-user"]').first().click();
+    const dialog = page.locator('#userDialog');
+    assert.equal(await dialog.locator('h3').innerText(), 'Invite employee');
+    assert.equal(await dialog.getByLabel('Invitation language').inputValue(), 'en');
+    const roles = await dialog.locator('#userRole option').evaluateAll(options => options.map(option => [option.value, option.textContent]));
+    assert.deepEqual(roles, [['Administrador', 'Administrator'], ['Gestor', 'Manager'], ['Vendedor', 'Salesperson'], ['Assistente', 'Assistant'], ['Faturamento', 'Billing']]);
+    await dialog.getByLabel('Full name').fill('Ann Smith');
+    await dialog.getByLabel('Email').fill('ann@example.test');
+    await dialog.getByLabel('Job title').fill('Account executive');
+    await dialog.getByLabel('Team').fill('Global');
+    await dialog.locator('#userRole').selectOption({ label: 'Manager' });
+    await dialog.getByRole('button', { name: 'Send invitation' }).click();
+    await page.waitForFunction(() => !document.getElementById('userDialog').open);
+    const sent = api.userRequests.find(item => item.path === '/api/users/invitations');
+    assert.deepEqual({ role: sent.body.role, locale: sent.body.locale }, { role: 'Gestor', locale: 'en' });
+  });
+
+  await run('I18N-04 erro do servidor aparece no idioma escolhido', async page => {
+    const api = apiByPage.get(page);
+    await page.locator('.top-actions [data-locale-select]').selectOption('es');
+    await page.locator('.nav [data-view="admin"]').click();
+    await page.locator('[data-action="new-intake-key"]').first().click();
+    const dialog = page.locator('#intakeKeyDialog');
+    // The server translates by Accept-Language (see test_i18n.py); here it answers in Spanish.
+    api.intakeFailure = { status: 422, code: 'validation_error', message: 'Elige un responsable activo.' };
+    await dialog.getByLabel('Nombre de la clave').fill('Bot');
+    const sent = page.waitForRequest(request => request.url().endsWith('/api/lead-intake/keys') && request.method() === 'POST');
+    await dialog.getByRole('button', { name: 'Crear clave' }).click();
+    assert.equal((await sent).headers()['accept-language'], 'es');
+    await dialog.locator('#intakeKeyError').getByText('Elige un responsable activo.').waitFor();
+  });
+
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {
     await goTo(page, 'Negócios');
     const options = await page.locator('[data-stage-filter="deals"] option').allTextContents();
@@ -4324,7 +4563,7 @@ async function storageEntries(page) {
     const [request] = api.userRequests;
     assert.deepEqual(
       { method: request.method, path: request.path, body: request.body },
-      { method: 'POST', path: '/api/users/invitations', body: { name: 'Juliana Lima', email: 'Juliana@Teste.Invalid', jobTitle: 'Consultora comercial', team: 'Vendas CMS', role: 'Vendedor' } }
+      { method: 'POST', path: '/api/users/invitations', body: { name: 'Juliana Lima', email: 'Juliana@Teste.Invalid', jobTitle: 'Consultora comercial', team: 'Vendas CMS', role: 'Vendedor', locale: 'pt-BR' } }
     );
     const row = page.locator('tr', { has: page.getByText('juliana@teste.invalid', { exact: true }) });
     assert.equal(await row.locator('.tag').first().innerText(), 'Pendente');
