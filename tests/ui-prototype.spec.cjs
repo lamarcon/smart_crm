@@ -3273,20 +3273,29 @@ async function storageEntries(page) {
     const row = page.locator('#page-deals tbody tr').filter({ hasText: 'N-16312' });
     await row.getByRole('button', { name: 'Orçamento', exact: true }).click();
     const quote = page.locator('#quoteDialog');
-    const picker = quote.getByLabel('Produto do catálogo');
+    const picker = quote.getByLabel('Item / serviço *');
     const hint = quote.locator('#quoteProductHint');
 
     // Only active products are offered.
     await page.evaluate(() => { state.products.find(item => item.id === 'P-2').active = false; });
     await picker.fill('');
     await picker.focus();
-    const options = quote.locator('#quoteProduct-options [role="option"]');
+    const options = quote.locator('#quoteDescription-options [role="option"]');
     await options.first().waitFor();
     const offered = await options.allInnerTexts();
     assert.equal(offered.some(text => /Implantação assistida/.test(text)), false);
     assert.equal(offered.some(text => /Licença Smart CRM/.test(text) && /LIC-ANUAL/.test(text)), true);
     await picker.fill('xyz-inexistente');
-    await quote.locator('#quoteProduct-options').getByText('Nenhum produto ativo para esta busca.').waitFor();
+    await quote.locator('#quoteDescription-options').getByText('Nenhum produto ativo para esta busca.').waitFor();
+    assert.equal(await quote.locator('#quoteProductId').inputValue(), '');
+
+    // The SKU also finds the product, ignoring case; picking it fills the line.
+    await picker.fill('lic-anu');
+    await options.filter({ hasText: 'Licença Smart CRM' }).waitFor();
+    assert.equal(await options.count(), 1);
+    await options.first().dispatchEvent('mousedown');
+    assert.equal(await quote.locator('#quoteProductId').inputValue(), 'P-1');
+    assert.equal(await quote.locator('#quoteDescription-options').isHidden(), true);
 
     // Same currency: catalog price as is.
     await picker.fill('Licença Smart CRM');
@@ -3317,7 +3326,7 @@ async function storageEntries(page) {
     assert.equal(await quote.getByLabel('Valor unitário (US$) *').inputValue(), '215.8');
     assert.equal(await quote.locator('#quoteProductId').inputValue(), 'P-1');
     await page.evaluate(() => { exchangeRates = { rates: {}, stale: true, loaded: true }; openQuote('N-16312'); });
-    assert.equal(await hint.innerText(), 'Opcional: escolha um produto ativo para preencher a descrição e o preço.');
+    assert.equal(await hint.innerText(), 'Escolha um produto do catálogo para preencher o preço, ou escreva um item livre.');
     await picker.fill('Licença Smart CRM');
     assert.equal(await quote.getByLabel('Valor unitário (US$) *').inputValue(), '1200');
     assert.match(await hint.innerText(), /^Cotação PTAX indisponível: mantido o preço original de R\$\s1\.200,00\. Ajuste o valor para US\$\.$/);

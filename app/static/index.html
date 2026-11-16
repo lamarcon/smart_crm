@@ -735,8 +735,7 @@
         <input type="hidden" name="dealId" id="quoteDealId">
         <input type="hidden" name="productId" id="quoteProductId">
         <div class="form-grid">
-          <div class="field full suggest-field"><label for="quoteProduct">Produto do catálogo</label><div class="suggest-anchor"><input id="quoteProduct" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="quoteProduct-options" autocomplete="off" data-suggest="product" placeholder="Buscar por nome ou código"><ul id="quoteProduct-options" class="suggest-list" role="listbox" aria-label="Sugestões" hidden></ul></div><small class="field-hint" id="quoteProductHint">Opcional: escolha um produto ativo para preencher a descrição e o preço.</small></div>
-          <div class="field full"><label for="quoteDescription">Item / serviço *</label><input id="quoteDescription" name="description" required placeholder="Ex.: Implantação Smart CRM"></div>
+          <div class="field full suggest-field"><label for="quoteDescription">Item / serviço *</label><div class="suggest-anchor"><input id="quoteDescription" name="description" required type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="quoteDescription-options" aria-describedby="quoteProductHint" autocomplete="off" data-suggest="product" placeholder="Busque no catálogo pelo nome ou código, ou escreva um item"><ul id="quoteDescription-options" class="suggest-list" role="listbox" aria-label="Produtos do catálogo" hidden></ul></div><small class="field-hint" id="quoteProductHint">Escolha um produto do catálogo para preencher o preço, ou escreva um item livre.</small></div>
           <div class="field"><label for="quoteQuantity">Quantidade *</label><input id="quoteQuantity" name="quantity" type="number" min="1" step="1" value="1" required></div>
           <div class="field"><label for="quoteUnit">Valor unitário (R$) *</label><input id="quoteUnit" name="unitPrice" type="number" min="0" step="0.01" value="0" required></div>
           <div class="field"><label for="quoteDiscount">Desconto (R$)</label><input id="quoteDiscount" name="discount" type="number" min="0" step="0.01" value="0"></div>
@@ -3172,7 +3171,8 @@
       if (!list) return;
       const query = normalizedName(input.value);
       const matches = suggestionChoices(input)
-        .filter(choice => !query || normalizedName(choice.value).includes(query))
+        .filter(choice => !query || normalizedName(choice.value).includes(query)
+          || (input.dataset.suggest === 'product' && normalizedName(choice.record.sku).includes(query)))
         .slice(0, 8);
       const emptyText = input.dataset.suggest === 'contact' ? 'Nenhum contato cadastrado para esta busca.'
         : input.dataset.suggest === 'product' ? 'Nenhum produto ativo para esta busca.' : 'Nenhuma empresa cadastrada para esta busca.';
@@ -4719,7 +4719,7 @@
         : money(Math.max(0, quantity * unit - discount));
     }
 
-    const QUOTE_PRODUCT_HINT = 'Opcional: escolha um produto ativo para preencher a descrição e o preço.';
+    const QUOTE_PRODUCT_HINT = 'Escolha um produto do catálogo para preencher o preço, ou escreva um item livre.';
     // Converts between currencies through BRL with the current PTAX rates; null when unknown.
     function convertAmount(amount, from, to) {
       if (from === to) return Number(amount || 0);
@@ -4878,7 +4878,7 @@
     }
     document.addEventListener('input', event => {
       if (event.target.matches?.('[data-product-search]')) { productSearch = event.target.value; rerenderProducts(true); }
-      if (event.target.id === 'quoteProduct') onQuoteProductInput(event.target);
+      if (event.target.id === 'quoteDescription') onQuoteProductInput(event.target);
     });
     document.addEventListener('change', event => {
       if (event.target.matches?.('[data-product-inactive]')) { showInactiveProducts = event.target.checked; rerenderProducts(); }
