@@ -296,6 +296,15 @@ def _preserve_server_stage_metadata(
                 record[field] = deepcopy(existing[field])
             else:
                 record.pop(field, None)
+    # Lead tracking (channel, UTMs, external id) is recorded by the lead intake API
+    # only; a workspace save can neither forge nor erase it.
+    canonical_leads = {str(record.get("id")): record for record in canonical.leads}
+    for record in data["leads"]:
+        existing = canonical_leads.get(str(record.get("id")))
+        if existing is not None and "tracking" in existing:
+            record["tracking"] = deepcopy(existing["tracking"])
+        else:
+            record.pop("tracking", None)
     return WorkspaceState.model_validate(data)
 
 

@@ -3240,6 +3240,125 @@ async function storageEntries(page) {
     assert.equal((await stateFrom(page)).products.find(item => item.id === 'P-1').price, 1350);
   });
 
+  await run('PROD-03 orçamento com produto do catálogo, convertido pela PTAX quando a moeda difere', async page => {
+    await goTo(page, 'Negócios');
+    const row = page.locator('#page-deals tbody tr').filter({ hasText: 'N-16312' });
+    await row.getByRole('button', { name: 'Orçamento', exact: true }).click();
+    const quote = page.locator('#quoteDialog');
+    const picker = quote.getByLabel('Produto do catálogo');
+    const hint = quote.locator('#quoteProductHint');
+
+    // Only active products are offered.
+    await page.evaluate(() => { state.products.find(item => item.id === 'P-2').active = false; });
+    await picker.fill('');
+    await picker.focus();
+    const options = quote.locator('#quoteProduct-options [role="option"]');
+    await options.first().waitFor();
+    const offered = await options.allInnerTexts();
+    assert.equal(offered.some(text => /Implantação assistida/.test(text)), false);
+    assert.equal(offered.some(text => /Licença Smart CRM/.test(text) && /LIC-ANUAL/.test(text)), true);
+    await picker.fill('xyz-inexistente');
+    await quote.locator('#quoteProduct-options').getByText('Nenhum produto ativo para esta busca.').waitFor();
+
+    // Same currency: catalog price as is.
+    await picker.fill('Licença Smart CRM');
+    assert.equal(await quote.getByLabel('Item / serviço *').inputValue(), 'Licença Smart CRM');
+    assert.equal(await quote.getByLabel('Valor unitário (R$) *').inputValue(), '1200');
+    assert.match(await hint.innerText(), /^Preço do catálogo: R\$\s1\.200,00 \/ licença\.$/);
+    await quote.getByLabel('Quantidade *').fill('3');
+    assert.match(await quote.locator('#quoteTotal').innerText(), /R\$\s3\.600,00/);
+
+    // Different currency: converted by the PTAX and flagged.
+    await picker.fill('Suporte internacional');
+    assert.equal(await quote.getByLabel('Valor unitário (R$) *').inputValue(), '1668.18');
+    assert.match(await hint.innerText(), /^Convertido de US\$\s300,00 pela PTAX de 11\/11\/2026 \(1 USD = R\$ 5,5606\)\. Confira antes de salvar\.$/);
+
+    // Free text unlinks the product.
+    await picker.fill('Suporte intern');
+    assert.equal(await quote.locator('#quoteProductId').inputValue(), '');
+    await picker.fill('Licença Smart CRM');
+    await quote.getByRole('button', { name: 'Adicionar orçamento' }).click();
+    await waitForMockState(page, state => state.deals.find(item => item.id === 'N-16312').quotes.some(item => item.productId === 'P-1'));
+    const saved = (await stateFrom(page)).deals.find(item => item.id === 'N-16312').quotes.find(item => item.productId === 'P-1');
+    assert.deepEqual({ productSku: saved.productSku, description: saved.description, quantity: saved.quantity, unitPrice: saved.unitPrice, total: saved.total },
+      { productSku: 'LIC-ANUAL', description: 'Licença Smart CRM', quantity: 3, unitPrice: 1200, total: 3600 });
+
+    // A dollar deal converts a BRL product the other way; without rates the price is kept and flagged.
+    await page.evaluate(() => { state.deals.find(item => item.id === 'N-16312').currency = 'USD'; openQuote('N-16312'); });
+    await picker.fill('Licença Smart CRM');
+    assert.equal(await quote.getByLabel('Valor unitário (US$) *').inputValue(), '215.8');
+    assert.equal(await quote.locator('#quoteProductId').inputValue(), 'P-1');
+    await page.evaluate(() => { exchangeRates = { rates: {}, stale: true, loaded: true }; openQuote('N-16312'); });
+    assert.equal(await hint.innerText(), 'Opcional: escolha um produto ativo para preencher a descrição e o preço.');
+    await picker.fill('Licença Smart CRM');
+    assert.equal(await quote.getByLabel('Valor unitário (US$) *').inputValue(), '1200');
+    assert.match(await hint.innerText(), /^Cotação PTAX indisponível: mantido o preço original de R\$\s1\.200,00\. Ajuste o valor para US\$\.$/);
+  });
+
+  await run('TRACK-01 Origem do Lead em lista de canais, legado preservado e bloco de rastreio', async page => {
+    const api = apiByPage.get(page);
+    Object.assign(api.state.leads.find(item => item.id === 'L-1048'), {
+      source: 'Instagram',
+      tracking: { channel: 'Instagram', tool: 'bot-instagram', externalId: 'ig-998877', profileUrl: 'https://instagram.com/larissa', campaign: 'Black Friday', receivedAt: '2026-11-16T12:30:00Z', intakeKeyName: 'Bot Instagram' }
+    });
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.workspaceReady === 'true');
+    await goTo(page, 'Leads');
+    const rowOf = id => page.locator('#page-leads tbody tr').filter({ hasText: id });
+    assert.equal(await rowOf('L-1048').locator('[data-lead-channel]').innerText(), 'Instagram');
+    assert.equal(await rowOf('L-1044').locator('[data-lead-channel]').innerText(), 'Outro: Feira');
+
+    // New lead: the origin is picked from the channel list.
+    await page.getByRole('button', { name: /Novo Lead/ }).click();
+    const dialog = page.locator('#entityDialog');
+    const origin = dialog.getByLabel('Origem', { exact: true });
+    assert.deepEqual(await origin.locator('option').allTextContents(), ['Não informado', 'Site', 'Instagram', 'WhatsApp', 'Google Ads', 'Meta Ads', 'Busca orgânica', 'Redes sociais', 'E-mail', 'Indicação', 'Evento', 'Telefone', 'Outro']);
+    await dialog.getByLabel('Nome completo *').fill('Lead do WhatsApp');
+    await dialog.getByLabel('Empresa *').fill('Empresa Zap');
+    await dialog.getByLabel('E-mail *').fill('zap@teste.invalid');
+    await origin.selectOption('WhatsApp');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await waitForMockState(page, state => state.leads.some(item => item.name === 'Lead do WhatsApp'));
+    const created = (await stateFrom(page)).leads.find(item => item.name === 'Lead do WhatsApp');
+    assert.equal(created.source, 'WhatsApp');
+    assert.equal(created.tracking, undefined);
+
+    // Legacy origin stays selected as "Outro: …" and is kept on save.
+    await rowOf('L-1044').getByRole('button', { name: 'Carlos Nobre' }).click();
+    const drawer = page.locator('#entityDrawer');
+    const drawerOrigin = drawer.getByLabel('Origem', { exact: true });
+    assert.equal(await drawerOrigin.inputValue(), 'Feira');
+    assert.equal(await drawerOrigin.locator('option:checked').textContent(), 'Outro: Feira');
+    await page.waitForFunction(() => document.querySelector('#drawerLeadTracking [data-tracking-channel]')?.innerText === 'Outro: Feira');
+    assert.equal(await drawer.locator('[data-tracking-channel]').innerText(), 'Outro: Feira');
+    assert.match(await drawer.locator('#drawerLeadTracking').innerText(), /Cadastrado manualmente ou importado\./);
+    await drawer.getByLabel('Telefone').fill('(31) 3090-0000');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    await waitForMockState(page, state => state.leads.find(item => item.id === 'L-1044')?.phone === '(31) 3090-0000');
+    assert.equal((await stateFrom(page)).leads.find(item => item.id === 'L-1044').source, 'Feira');
+    if (await drawer.getByRole('button', { name: 'Fechar painel' }).isVisible()) await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+
+    // Tracked lead: read-only origin details.
+    await rowOf('L-1048').getByRole('button', { name: 'Larissa Spinola' }).click();
+    const tracking = drawer.locator('#drawerLeadTracking');
+    await tracking.waitFor();
+    await page.waitForFunction(() => document.querySelector('#drawerLeadTracking [data-tracking-channel]')?.innerText === 'Instagram');
+    assert.match(await tracking.innerText(), /Recebido automaticamente pela API de captação\./);
+    assert.match(await tracking.locator('[data-tracking-field="receivedAt"]').innerText(), /16\/11\/2026/);
+    assert.match(await tracking.locator('[data-tracking-field="externalId"]').innerText(), /ig-998877/);
+    assert.match(await tracking.locator('[data-tracking-field="campaign"]').innerText(), /Black Friday/);
+    assert.match(await tracking.locator('[data-tracking-field="intakeKeyName"]').innerText(), /Bot Instagram/);
+    assert.equal(await tracking.locator('[data-tracking-field="utmSource"]').count(), 0);
+    assert.equal(await tracking.locator('input, select, textarea').count(), 0);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+
+    // Other modules do not show the block.
+    await goTo(page, 'Contatos');
+    await page.locator('#page-contacts .entity-link').first().click();
+    await drawer.locator('#drawerCompanySummary').waitFor();
+    assert.equal(await drawer.locator('#drawerLeadTracking').isVisible(), false);
+  });
+
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {
     await goTo(page, 'Negócios');
     const options = await page.locator('[data-stage-filter="deals"] option').allTextContents();

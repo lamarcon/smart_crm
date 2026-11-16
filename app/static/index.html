@@ -315,6 +315,7 @@
     .drawer-quote strong { color: var(--navy-900); font-size: 13px; }
     .drawer-quote .tag { align-self: end; justify-self: end; }
     .invite-delivery { margin-left: 6px; }
+    .channel-tag { display: flex; width: fit-content; margin-top: 4px; font-size: 10px; }
     .drawer-company-summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--slate-200); }
     .drawer-company-summary > h4 { margin: 0 0 10px; color: var(--slate-500); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
     .drawer-company-card { padding: 15px; border: 1px solid var(--slate-200); border-radius: 11px; background: var(--slate-50); }
@@ -658,7 +659,7 @@
         <div class="drawer-workspace" id="drawerWorkspace">
           <section class="drawer-primary" id="drawerPrimary" role="region" aria-label="Dados do cadastro">
             <div class="drawer-tabs" id="drawerTabs" role="tablist" aria-label="Seções do cadastro" hidden><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="info" aria-selected="true">Informações</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="custom" aria-selected="false">Campos adicionais</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="quotes" aria-selected="false">Orçamentos</button></div>
-            <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div><section class="drawer-company-summary" id="drawerCompanySummary" aria-label="Empresa vinculada" hidden></section></section>
+            <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div><section class="drawer-company-summary" id="drawerCompanySummary" aria-label="Empresa vinculada" hidden></section><section class="drawer-company-summary" id="drawerLeadTracking" aria-label="Origem e rastreio" hidden></section></section>
             <section id="drawerCustomPanel" role="tabpanel" hidden><div class="form-grid" id="drawerCustomFields"></div><div class="drawer-custom-add"><div class="field"><label for="drawerAddCustomField">Campo adicional para adicionar</label><select id="drawerAddCustomField"></select></div><button type="button" class="button small" data-action="add-custom-field">Adicionar campo</button></div></section>
             <section id="drawerQuotesPanel" role="tabpanel" hidden></section>
           </section>
@@ -723,7 +724,9 @@
       <div class="modal-head"><h3>Novo orçamento</h3><button type="button" class="close-button" data-close="quoteDialog" aria-label="Fechar">×</button></div>
       <div class="modal-body">
         <input type="hidden" name="dealId" id="quoteDealId">
+        <input type="hidden" name="productId" id="quoteProductId">
         <div class="form-grid">
+          <div class="field full suggest-field"><label for="quoteProduct">Produto do catálogo</label><div class="suggest-anchor"><input id="quoteProduct" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="quoteProduct-options" autocomplete="off" data-suggest="product" placeholder="Buscar por nome ou código"><ul id="quoteProduct-options" class="suggest-list" role="listbox" aria-label="Sugestões" hidden></ul></div><small class="field-hint" id="quoteProductHint">Opcional: escolha um produto ativo para preencher a descrição e o preço.</small></div>
           <div class="field full"><label for="quoteDescription">Item / serviço *</label><input id="quoteDescription" name="description" required placeholder="Ex.: Implantação Smart CRM"></div>
           <div class="field"><label for="quoteQuantity">Quantidade *</label><input id="quoteQuantity" name="quantity" type="number" min="1" step="1" value="1" required></div>
           <div class="field"><label for="quoteUnit">Valor unitário (R$) *</label><input id="quoteUnit" name="unitPrice" type="number" min="0" step="0.01" value="0" required></div>
@@ -1740,6 +1743,13 @@
     function money(value, currency = 'BRL') { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency }); }
     const DEAL_CURRENCIES = [['BRL', 'R$ · Real'], ['USD', 'US$ · Dólar'], ['EUR', '€ · Euro']];
     const CURRENCY_SYMBOLS = { BRL: 'R$', USD: 'US$', EUR: '€' };
+    const LEAD_CHANNELS = ['Site', 'Instagram', 'WhatsApp', 'Google Ads', 'Meta Ads', 'Busca orgânica', 'Redes sociais', 'E-mail', 'Indicação', 'Evento', 'Telefone', 'Outro'];
+    // Origins typed before the channel list stay as they are and show as "Outro: …".
+    function leadChannelLabel(source) {
+      const text = String(source ?? '').trim();
+      if (!text) return '';
+      return LEAD_CHANNELS.includes(text) ? text : `Outro: ${text}`;
+    }
     function dealCurrency(deal) {
       const currency = String(deal?.currency || 'BRL').toUpperCase();
       return CURRENCY_SYMBOLS[currency] ? currency : 'BRL';
@@ -2330,7 +2340,7 @@
     function leadsHTML() {
       const records = applyRecordFilters('leads', visibleLeads());
       if (getViewMode('leads') === 'kanban') return listShell('leads', 'Leads', 'Cada nova solicitação comercial pode originar uma oportunidade.', renderKanban('leads', records), records.length, leadStages);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="lead" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small></div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${renderStageProgress(leadStages, item.stage, 'lead', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}<button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="lead" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small>${leadChannelLabel(item.source) ? `<span class="tag channel-tag" data-lead-channel title="Origem do Lead">${escapeHTML(leadChannelLabel(item.source))}</span>` : ''}</div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${renderStageProgress(leadStages, item.stage, 'lead', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}<button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Lead</th><th>Contato</th><th>Segmento</th><th>Etapa</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Lead encontrado');
       return listShell('leads', 'Leads', 'Cada nova solicitação comercial pode originar uma oportunidade.', table, records.length, leadStages);
     }
@@ -3008,8 +3018,17 @@
     }
     // Suggestion list (combobox) for company and contact fields. A custom list is
     // used instead of <datalist>, whose popup is misplaced inside modal dialogs.
+    function productChoices() {
+      return choicesFor((state.products || []).filter(item => item.active !== false), item => item.sku || item.id);
+    }
     function suggestionChoices(input) {
       const container = input.closest('form') || document;
+      if (input.dataset.suggest === 'product') {
+        return productChoices().map(choice => ({
+          ...choice,
+          detail: `${choice.record.sku ? `${choice.record.sku} · ` : ''}${money(choice.record.price, dealCurrency(choice.record))} / ${choice.record.unit || 'un'}`
+        }));
+      }
       if (input.dataset.suggest === 'contact') {
         const companyInput = container.querySelector('[data-suggest="company"]');
         const company = companyInput ? resolveChoice(companyChoices(), companyInput.value) : null;
@@ -3033,7 +3052,8 @@
       const matches = suggestionChoices(input)
         .filter(choice => !query || normalizedName(choice.value).includes(query))
         .slice(0, 8);
-      const emptyText = input.dataset.suggest === 'contact' ? 'Nenhum contato cadastrado para esta busca.' : 'Nenhuma empresa cadastrada para esta busca.';
+      const emptyText = input.dataset.suggest === 'contact' ? 'Nenhum contato cadastrado para esta busca.'
+        : input.dataset.suggest === 'product' ? 'Nenhum produto ativo para esta busca.' : 'Nenhuma empresa cadastrada para esta busca.';
       list.innerHTML = matches.length
         ? matches.map((choice, index) => `<li role="option" id="${list.id}-${index}" data-value="${escapeHTML(choice.value)}" aria-selected="false">${escapeHTML(choice.value)}${choice.detail ? `<small>${escapeHTML(choice.detail)}</small>` : ''}</li>`).join('')
         : `<li class="suggest-empty" role="option" aria-disabled="true">${emptyText}</li>`;
@@ -3113,7 +3133,7 @@
       lead: [
         ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'companySuggest', true],
         ['email', 'E-mail', 'email', true], ['phone', 'Telefone', 'text', false],
-        ['segment', 'Segmento', 'text', false], ['source', 'Origem', 'text', false],
+        ['segment', 'Segmento', 'text', false], ['source', 'Origem', 'leadChannel', false],
         ['responsibleId', 'Responsável', 'user', true], ['assistants', 'Assistente', 'assistant', false]
       ],
       contact: [
@@ -3662,6 +3682,7 @@
       const hiddenStandardFields = new Set(state.moduleFieldSettings[collection]?.hiddenStandardFields || []);
       document.getElementById('drawerFields').innerHTML = formDefinitions[entity].filter(([name]) => !hiddenStandardFields.has(name)).map(([name, label, type, required]) => fieldHTML(name, label, type, required, record[name], 'drawer-field')).join('');
       renderDrawerCompanySummary(entity, record);
+      renderDrawerLeadTracking(entity, record);
 
       renderDrawerCustomFields(record);
       const customTab = document.querySelector('[data-drawer-tab="custom"]');
@@ -3734,9 +3755,30 @@
       }
       summary.innerHTML = '<h4>Empresa vinculada</h4><div class="drawer-company-card"><strong>' + escapeHTML(company.name) + '</strong><span>' + escapeHTML(company.segment || 'Segmento não informado') + '</span><div class="drawer-company-meta"><div><small>Cidade / UF</small><span>' + escapeHTML(company.city || 'Não informado') + '</span></div><div><small>Telefone</small><span>' + escapeHTML(company.phone || 'Não informado') + '</span></div></div></div>';
     }
+    const LEAD_TRACKING_FIELDS = [
+      ['tool', 'Ferramenta'], ['campaign', 'Campanha'], ['externalId', 'ID externo'], ['profileUrl', 'Perfil'],
+      ['utmSource', 'utm_source'], ['utmMedium', 'utm_medium'], ['utmCampaign', 'utm_campaign'], ['utmTerm', 'utm_term'],
+      ['utmContent', 'utm_content'], ['pageUrl', 'Página de origem'], ['referrer', 'Referência'], ['intakeKeyName', 'Chave de entrada']
+    ];
+    function trackingDateTime(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    }
+    function renderDrawerLeadTracking(entity, record) {
+      const section = document.getElementById('drawerLeadTracking');
+      section.hidden = entity !== 'lead';
+      if (section.hidden) { section.innerHTML = ''; return; }
+      const tracking = record.tracking && typeof record.tracking === 'object' ? record.tracking : {};
+      const channel = leadChannelLabel(tracking.channel || record.source) || 'Não informada';
+      const details = LEAD_TRACKING_FIELDS.filter(([key]) => String(tracking[key] ?? '').trim()).map(([key, label]) => `<div data-tracking-field="${key}"><small>${escapeHTML(label)}</small><span>${escapeHTML(tracking[key])}</span></div>`);
+      if (tracking.receivedAt) details.unshift(`<div data-tracking-field="receivedAt"><small>Recebido em</small><span>${escapeHTML(trackingDateTime(tracking.receivedAt))}</span></div>`);
+      if (tracking.lastReceivedAt && tracking.lastReceivedAt !== tracking.receivedAt) details.push(`<div data-tracking-field="lastReceivedAt"><small>Último contato recebido</small><span>${escapeHTML(trackingDateTime(tracking.lastReceivedAt))}</span></div>`);
+      const how = Object.keys(tracking).length ? 'Recebido automaticamente pela API de captação.' : 'Cadastrado manualmente ou importado.';
+      section.innerHTML = `<h4>Origem e rastreio</h4><div class="drawer-company-card"><strong data-tracking-channel>${escapeHTML(channel)}</strong><span>${how}</span>${details.length ? `<div class="drawer-company-meta">${details.join('')}</div>` : ''}</div>`;
+    }
     function renderDrawerQuotes(deal) {
       const quotes = Array.isArray(deal?.quotes) ? deal.quotes : [];
-      document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div><button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button></div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${escapeHTML(money(quote.total, dealCurrency(deal)))}</strong><span></span><span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
+      document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div><button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button></div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${quote.productSku ? `SKU ${escapeHTML(quote.productSku)} · ` : ''}${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${escapeHTML(money(quote.total, dealCurrency(deal)))}</strong><span></span><span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
     }
 
     function customFieldHTML(field) {
@@ -3912,6 +3954,11 @@
       if (type === 'productStatus') {
         const active = value !== false;
         return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><select id="${idPrefix}-${name}" name="${name}" ${requiredAttr}><option value="true" ${active ? 'selected' : ''}>Ativo</option><option value="false" ${active ? '' : 'selected'}>Inativo</option></select><small class="field-hint">Inativos ficam fora da lista dos orçamentos.</small></div>`;
+      }
+      if (type === 'leadChannel') {
+        const current = String(value ?? '').trim();
+        const legacy = current && !LEAD_CHANNELS.includes(current) ? `<option value="${escapeHTML(current)}" selected>${escapeHTML(leadChannelLabel(current))}</option>` : '';
+        return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><select id="${idPrefix}-${name}" name="${name}" ${requiredAttr}><option value="">Não informado</option>${LEAD_CHANNELS.map(channel => `<option value="${escapeHTML(channel)}" ${channel === current ? 'selected' : ''}>${escapeHTML(channel)}</option>`).join('')}${legacy}</select></div>`;
       }
       if (type === 'textarea') {
         return `<div class="field full"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><textarea id="${idPrefix}-${name}" name="${name}" maxlength="4000" ${requiredAttr}>${escapeHTML(value ?? '')}</textarea></div>`;
@@ -4528,6 +4575,10 @@
       if (!deal) return;
       document.getElementById('quoteForm').reset();
       document.getElementById('quoteDealId').value = id;
+      document.getElementById('quoteProductId').value = '';
+      const productHint = document.getElementById('quoteProductHint');
+      productHint.textContent = QUOTE_PRODUCT_HINT;
+      delete productHint.dataset.quoteProductHint;
       const symbol = CURRENCY_SYMBOLS[dealCurrency(deal)];
       document.querySelector('label[for="quoteUnit"]').textContent = `Valor unitário (${symbol}) *`;
       document.querySelector('label[for="quoteDiscount"]').textContent = `Desconto (${symbol})`;
@@ -4546,6 +4597,51 @@
         : money(Math.max(0, quantity * unit - discount));
     }
 
+    const QUOTE_PRODUCT_HINT = 'Opcional: escolha um produto ativo para preencher a descrição e o preço.';
+    // Converts between currencies through BRL with the current PTAX rates; null when unknown.
+    function convertAmount(amount, from, to) {
+      if (from === to) return Number(amount || 0);
+      const rateOf = currency => currency === 'BRL' ? 1 : Number(exchangeRates.rates?.[currency]?.rate);
+      const fromRate = rateOf(from);
+      const toRate = rateOf(to);
+      if (!(fromRate > 0) || !(toRate > 0)) return null;
+      return Number(amount || 0) * fromRate / toRate;
+    }
+    function quoteDeal() { return state.deals.find(item => item.id === document.getElementById('quoteDealId').value); }
+    function applyQuoteProduct(product) {
+      const deal = quoteDeal();
+      const target = dealCurrency(deal);
+      const source = dealCurrency(product);
+      const original = money(product.price, source);
+      const converted = convertAmount(product.price, source, target);
+      const hint = document.getElementById('quoteProductHint');
+      document.getElementById('quoteProductId').value = product.id;
+      document.getElementById('quoteDescription').value = product.name;
+      document.getElementById('quoteUnit').value = Math.round((converted ?? Number(product.price || 0)) * 100) / 100;
+      if (source === target) hint.textContent = `Preço do catálogo: ${original} / ${product.unit || 'un'}.`;
+      else if (converted === null) hint.textContent = `Cotação PTAX indisponível: mantido o preço original de ${original}. Ajuste o valor para ${CURRENCY_SYMBOLS[target]}.`;
+      else {
+        const rates = [source, target].filter(code => code !== 'BRL').map(code => `1 ${code} = R$ ${Number(exchangeRates.rates[code].rate).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`);
+        hint.textContent = `Convertido de ${original} pela PTAX de ${brDate(exchangeRates.rates[source === 'BRL' ? target : source].date)} (${rates.join('; ')}). Confira antes de salvar.`;
+      }
+      hint.dataset.quoteProductHint = source === target ? 'catalog' : converted === null ? 'unavailable' : 'converted';
+      updateQuoteTotal();
+    }
+    function onQuoteProductInput(input) {
+      const product = resolveChoice(productChoices(), input.value);
+      if (product && productChoices().some(choice => choice.record.id === product.id && choice.value === input.value.trim())) {
+        if (document.getElementById('quoteProductId').value !== product.id) applyQuoteProduct(product);
+        return;
+      }
+      // Free text: the quote line is no longer tied to a catalog product.
+      if (document.getElementById('quoteProductId').value) {
+        document.getElementById('quoteProductId').value = '';
+        const hint = document.getElementById('quoteProductHint');
+        hint.textContent = QUOTE_PRODUCT_HINT;
+        delete hint.dataset.quoteProductHint;
+      }
+    }
+
     function saveQuote(form) {
       const data = new FormData(form);
       const deal = state.deals.find(item => item.id === data.get('dealId'));
@@ -4556,7 +4652,9 @@
       const unitPrice = Number(data.get('unitPrice'));
       const discount = Number(data.get('discount') || 0);
       const total = Math.max(0, quantity * unitPrice - discount);
-      deal.quotes.push({ id: nextId('ORC', deal.quotes), description: data.get('description'), quantity, unitPrice, discount, total, validity: data.get('validity'), state: 'Rascunho', pdf: file?.name || '' });
+      const product = (state.products || []).find(item => item.id === data.get('productId'));
+      const productLink = product ? { productId: product.id, productSku: product.sku || '' } : {};
+      deal.quotes.push({ id: nextId('ORC', deal.quotes), ...productLink, description: data.get('description'), quantity, unitPrice, discount, total, validity: data.get('validity'), state: 'Rascunho', pdf: file?.name || '' });
       deal.amount = total; deal.updatedAt = new Date().toISOString();
       notify('Orçamento adicionado ao Negócio.', `${deal.id} · ${money(total, dealCurrency(deal))}`, deal.responsibleId);
       saveState(); document.getElementById('quoteDialog').close(); render();
@@ -4658,6 +4756,7 @@
     }
     document.addEventListener('input', event => {
       if (event.target.matches?.('[data-product-search]')) { productSearch = event.target.value; rerenderProducts(true); }
+      if (event.target.id === 'quoteProduct') onQuoteProductInput(event.target);
     });
     document.addEventListener('change', event => {
       if (event.target.matches?.('[data-product-inactive]')) { showInactiveProducts = event.target.checked; rerenderProducts(); }
