@@ -100,6 +100,61 @@ def _check_contact_duplicates(contacts: list[dict], previous: dict[str, dict], p
         )
 
 
+MAX_PRODUCT_METADATA = 50
+MAX_METADATA_KEY = 64
+MAX_METADATA_VALUE = 1000
+
+
+def _check_products(products: list[dict], previous: dict[str, dict], principal: PrincipalScope) -> None:
+    """Catalog rules: name, price, currency, key/value metadata and unique SKU."""
+
+    owners: dict[str, list[dict]] = {}
+    for product in products:
+        key = normalized_name(product.get("sku"))
+        if key:
+            owners.setdefault(key, []).append(product)
+    for index, product in enumerate(products):
+        path = f"products[{index}]"
+        _require(bool(str(product.get("name") or "").strip()), f"{path}.name", "Informe o nome do produto.")
+        _require(
+            str(product.get("currency") or "BRL").upper() in SUPPORTED_CURRENCIES,
+            f"{path}.currency",
+            "Moeda não suportada. Use BRL, USD ou EUR.",
+        )
+        try:
+            price = float(product.get("price") or 0)
+        except (TypeError, ValueError):
+            price = -1
+        _require(price >= 0, f"{path}.price", "O preço deve ser um número maior ou igual a zero.")
+        metadata = product.get("metadata") or []
+        _require(isinstance(metadata, list) and len(metadata) <= MAX_PRODUCT_METADATA, f"{path}.metadata",
+                 f"Metadados devem ser uma lista de até {MAX_PRODUCT_METADATA} pares chave e valor.")
+        seen: set[str] = set()
+        for item in metadata:
+            ok = isinstance(item, dict)
+            meta_key = str(item.get("key", "")).strip() if ok else ""
+            meta_value = item.get("value", "") if ok else None
+            _require(
+                ok and 0 < len(meta_key) <= MAX_METADATA_KEY and isinstance(meta_value, (str, int, float, bool))
+                and len(str(meta_value)) <= MAX_METADATA_VALUE,
+                f"{path}.metadata",
+                f"Cada metadado precisa de uma chave (até {MAX_METADATA_KEY} caracteres) e um valor (até {MAX_METADATA_VALUE}).",
+            )
+            _require(meta_key.lower() not in seen, f"{path}.metadata", f"Chave de metadado repetida: {meta_key}.")
+            seen.add(meta_key.lower())
+
+        old = previous.get(str(product.get("id")))
+        sku = normalized_name(product.get("sku"))
+        if not sku or (old is not None and normalized_name(old.get("sku")) == sku):
+            continue
+        clash = next((other for other in owners[sku] if other.get("id") != product.get("id")), None)
+        _require(
+            clash is None,
+            f"{path}.sku",
+            f"Já existe um produto com o código {str(product.get('sku')).strip()} ({clash.get('name') if clash else ''}).",
+        )
+
+
 def _check_deal_currencies(deals: list[dict]) -> None:
     for index, deal in enumerate(deals):
         currency = deal.get("currency")
@@ -237,6 +292,7 @@ def enforce_crm_integrity(
     _check_contact_duplicates(after["contacts"], _by_id(before["contacts"]), principal)
     _check_contact_links(after["contacts"], _by_id(before["contacts"]), _by_id(after["companies"]), principal)
     _check_deal_currencies(after["deals"])
+    _check_products(after.get("products") or [], _by_id(before.get("products") or []), principal)
     _check_deal_links(
         after["deals"],
         _by_id(before["deals"]),

@@ -88,6 +88,7 @@ def state_data() -> dict:
         "companies": [{"id": "E-1", "name": "Empresa", "city": "SP", "segment": "Lab", "phone": "", "ownerId": "u-1"}],
         "contacts": [{"id": "C-1", "name": "Contato", "company": "Empresa", "companyId": "E-1", "email": "", "phone": "", "role": "Comprador"}],
         "deals": [{"id": "N-1", "title": "Negócio", "company": "Empresa", "companyId": "E-1", "contact": "Contato", "contactId": "C-1", "amount": 10, "stage": "Em Contato", "responsibleId": "u-1", "stageChangedById": "u-1", "assistants": ["u-2"], "quotes": [{"id": "Q-1", "description": "Item", "quantity": 1, "unitPrice": 10, "discount": 0, "total": 10, "state": "Enviado"}]}],
+        "products": [],
         "notifications": [{"id": "NT-1", "userId": "u-2", "text": "Aviso", "detail": "", "time": "Agora", "read": False}],
         "customFieldSchemas": {"leads": [], "contacts": [], "companies": [], "deals": []},
         "moduleFieldSettings": {module: {"hiddenStandardFields": [], "hiddenCustomFieldKeys": []} for module in ("leads", "contacts", "companies", "deals")},
@@ -154,7 +155,7 @@ def test_bootstrap_initializes_version_one_with_exact_counts(service) -> None:
     workspace, _database = service
     result = workspace.bootstrap(state())
     assert result.version == 1
-    assert result.counts.model_dump(by_alias=True) == {"users": 2, "leads": 1, "contacts": 1, "companies": 1, "deals": 1, "quotes": 1, "notifications": 1, "customFields": 0}
+    assert result.counts.model_dump(by_alias=True) == {"users": 2, "leads": 1, "contacts": 1, "companies": 1, "deals": 1, "quotes": 1, "products": 0, "notifications": 1, "customFields": 0}
     loaded = result.state.model_dump(by_alias=True, exclude_none=True)
     assert without_pipeline_metadata(loaded) == state_data()
 

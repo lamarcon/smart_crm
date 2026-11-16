@@ -143,6 +143,7 @@ def test_counts_include_quotes_notifications_and_custom_definitions_exactly() ->
         "companies": 1,
         "deals": 1,
         "quotes": 1,
+        "products": 0,
         "notifications": 1,
         "customFields": 3,
     }

@@ -80,6 +80,15 @@ def _can_access_record(principal: PrincipalScope, module: str, record: RecordSco
     return principal.user_id == record.responsible_id or principal.user_id in record.assistant_ids
 
 
+PRODUCT_MANAGER_ROLES = frozenset({"Administrador", "Gestor"})
+
+
+def can_manage_products(principal: PrincipalScope) -> bool:
+    """Everyone reads the product catalog; only Administrador and Gestor change it."""
+
+    return can_perform_action(principal, Action.UPDATE) and principal.role in PRODUCT_MANAGER_ROLES
+
+
 def can_read_record(principal: PrincipalScope, module: str, record: RecordScope) -> bool:
     return can_perform_action(principal, Action.READ) and _can_access_record(
         principal, module, record

@@ -16,6 +16,7 @@ from app.policies import (
     Action,
     PrincipalScope,
     RecordScope,
+    can_manage_products,
     can_mutate_record,
     can_perform_action,
     can_read_record,
@@ -243,6 +244,10 @@ def merge_authorized_state(
         merged_data = deepcopy(canonical_data)
         for module in ("contacts", "companies"):
             merged_data[module] = deepcopy(submitted_data[module])
+        if can_manage_products(principal):
+            merged_data["products"] = deepcopy(submitted_data.get("products") or [])
+        elif (submitted_data.get("products") or []) != (projected_data.get("products") or []):
+            raise WorkspaceAuthorizationError("products are read-only for this role")
         for module in ("leads", "deals"):
             merged_data[module] = _merge_scoped_records(
                 module,

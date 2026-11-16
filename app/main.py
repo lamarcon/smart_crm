@@ -124,7 +124,7 @@ PUBLIC_TOKEN_PATHS = frozenset(
 PASSWORD_LENGTH_MESSAGE = "A senha deve ter entre 8 e 128 caracteres."
 PUBLIC_ACTION_PAGES = ("accept-invite", "reset-password")
 DeletedModule = Literal[
-    "users", "leads", "contacts", "companies", "deals", "quotes", "notifications"
+    "users", "leads", "contacts", "companies", "deals", "quotes", "products", "notifications"
 ]
 
 

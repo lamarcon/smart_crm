@@ -427,6 +427,7 @@ class WorkspaceState(ContractModel):
     contacts: list[dict[str, Any]] = Field(default_factory=list)
     companies: list[dict[str, Any]] = Field(default_factory=list)
     deals: list[dict[str, Any]] = Field(default_factory=list)
+    products: list[dict[str, Any]] = Field(default_factory=list)
     notifications: list[dict[str, Any]] = Field(default_factory=list)
     custom_field_schemas: dict[str, list[dict[str, Any]]] = Field(
         default_factory=dict, alias="customFieldSchemas"
@@ -444,6 +445,7 @@ class PersistedCounts(ContractModel):
     companies: int
     deals: int
     quotes: int
+    products: int = 0
     notifications: int
     custom_fields: int = Field(alias="customFields")
 
@@ -463,7 +465,7 @@ class ResetRequest(SaveRequest):
 
 class RestoreRequest(ContractModel):
     version: int = Field(ge=0)
-    module: Literal["users", "leads", "contacts", "companies", "deals", "quotes", "notifications"]
+    module: Literal["users", "leads", "contacts", "companies", "deals", "quotes", "products", "notifications"]
     record_id: str = Field(alias="id", min_length=1)
 
 
@@ -506,6 +508,7 @@ def validate_references(state: WorkspaceState) -> None:
     users = _unique_ids(data["users"], "users")
     ids = {module: _unique_ids(data[module], module) for module in MODULES}
     _unique_ids(data["notifications"], "notifications")
+    product_ids = _unique_ids(data.get("products") or [], "products")
 
     current_user = data.get("currentUserId")
     if current_user:
@@ -544,6 +547,13 @@ def validate_references(state: WorkspaceState) -> None:
             _require(isinstance(quote_id, str) and bool(quote_id), path, "ID obrigatório")
             _require(quote_id not in quote_ids, path, "ID duplicado")
             quote_ids.add(quote_id)
+            product_id = quote.get("productId")
+            if product_id:
+                _require(
+                    product_id in product_ids,
+                    f"deals[{index}].quotes[{quote_index}].productId",
+                    "Produto referenciado não existe",
+                )
 
     for index, notification in enumerate(data["notifications"]):
         _require_user(notification.get("userId"), users, f"notifications[{index}].userId")
@@ -582,6 +592,7 @@ def count_state(state: WorkspaceState) -> PersistedCounts:
         companies=len(data["companies"]),
         deals=len(data["deals"]),
         quotes=sum(len(deal.get("quotes") or []) for deal in data["deals"]),
+        products=len(data.get("products") or []),
         notifications=len(data["notifications"]),
         customFields=sum(
             len((data.get("customFieldSchemas") or {}).get(module) or [])

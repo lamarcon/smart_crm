@@ -27,6 +27,7 @@ from app.models import (
     LeadAssistant,
     ModuleFieldSetting,
     Notification,
+    Product,
     Quote,
     RecordVisibleCustomField,
     SavedFilter,
@@ -45,6 +46,7 @@ ENTITY_MODELS = {
     "deals": Deal,
     "notifications": Notification,
     "quotes": Quote,
+    "products": Product,
 }
 
 
@@ -190,6 +192,8 @@ class WorkspaceRepository:
             raise RuntimeError("forced repository failure")
         self.session.flush()
         self._reconcile_contacts(data["contacts"])
+        self._reconcile_products(data.get("products") or [])
+        self.session.flush()
         self._reconcile_leads(data["leads"], teams)
         self._reconcile_deals(data["deals"], teams)
         self._reconcile_notifications(data["notifications"])
@@ -209,6 +213,7 @@ class WorkspaceRepository:
             "contacts": self._read_payloads(Contact),
             "companies": self._read_payloads(Company),
             "deals": self._read_payloads(Deal),
+            "products": self._read_payloads(Product),
             "notifications": self._read_payloads(Notification),
             "customFieldSchemas": {module: [] for module in MODULES},
             "moduleFieldSettings": {module: {"hiddenStandardFields": [], "hiddenCustomFieldKeys": []} for module in MODULES},
@@ -714,12 +719,41 @@ class WorkspaceRepository:
                 )
             self._reconcile_quotes(record["id"], record.get("quotes") or [])
 
+    def _reconcile_products(self, records: list[dict[str, Any]]) -> None:
+        present = {record["id"] for record in records}
+        self._soft_delete_absent(Product, present)
+        for position, record in enumerate(records):
+            row = self._scoped_one(Product, record["id"])
+            values = dict(
+                workspace_id=self.workspace_id,
+                name=str(record.get("name", "")).strip(),
+                sku=str(record.get("sku") or "").strip(),
+                description=str(record.get("description") or ""),
+                category=str(record.get("category") or "").strip(),
+                price=Decimal(str(record.get("price") or 0)),
+                currency=str(record.get("currency") or "BRL").upper(),
+                unit=str(record.get("unit") or "un").strip() or "un",
+                active=record.get("active", True) is not False,
+                product_metadata=[
+                    {"key": str(item.get("key", "")).strip(), "value": str(item.get("value", ""))}
+                    for item in (record.get("metadata") or [])
+                    if isinstance(item, dict)
+                ],
+                payload=_packed(record, position),
+                deleted_at=None,
+            )
+            if row is None:
+                self.session.add(Product(id=record["id"], **values))
+            else:
+                for key, value in values.items():
+                    setattr(row, key, value)
+
     def _reconcile_quotes(self, deal_id: str, records: list[dict[str, Any]]) -> None:
         present = {record["id"] for record in records}
         self._soft_delete_absent(Quote, present, (Quote.deal_id == deal_id,))
         for position, record in enumerate(records):
             row = self._scoped_one(Quote, record["id"])
-            values = dict(deal_id=deal_id, position=position, description=record.get("description", ""), quantity=Decimal(str(record.get("quantity", 1))), unit_price=Decimal(str(record.get("unitPrice", 0))), discount=Decimal(str(record.get("discount", 0))), total=Decimal(str(record.get("total", 0))), valid_until=_date(record.get("validUntil")), state=record.get("state", "Rascunho"), pdf_name=record.get("pdf"), payload=_packed(record, position), deleted_at=None)
+            values = dict(deal_id=deal_id, product_id=record.get("productId") or None, position=position, description=record.get("description", ""), quantity=Decimal(str(record.get("quantity", 1))), unit_price=Decimal(str(record.get("unitPrice", 0))), discount=Decimal(str(record.get("discount", 0))), total=Decimal(str(record.get("total", 0))), valid_until=_date(record.get("validUntil")), state=record.get("state", "Rascunho"), pdf_name=record.get("pdf"), payload=_packed(record, position), deleted_at=None)
             if row is None:
                 self.session.add(Quote(id=record["id"], workspace_id=self.workspace_id, **values))
             else:

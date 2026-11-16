@@ -33,6 +33,7 @@ STATE_DATA = {
     "contacts": [],
     "companies": [],
     "deals": [],
+    "products": [],
     "notifications": [],
     "customFieldSchemas": {
         "leads": [],
@@ -50,6 +51,7 @@ COUNTS = {
     "companies": 0,
     "deals": 0,
     "quotes": 0,
+    "products": 0,
     "notifications": 0,
     "customFields": 0,
 }
