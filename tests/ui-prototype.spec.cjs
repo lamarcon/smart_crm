@@ -137,7 +137,7 @@ async function openFresh(options = {}) {
     companyDealRequests: [], companyDealFailures: new Set(), companyDealGates: new Map(),
     disableBillingAutomation: Boolean(options.disableBillingAutomation),
     userRequests: [], inviteDeliveryStatus: 'sent', userActionFailure: null, userActionGate: null,
-    deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
+    deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], products: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
   api.exchangeRates = api.exchangeRates || { base: 'BRL', rates: { USD: { rate: '5.5606', date: '2026-11-11' }, EUR: { rate: '6.1706', date: '2026-11-11' } }, source: 'PTAX/BCB', stale: false };
@@ -517,7 +517,10 @@ async function openFresh(options = {}) {
           occurredAt: '2026-10-19T18:00:01.000Z'
         });
       }
-      for (const module of ['users', 'leads', 'contacts', 'companies', 'deals', 'notifications']) {
+      for (const module of ['users', 'leads', 'contacts', 'companies', 'deals', 'products', 'notifications']) {
+        next[module] ||= [];
+        api.state[module] ||= [];
+        api.deleted[module] ||= [];
         const nextIds = new Set(next[module].map(record => record.id));
         for (const record of api.state[module].filter(record => !nextIds.has(record.id))) {
           if (!api.deleted[module].some(candidate => candidate.id === record.id)) api.deleted[module].push(clone(record));
@@ -588,7 +591,7 @@ async function assertCanonicalRehydration(page) {
       writeGate: null,
       assertSynchronized: true,
       pipeline: clone(sourceApi.pipeline), pipelineFailure: false,
-      deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], quotes: [], notifications: [] }
+      deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], products: [], quotes: [], notifications: [] }
     };
     apiByPage.set(independent, mirrorApi);
     await context.route('**/api/auth/session', route => route.fulfill({
@@ -1581,11 +1584,11 @@ async function storageEntries(page) {
   await run('DEMO-04 Administrador navega pelos destinos autorizados', async page => {
     const destinations = [
       ['Visão geral', 'Visão geral'], ['Leads', 'Leads'], ['Contatos', 'Contatos'],
-      ['Empresas', 'Empresas'], ['Negócios', 'Negócios'], ['Notificações', 'Notificações'],
+      ['Empresas', 'Empresas'], ['Produtos', 'Produtos'], ['Negócios', 'Negócios'], ['Notificações', 'Notificações'],
       ['Funil de negócios', 'Funil de negócios'],
       ['Usuários e permissões', 'Usuários e permissões']
     ];
-    assert.equal(await page.locator('.nav button:visible').count(), 8);
+    assert.equal(await page.locator('.nav button:visible').count(), 9);
     for (const [button, heading] of destinations) {
       await goTo(page, button);
       assert.equal(await page.locator('#topTitle').innerText(), heading);
@@ -3139,6 +3142,102 @@ async function storageEntries(page) {
     assert.equal(await unavailable.innerText(), '≈ cotação indisponível');
     await goTo(page, 'Visão geral');
     assert.match(await page.locator('.stat').filter({ hasText: 'Negócios abertos' }).locator('small').innerText(), /· 1 sem cotação$/);
+  });
+
+  await run('PROD-01 cadastro de Produtos com metadados, busca, inativos e lixeira', async page => {
+    await goTo(page, 'Produtos');
+    const list = page.locator('#page-products');
+    const names = async () => list.locator('[data-product-row] .entity-link').allInnerTexts();
+    assert.deepEqual(await names(), ['Implantação assistida', 'Licença Smart CRM', 'Suporte internacional']);
+    assert.match(await list.locator('[data-product-row="P-3"]').innerText(), /US\$\s300,00\s*\/ mês/);
+
+    // New product: SKU must be unique; metadata are free key/value pairs.
+    await list.getByRole('button', { name: '＋ Novo Produto' }).click();
+    const dialog = page.locator('#entityDialog');
+    assert.equal(await dialog.locator('#entityDialogTitle').innerText(), 'Novo Produto');
+    await dialog.getByLabel('Nome do produto *').fill('Treinamento remoto');
+    await dialog.getByLabel('Código / SKU').fill(' lic-anual ');
+    await dialog.getByLabel('Unidade').fill('hora');
+    await dialog.getByLabel('Preço *').fill('180');
+    await dialog.getByLabel('Descrição').fill('Turmas de até 10 pessoas.');
+    await dialog.getByRole('button', { name: '＋ Adicionar metadado' }).click();
+    await dialog.getByLabel('Chave do metadado').last().fill('formato');
+    await dialog.getByLabel('Valor do metadado').last().fill('remoto');
+    await dialog.getByRole('button', { name: '＋ Adicionar metadado' }).click();
+    await dialog.getByLabel('Chave do metadado').last().fill('Formato');
+    await dialog.getByLabel('Valor do metadado').last().fill('ao vivo');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Chave de metadado repetida: formato.', { exact: true }).waitFor();
+    await dialog.getByLabel('Chave do metadado').last().fill('carga horária');
+    await dialog.getByLabel('Valor do metadado').last().fill('8h');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Já existe um produto com o código lic-anual (Licença Smart CRM).', { exact: true }).waitFor();
+    await dialog.getByLabel('Código / SKU').fill('TRN-01');
+    await dialog.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Produto criado com sucesso.', { exact: true }).waitFor();
+    let product = (await stateFrom(page)).products.find(item => item.sku === 'TRN-01');
+    assert.deepEqual({ id: product.id, name: product.name, unit: product.unit, price: product.price, currency: product.currency, active: product.active, metadata: product.metadata }, {
+      id: 'P-4', name: 'Treinamento remoto', unit: 'hora', price: 180, currency: 'BRL', active: true,
+      metadata: [{ key: 'formato', value: 'remoto' }, { key: 'carga horária', value: '8h' }]
+    });
+
+    // Drawer edit: remove one pair, add another, deactivate.
+    await list.getByRole('button', { name: 'Treinamento remoto' }).click();
+    const drawer = page.locator('#entityDrawer');
+    assert.equal(await drawer.getByRole('tab', { name: 'Campos adicionais' }).isVisible(), false);
+    assert.deepEqual(await drawer.getByLabel('Chave do metadado').evaluateAll(inputs => inputs.map(input => input.value)), ['formato', 'carga horária']);
+    await drawer.getByRole('button', { name: 'Remover metadado' }).first().click();
+    await drawer.getByRole('button', { name: '＋ Adicionar metadado' }).click();
+    await drawer.getByLabel('Chave do metadado').last().fill('idioma');
+    await drawer.getByLabel('Valor do metadado').last().fill('português');
+    await drawer.getByLabel('Situação *').selectOption('false');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Produto atualizado com sucesso.', { exact: true }).waitFor();
+    product = (await stateFrom(page)).products.find(item => item.id === 'P-4');
+    assert.deepEqual({ active: product.active, metadata: product.metadata }, { active: false, metadata: [{ key: 'carga horária', value: '8h' }, { key: 'idioma', value: 'português' }] });
+
+    // Inactive products are hidden unless asked; search by code or category.
+    assert.equal(await list.locator('[data-product-row="P-4"]').count(), 0);
+    await list.getByLabel('Mostrar inativos').check();
+    assert.match(await list.locator('[data-product-row="P-4"]').innerText(), /Inativo/);
+    await list.getByLabel('Buscar produtos').fill('servi');
+    assert.deepEqual(await names(), ['Implantação assistida', 'Suporte internacional']);
+    await list.getByLabel('Buscar produtos').fill('trn-01');
+    assert.deepEqual(await names(), ['Treinamento remoto']);
+    assert.equal(await list.getByLabel('Buscar produtos').evaluate(input => document.activeElement === input), true);
+    await list.getByLabel('Buscar produtos').fill('');
+
+    // Delete and restore from the recycle bin.
+    page.once('dialog', confirmation => confirmation.accept());
+    await list.locator('[data-product-row="P-4"]').getByTitle('Excluir').click();
+    await page.locator('#toastRegion').getByText('Produto removido.', { exact: true }).waitFor();
+    await waitForMockState(page, state => !state.products.some(item => item.id === 'P-4'));
+    assert.equal(apiByPage.get(page).deleted.products.some(item => item.id === 'P-4'), true);
+  });
+
+  await run('PROD-02 só Administrador e Gestor alteram Produtos; os demais consultam', async page => {
+    await selectProfile(page, 'u-paula');
+    await goTo(page, 'Produtos');
+    const list = page.locator('#page-products');
+    assert.equal(await list.getByRole('button', { name: '＋ Novo Produto' }).count(), 0);
+    assert.equal(await list.getByTitle('Excluir').count(), 0);
+    assert.match(await list.locator('.page-toolbar').innerText(), /Somente Administrador e Gestor alteram o catálogo/);
+    await list.getByRole('button', { name: 'Licença Smart CRM' }).click();
+    const drawer = page.locator('#entityDrawer');
+    assert.equal(await drawer.getByLabel('Nome do produto *').isDisabled(), true);
+    assert.equal(await drawer.getByRole('button', { name: '＋ Adicionar metadado' }).isDisabled(), true);
+    assert.equal(await drawer.locator('#drawerFoot').isVisible(), false);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+    const blocked = await page.evaluate(() => { openEntityDialog('product', 'P-1'); const form = document.getElementById('entityForm'); saveEntity(form); return document.getElementById('toastRegion').innerText; });
+    assert.match(blocked, /Somente Administrador e Gestor podem alterar produtos/);
+
+    await selectProfile(page, 'u-manager');
+    await goTo(page, 'Produtos');
+    await page.locator('#page-products').getByRole('button', { name: 'Licença Smart CRM' }).click();
+    await drawer.getByLabel('Preço *').fill('1350');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    await page.locator('#toastRegion').getByText('Produto atualizado com sucesso.', { exact: true }).waitFor();
+    assert.equal((await stateFrom(page)).products.find(item => item.id === 'P-1').price, 1350);
   });
 
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {

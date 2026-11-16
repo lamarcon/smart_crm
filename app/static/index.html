@@ -301,6 +301,7 @@
     .company-contact-reach { display: grid; gap: 3px; justify-items: end; text-align: right; font-size: 12px; overflow-wrap: anywhere; }
     .company-contact-reach a { color: var(--blue-600, #1570ef); }
     @media (max-width: 640px) { .company-contact-row { grid-template-columns: 1fr; } .company-contact-reach { justify-items: start; text-align: left; } }
+    #entityDrawer[data-read-only="true"] .drawer-foot { display: none; }
     .drawer-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 21px; border-top: 1px solid var(--slate-200); background: var(--slate-50); }
     .drawer-tabs { display: flex; gap: 4px; margin: -5px 0 20px; padding: 4px; border-radius: 10px; background: var(--slate-100); }
     .drawer-tabs button { flex: 1; min-height: 36px; border: 0; border-radius: 8px; color: var(--slate-500); background: transparent; font-weight: 750; }
@@ -334,6 +335,12 @@
     .field { display: grid; gap: 6px; align-content: start; }
     .field[hidden] { display: none !important; }
     .field.full { grid-column: 1 / -1; }
+    .field textarea { min-height: 84px; resize: vertical; }
+    .metadata-editor { display: grid; gap: 8px; }
+    .metadata-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto; gap: 8px; align-items: center; }
+    .metadata-empty { color: var(--slate-500); font-size: 12px; margin: 0; }
+    .metadata-field .button { justify-self: start; }
+    .inline-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--slate-600); white-space: nowrap; }
     .field label { color: var(--navy-700); font-size: 12px; font-weight: 700; }
     .field .field-hint { color: var(--slate-500, #64748b); font-size: 11px; }
     .suggest-anchor { position: relative; }
@@ -562,6 +569,7 @@
         <button data-view="leads"><span class="nav-icon">◎</span>Leads <span class="nav-count" id="leadNavCount">0</span></button>
         <button data-view="contacts"><span class="nav-icon">♙</span>Contatos</button>
         <button data-view="companies"><span class="nav-icon">▦</span>Empresas</button>
+        <button data-view="products"><span class="nav-icon">▤</span>Produtos</button>
         <button data-view="deals"><span class="nav-icon">◇</span>Negócios <span class="nav-count" id="dealNavCount">0</span></button>
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
         <button data-view="pipeline-admin" data-admin-nav hidden><span class="nav-icon">⇄</span>Funil de negócios</button>
@@ -591,6 +599,7 @@
         <section class="page" id="page-leads"></section>
         <section class="page" id="page-contacts"></section>
         <section class="page" id="page-companies"></section>
+        <section class="page" id="page-products"></section>
         <section class="page" id="page-deals"></section>
         <section class="page" id="page-notifications"></section>
         <section class="page" id="page-pipeline-admin"></section>
@@ -613,7 +622,7 @@
   <dialog id="deletedRecordsDialog">
     <div class="modal-head"><div><h3>Recuperar excluídos</h3><p class="hint">A recuperação restaura o registro e seus vínculos preservados.</p></div><button type="button" class="close-button" data-close="deletedRecordsDialog" aria-label="Fechar">×</button></div>
     <div class="modal-body">
-      <div class="field"><label for="deletedModule">Módulo</label><select id="deletedModule"><option value="leads">Leads</option><option value="contacts">Contatos</option><option value="companies">Empresas</option><option value="deals">Negócios</option><option value="users">Usuários</option><option value="notifications">Notificações</option></select></div>
+      <div class="field"><label for="deletedModule">Módulo</label><select id="deletedModule"><option value="leads">Leads</option><option value="contacts">Contatos</option><option value="companies">Empresas</option><option value="deals">Negócios</option><option value="products">Produtos</option><option value="users">Usuários</option><option value="notifications">Notificações</option></select></div>
       <div class="deleted-records" id="deletedRecords"></div>
       <p class="bootstrap-error" id="deletedRecordsError" role="alert"></p>
     </div>
@@ -871,6 +880,7 @@
       leads: ['Leads', 'Captação e qualificação de novas oportunidades'],
       contacts: ['Contatos', 'Pessoas relacionadas à operação comercial'],
       companies: ['Empresas', 'Organizações e contas atendidas'],
+      products: ['Produtos', 'Catálogo usado nos orçamentos dos Negócios'],
       deals: ['Negócios', 'Pipeline Vendas CMS e orçamentos'],
       notifications: ['Notificações', 'Atualizações relevantes da sua operação'],
       'pipeline-admin': ['Funil de negócios', 'Configure etapas, ordem e estado inicial'],
@@ -989,6 +999,11 @@
         { id: 'N-16308', title: 'Licenças Biocare', company: 'Biocare Farmacêutica', contact: 'João Vilela', amount: 19400, stage: 'Ganho', responsibleId: 'u-paula', assistants: ['u-camila'], updatedAt: '15 ago, 15:12', quotes: [] },
         { id: 'N-16307', title: 'Conferência fiscal interna', company: 'Smart CRM Demo', contact: 'Equipe Financeira', amount: 8500, stage: 'Faturando', responsibleId: 'u-billing', team: 'Faturamento', assistants: [], updatedAt: '15 ago, 09:10', quotes: [] }
       ],
+      products: [
+        { id: 'P-3', name: 'Suporte internacional', sku: 'SUP-INT', description: 'Atendimento em inglês e espanhol, 8x5.', category: 'Serviços', price: 300, currency: 'USD', unit: 'mês', active: true, metadata: [{ key: 'sla', value: '8 horas úteis' }] },
+        { id: 'P-2', name: 'Implantação assistida', sku: 'IMP-01', description: 'Configuração, importação de dados e treinamento da equipe.', category: 'Serviços', price: 4500, currency: 'BRL', unit: 'projeto', active: true, metadata: [] },
+        { id: 'P-1', name: 'Licença Smart CRM', sku: 'LIC-ANUAL', description: 'Licença anual por usuário.', category: 'Software', price: 1200, currency: 'BRL', unit: 'licença', active: true, metadata: [{ key: 'vigência', value: '12 meses' }] }
+      ],
       notifications: [
         { id: 'NT-3', userId: 'u-admin', text: 'Novo Lead recebido pelo formulário do Site.', detail: 'Larissa Spinola — UNAERP', time: 'Há 9 min', read: false },
         { id: 'NT-2', userId: 'u-paula', text: 'Você foi adicionada como responsável.', detail: 'Negócio N-16312 — Arkos Estética', time: 'Há 31 min', read: false },
@@ -1074,6 +1089,14 @@
       ['leads', 'contacts', 'companies', 'deals'].forEach(collection => {
         (normalized[collection] || []).forEach(record => ensureSchemaFields(normalized, collection, record));
       });
+      normalized.products = (Array.isArray(normalized.products) ? normalized.products : []).map(product => ({
+        ...product,
+        // Runs before the currency helpers are initialized: validate inline.
+        currency: ['BRL', 'USD', 'EUR'].includes(String(product.currency || 'BRL').toUpperCase()) ? String(product.currency || 'BRL').toUpperCase() : 'BRL',
+        unit: product.unit || 'un',
+        active: product.active !== false,
+        metadata: Array.isArray(product.metadata) ? product.metadata : []
+      }));
       const defaults = defaultUiState(normalized.users || []);
       normalized.ui ||= defaults;
       normalized.ui.filtersByUser ||= {};
@@ -2328,6 +2351,20 @@
       return listShell('companies', 'Empresas', 'Contas com histórico e vínculos comerciais.', rows ? `<table><thead><tr><th>Empresa</th><th>Contatos</th><th>Segmento</th><th>Cidade</th><th>Telefone</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhuma Empresa encontrada'), records.length);
     }
 
+    let productSearch = '';
+    let showInactiveProducts = false;
+    function productsHTML() {
+      const query = normalizedName(productSearch);
+      const manage = canManageProducts();
+      const records = (state.products || [])
+        .filter(item => (showInactiveProducts || item.active !== false)
+          && (!query || [item.name, item.sku, item.category, item.description].some(value => normalizedName(value).includes(query))))
+        .sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'));
+      const rows = records.map(item => `<tr data-product-row="${escapeHTML(item.id)}"><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="product" data-id="${escapeHTML(item.id)}">${escapeHTML(item.name)}</button><small>${item.sku ? `SKU ${escapeHTML(item.sku)}` : 'Sem código'}</small></div></div></td><td>${escapeHTML(item.category || '—')}</td><td><b>${escapeHTML(money(item.price, dealCurrency(item)))}</b><small> / ${escapeHTML(item.unit || 'un')}</small></td><td><span class="tag ${item.active !== false ? 'green' : ''}">${item.active !== false ? 'Ativo' : 'Inativo'}</span></td><td>${manage ? `<div class="row-actions"><button class="row-action" data-action="delete" data-entity="product" data-id="${escapeHTML(item.id)}" title="Excluir">⌫</button></div>` : ''}</td></tr>`).join('');
+      const table = rows ? `<table><thead><tr><th>Produto</th><th>Categoria</th><th>Preço</th><th>Situação</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Produto encontrado');
+      return `<div class="page-toolbar"><div><h2>Produtos</h2><p>Catálogo usado nos orçamentos dos Negócios.${manage ? '' : ' Somente Administrador e Gestor alteram o catálogo.'}</p></div><div class="toolbar-actions">${manage ? '<button class="button primary" data-action="new" data-entity="product">＋ Novo Produto</button>' : ''}</div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-product-search value="${escapeHTML(productSearch)}" placeholder="Buscar por nome, código ou categoria..." aria-label="Buscar produtos"></div><label class="inline-check"><input type="checkbox" data-product-inactive ${showInactiveProducts ? 'checked' : ''}> Mostrar inativos</label></div><div class="table-wrap">${table}</div><div class="table-footer"><span>${records.length} registro(s) visível(is)</span><span>Catálogo do workspace</span></div></div>`;
+    }
+
     function dealsHTML() {
       if (!dealPipeline) return `<div class="pipeline-unavailable" role="alert"><h2>Negócios indisponíveis</h2><p>${escapeHTML(dealPipelineError || 'Não foi possível carregar o funil desta empresa.')}</p></div>`;
       const records = applyRecordFilters('deals', visibleDeals());
@@ -2909,6 +2946,7 @@
       document.getElementById('page-leads').innerHTML = leadsHTML();
       document.getElementById('page-contacts').innerHTML = contactsHTML();
       document.getElementById('page-companies').innerHTML = companiesHTML();
+      document.getElementById('page-products').innerHTML = productsHTML();
       document.getElementById('page-deals').innerHTML = dealsHTML();
       document.getElementById('page-notifications').innerHTML = notificationsHTML();
       document.getElementById('page-pipeline-admin').innerHTML = pipelineEditorHTML();
@@ -3065,6 +3103,13 @@
     }
 
     const formDefinitions = {
+      product: [
+        ['name', 'Nome do produto', 'text', true], ['sku', 'Código / SKU', 'text', false],
+        ['category', 'Categoria', 'text', false], ['unit', 'Unidade', 'text', false],
+        ['price', 'Preço', 'number', true], ['currency', 'Moeda', 'currency', true],
+        ['active', 'Situação', 'productStatus', true], ['description', 'Descrição', 'textarea', false],
+        ['metadata', 'Metadados', 'metadata', false]
+      ],
       lead: [
         ['name', 'Nome completo', 'text', true], ['company', 'Empresa', 'companySuggest', true],
         ['email', 'E-mail', 'email', true], ['phone', 'Telefone', 'text', false],
@@ -3621,9 +3666,12 @@
       renderDrawerCustomFields(record);
       const customTab = document.querySelector('[data-drawer-tab="custom"]');
       const quotesTab = document.querySelector('[data-drawer-tab="quotes"]');
-      customTab.hidden = false;
+      customTab.hidden = entity === 'product';
       quotesTab.hidden = entity !== 'deal';
-      document.getElementById('drawerTabs').hidden = false;
+      document.getElementById('drawerTabs').hidden = entity === 'product';
+      const readOnlyProduct = entity === 'product' && !canManageProducts();
+      document.querySelectorAll('#drawerFields input, #drawerFields select, #drawerFields textarea, #drawerFields button').forEach(element => { element.disabled = readOnlyProduct; });
+      drawer.dataset.readOnly = String(readOnlyProduct);
       if (entity === 'deal') renderDrawerQuotes(record);
       const primary = document.getElementById('drawerPrimary');
       primary.setAttribute('aria-label', entity === 'deal' ? 'Dados do negócio' : entity === 'company' ? 'Informações da empresa' : 'Dados do cadastro');
@@ -3825,10 +3873,10 @@
 
     function openEntityDialog(entity, id = null) {
       if (entity === 'deal' && !requireDealPipeline()) return false;
-      const collections = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' };
+      const collections = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals', product: 'products' };
       const collection = collections[entity];
       const record = id ? state[collection].find(item => item.id === id) : {};
-      const labels = { lead: 'Lead', contact: 'Contato', company: 'Empresa', deal: 'Negócio' };
+      const labels = { lead: 'Lead', contact: 'Contato', company: 'Empresa', deal: 'Negócio', product: 'Produto' };
       const dialog = document.getElementById('entityDialog');
       const form = document.getElementById('entityForm');
       form.dataset.entity = entity;
@@ -3840,6 +3888,16 @@
       return true;
     }
 
+    function metadataRowHTML(item = {}) {
+      return `<div class="metadata-row" data-metadata-row><input type="text" aria-label="Chave do metadado" data-meta-key maxlength="64" value="${escapeHTML(item.key ?? '')}"><input type="text" aria-label="Valor do metadado" data-meta-value maxlength="1000" value="${escapeHTML(item.value ?? '')}"><button type="button" class="row-action" data-action="remove-metadata" aria-label="Remover metadado">✕</button></div>`;
+    }
+    function collectMetadata(form) {
+      return Array.from(form.querySelectorAll('[data-metadata-row]'))
+        .map(row => ({ key: row.querySelector('[data-meta-key]').value.trim(), value: row.querySelector('[data-meta-value]').value }))
+        .filter(item => item.key || item.value.trim());
+    }
+    function canManageProducts() { return ['Administrador', 'Gestor'].includes(currentUser()?.role); }
+
     function fieldHTML(name, label, type, required, value, idPrefix = 'field') {
       const requiredAttr = required ? 'required' : '';
       if (type === 'user') {
@@ -3850,6 +3908,17 @@
         const assistants = state.users.filter(user => user.status === 'Ativo' && user.role === 'Assistente');
         const selected = Array.isArray(value) ? value[0] : '';
         return `<div class="field"><label for="${idPrefix}-${name}">${label}</label><select id="${idPrefix}-${name}" name="${name}"><option value="">Nenhum</option>${assistants.map(user => `<option value="${user.id}" ${user.id === selected ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('')}</select></div>`;
+      }
+      if (type === 'productStatus') {
+        const active = value !== false;
+        return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><select id="${idPrefix}-${name}" name="${name}" ${requiredAttr}><option value="true" ${active ? 'selected' : ''}>Ativo</option><option value="false" ${active ? '' : 'selected'}>Inativo</option></select><small class="field-hint">Inativos ficam fora da lista dos orçamentos.</small></div>`;
+      }
+      if (type === 'textarea') {
+        return `<div class="field full"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><textarea id="${idPrefix}-${name}" name="${name}" maxlength="4000" ${requiredAttr}>${escapeHTML(value ?? '')}</textarea></div>`;
+      }
+      if (type === 'metadata') {
+        const rows = Array.isArray(value) ? value : [];
+        return `<div class="field full metadata-field"><span class="field-label" id="${idPrefix}-${name}-label">${label}</span><div class="metadata-editor" data-metadata-editor role="group" aria-labelledby="${idPrefix}-${name}-label">${rows.map(metadataRowHTML).join('') || '<p class="metadata-empty" data-metadata-empty>Nenhum metadado.</p>'}</div><button type="button" class="button small" data-action="add-metadata">＋ Adicionar metadado</button><small class="field-hint">Pares livres de chave e valor para usos futuros (ex.: NCM, peso, fornecedor).</small></div>`;
       }
       if (type === 'currency') {
         const selected = dealCurrency({ currency: value });
@@ -3890,8 +3959,8 @@
 
     function saveEntity(form) {
       const entity = form.dataset.entity;
-      const collection = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' }[entity];
-      const prefixes = { lead: 'L', contact: 'C', company: 'E', deal: 'N' };
+      const collection = { lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals', product: 'products' }[entity];
+      const prefixes = { lead: 'L', contact: 'C', company: 'E', deal: 'N', product: 'P' };
       const entries = Array.from(new FormData(form).entries());
       const data = Object.fromEntries(entries.filter(([name]) => !name.startsWith('custom:')));
       const customValues = new Map(Array.from(form.querySelectorAll('[data-custom-input]')).map(input => {
@@ -3903,6 +3972,22 @@
         return [input.dataset.customKey, value];
       }));
       const existing = form.dataset.id ? state[collection].find(item => item.id === form.dataset.id) : null;
+      if (entity === 'product') {
+        if (!canManageProducts()) { showToast('Somente Administrador e Gestor podem alterar produtos.'); return; }
+        const metadata = collectMetadata(form);
+        if (metadata.some(item => !item.key)) { showToast('Informe a chave de cada metadado.'); return; }
+        const keys = metadata.map(item => item.key.toLocaleLowerCase('pt-BR'));
+        const repeated = keys.find((key, index) => keys.indexOf(key) !== index);
+        if (repeated) { showToast(`Chave de metadado repetida: ${metadata[keys.indexOf(repeated)].key}.`); return; }
+        const sku = String(data.sku || '').trim();
+        const clash = sku && (state.products || []).find(item => item.id !== existing?.id && normalizedName(item.sku) === normalizedName(sku));
+        if (clash) { showToast(`Já existe um produto com o código ${sku} (${clash.name}).`); return; }
+        Object.assign(data, {
+          name: String(data.name || '').trim(), sku, category: String(data.category || '').trim(),
+          unit: String(data.unit || '').trim() || 'un', currency: dealCurrency({ currency: data.currency }),
+          price: Number(data.price || 0), active: data.active !== 'false', description: data.description || '', metadata
+        });
+      }
       if (entity === 'company' && data.name !== undefined) {
         const duplicate = (state.companies || []).find(company => company.id !== existing?.id && normalizedName(company.name) === normalizedName(data.name));
         if (duplicate) { showToast(`Já existe uma empresa cadastrada como ${duplicate.name}.`); return; }
@@ -3972,10 +4057,11 @@
       toast(`${entityLabel(entity)} ${existing ? 'atualizado' : 'criado'} com sucesso.`);
     }
 
-    function entityLabel(entity) { return ({ lead: 'Lead', contact: 'Contato', company: 'Empresa', deal: 'Negócio' })[entity]; }
-    function collectionFor(entity) { return ({ lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals' })[entity]; }
+    function entityLabel(entity) { return ({ lead: 'Lead', contact: 'Contato', company: 'Empresa', deal: 'Negócio', product: 'Produto' })[entity]; }
+    function collectionFor(entity) { return ({ lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals', product: 'products' })[entity]; }
 
     function deleteEntity(entity, id) {
+      if (entity === 'product' && !canManageProducts()) { showToast('Somente Administrador e Gestor podem alterar produtos.'); return; }
       if (!confirm(`Excluir este ${entityLabel(entity)}?`)) return;
       const collection = collectionFor(entity);
       state[collection] = state[collection].filter(item => item.id !== id);
@@ -4562,11 +4648,33 @@
       return false;
     }
 
+    function rerenderProducts(focusSearch = false) {
+      document.getElementById('page-products').innerHTML = productsHTML();
+      if (focusSearch) {
+        const input = document.querySelector('[data-product-search]');
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
+    document.addEventListener('input', event => {
+      if (event.target.matches?.('[data-product-search]')) { productSearch = event.target.value; rerenderProducts(true); }
+    });
+    document.addEventListener('change', event => {
+      if (event.target.matches?.('[data-product-inactive]')) { showInactiveProducts = event.target.checked; rerenderProducts(); }
+    });
     document.addEventListener('click', event => {
       const button = event.target.closest('button');
       if (!button) return;
       if (button.dataset.view) { showView(button.dataset.view); return; }
       const action = button.dataset.action;
+      if (action === 'add-metadata') {
+        const editor = button.closest('.metadata-field').querySelector('[data-metadata-editor]');
+        editor.querySelector('[data-metadata-empty]')?.remove();
+        editor.insertAdjacentHTML('beforeend', metadataRowHTML());
+        editor.lastElementChild.querySelector('[data-meta-key]').focus();
+        return;
+      }
+      if (action === 'remove-metadata') { button.closest('[data-metadata-row]').remove(); return; }
       if (action === 'confirm-bootstrap') { confirmBootstrap(); return; }
       if (action === 'open-bootstrap') { openBootstrapDialog(); return; }
       if (durableActions.has(action) && !requireWritableWorkspace()) return;
