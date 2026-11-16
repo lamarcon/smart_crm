@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from fastapi import Path as FastAPIPath
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth import (
@@ -77,6 +79,18 @@ from app.services.account_access import (
     InvitationCommand,
 )
 from app.services.auth import AuthenticationError, AuthService, SessionContext
+from app.services.lead_intake import (
+    MAX_BODY_BYTES as LEAD_INTAKE_MAX_BODY_BYTES,
+    RETRY_AFTER_SECONDS as LEAD_INTAKE_RETRY_AFTER_SECONDS,
+    LeadIntakeAuthorizationError,
+    LeadIntakeKeyInvalidError,
+    LeadIntakeNotFoundError,
+    LeadIntakeRateLimitedError,
+    LeadIntakeService,
+    LeadIntakeUnavailableError,
+    LeadIntakeValidationError,
+    key_view_payload,
+)
 from app.services.activity import (
     ActivityAuthorizationError,
     ActivityNotFoundError,
@@ -214,6 +228,7 @@ def create_app(
     health_check: Callable[[], bool] | None = None,
     account_access_service: AccountAccessService | None = None,
     exchange_rate_service: ExchangeRateService | None = None,
+    lead_intake_service: LeadIntakeService | None = None,
 ) -> FastAPI:
     del settings
     active_exchange_rates = exchange_rate_service or ExchangeRateService()
@@ -326,6 +341,8 @@ def create_app(
                 "/api/deals",
                 "/api/companies",
                 "/api/users",
+                "/api/lead-intake",
+                "/api/public",
             )
         ):
             response.headers["Cache-Control"] = "no-store"
@@ -1225,6 +1242,134 @@ def create_app(
             principal.tenant_session,
             principal.context.principal,
             company_id,
+        )
+
+    # Lead intake: admin-managed keys and the public endpoint -------------------
+
+    def require_lead_intake_service() -> LeadIntakeService:
+        if lead_intake_service is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "lead_intake_unavailable",
+                    "message": "Captação de Leads temporariamente indisponível.",
+                },
+            )
+        return lead_intake_service
+
+    def run_lead_intake_admin(request: Request, operation: Callable[[], object]):  # noqa: ANN202
+        try:
+            return operation()
+        except LeadIntakeAuthorizationError:
+            audit_request_denial(request, "forbidden")
+            return _error(403, "forbidden", "Acesso negado.")
+        except LeadIntakeValidationError as error:
+            return _error(422, "validation_error", error.message, field=error.field)
+        except LeadIntakeNotFoundError:
+            return _error(404, "not_found", "Chave não encontrada.")
+        except TenantUnavailableError:
+            return _error(503, "tenant_unavailable", "Banco da empresa temporariamente indisponível.")
+
+    @app.get("/api/lead-intake/keys")
+    def list_lead_intake_keys(
+        request: Request,
+        context: SessionContext = Depends(resolve_account_admin),
+    ):
+        service = require_lead_intake_service()
+        return run_lead_intake_admin(
+            request,
+            lambda: JSONResponse(
+                content={
+                    "keys": [
+                        key_view_payload(view)
+                        for view in service.list_keys(context.principal.tenant_id, context.principal)
+                    ]
+                }
+            ),
+        )
+
+    @app.post("/api/lead-intake/keys", status_code=201)
+    def create_lead_intake_key(
+        payload: dict,
+        request: Request,
+        context: SessionContext = Depends(resolve_account_admin),
+    ):
+        service = require_lead_intake_service()
+
+        def operation() -> JSONResponse:
+            created = service.create_key(
+                context.principal.tenant_id,
+                context.principal,
+                name=str(payload.get("name") or ""),
+                default_channel=str(payload.get("defaultChannel") or ""),
+                default_responsible_id=str(payload.get("defaultResponsibleId") or ""),
+            )
+            return JSONResponse(
+                status_code=201,
+                content={"key": key_view_payload(created.key), "secret": created.raw_key},
+            )
+
+        return run_lead_intake_admin(request, operation)
+
+    @app.post("/api/lead-intake/keys/{key_id}/revoke")
+    def revoke_lead_intake_key(
+        request: Request,
+        key_id: str = FastAPIPath(min_length=1, max_length=64),
+        context: SessionContext = Depends(resolve_account_admin),
+    ):
+        service = require_lead_intake_service()
+        return run_lead_intake_admin(
+            request,
+            lambda: JSONResponse(
+                content={
+                    "key": key_view_payload(
+                        service.revoke_key(context.principal.tenant_id, context.principal, key_id)
+                    )
+                }
+            ),
+        )
+
+    @app.post("/api/public/{tenant_slug}/leads")
+    async def public_lead_intake(
+        request: Request,
+        tenant_slug: str = FastAPIPath(min_length=1, max_length=64),
+    ):
+        service = require_lead_intake_service()
+        declared = request.headers.get("content-length")
+        if declared is not None and declared.isdigit() and int(declared) > LEAD_INTAKE_MAX_BODY_BYTES:
+            return _error(413, "payload_too_large", "O corpo excede 16 KB.")
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > LEAD_INTAKE_MAX_BODY_BYTES:
+                return _error(413, "payload_too_large", "O corpo excede 16 KB.")
+        try:
+            raw_payload = json.loads(bytes(body).decode("utf-8")) if body else None
+        except (UnicodeDecodeError, ValueError):
+            return _error(400, "invalid_json", "Envie um JSON válido em UTF-8.")
+        try:
+            result = await run_in_threadpool(
+                service.submit,
+                tenant_slug,
+                request.headers.get("x-smartcrm-key"),
+                raw_payload,
+                source_ip(request),
+            )
+        except LeadIntakeRateLimitedError:
+            response = _error(429, "rate_limited", "Muitas requisições. Aguarde e tente novamente.")
+            response.headers["Retry-After"] = str(LEAD_INTAKE_RETRY_AFTER_SECONDS)
+            return response
+        except LeadIntakeKeyInvalidError:
+            return _error(401, "invalid_key", "Chave de captação inválida.")
+        except LeadIntakeNotFoundError:
+            return _error(404, "not_found", "Empresa não encontrada.")
+        except LeadIntakeValidationError as error:
+            return _error(422, "validation_error", error.message, field=error.field)
+        except (LeadIntakeUnavailableError, TenantUnavailableError):
+            return _error(503, "unavailable", "Serviço temporariamente indisponível.")
+        return JSONResponse(
+            status_code=201 if result.status == "created" else 200,
+            content={"leadId": result.lead_id, "status": result.status},
         )
 
     @app.get("/")

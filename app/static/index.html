@@ -315,6 +315,15 @@
     .drawer-quote strong { color: var(--navy-900); font-size: 13px; }
     .drawer-quote .tag { align-self: end; justify-self: end; }
     .invite-delivery { margin-left: 6px; }
+    .intake-card { margin-top: 22px; padding: 18px; }
+    .intake-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; }
+    .intake-head h3 { margin: 0 0 4px; font-size: 16px; }
+    .intake-head code, .intake-secret code { overflow-wrap: anywhere; }
+    .intake-secret { margin-bottom: 14px; padding: 14px; border: 1px solid var(--amber-200, #fde68a); border-radius: 11px; background: var(--amber-50, #fffbeb); }
+    .intake-secret-value { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+    .intake-secret-value code { padding: 6px 8px; border-radius: 7px; background: #fff; font-size: 12px; }
+    .intake-secret pre { margin: 6px 0 0; padding: 10px; overflow-x: auto; border-radius: 8px; background: var(--navy-800, #1e293b); color: #f8fafc; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    @media (max-width: 640px) { .intake-head { flex-direction: column; } }
     .channel-tag { display: flex; width: fit-content; margin-top: 4px; font-size: 10px; }
     .drawer-company-summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--slate-200); }
     .drawer-company-summary > h4 { margin: 0 0 10px; color: var(--slate-500); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
@@ -795,6 +804,18 @@
         <div class="field full"><label for="userRole">Perfil de acesso</label><select id="userRole" name="role" required><option>Administrador</option><option>Gestor</option><option selected>Vendedor</option><option>Assistente</option><option>Faturamento</option></select><span class="hint">O perfil define permissões; o cargo descreve a função profissional.</span></div>
       </div><p class="field-manager-error" id="userDialogError" role="alert"></p></div>
       <div class="modal-foot"><button type="button" class="button" data-close="userDialog">Fechar</button><button type="submit" class="button primary" id="userSubmitButton">Enviar convite</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="intakeKeyDialog">
+    <form id="intakeKeyForm">
+      <div class="modal-head"><div><h3>Nova chave de captação</h3><p class="hint">Use uma chave para cada sistema (bot do Instagram, site...).</p></div><button type="button" class="close-button" data-close="intakeKeyDialog" aria-label="Fechar formulário de chave">×</button></div>
+      <div class="modal-body"><div class="form-grid">
+        <div class="field full"><label for="intakeKeyName">Nome da chave</label><input id="intakeKeyName" name="name" maxlength="120" placeholder="Ex.: Bot Instagram" required></div>
+        <div class="field"><label for="intakeKeyChannel">Canal padrão</label><select id="intakeKeyChannel" name="defaultChannel" required></select></div>
+        <div class="field"><label for="intakeKeyResponsible">Responsável pelos Leads</label><select id="intakeKeyResponsible" name="defaultResponsibleId" required></select></div>
+      </div><p class="field-manager-error" id="intakeKeyError" role="alert"></p></div>
+      <div class="modal-foot"><button type="button" class="button" data-close="intakeKeyDialog">Cancelar</button><button type="submit" class="button primary" id="intakeKeySubmit">Criar chave</button></div>
     </form>
   </dialog>
 
@@ -2740,6 +2761,104 @@
     const inviteDelivery = new Map();
     let userActionInFlight = false;
 
+    let intakeKeys = { loaded: false, loading: false, error: '', keys: [] };
+    let intakeSecret = null;
+    let intakeActionInFlight = false;
+    function intakeEndpoint() {
+      const slug = sessionIdentity?.tenant_slug || tenantSlugFromPath() || 'sua-empresa';
+      return `${location.origin}/api/public/${slug}/leads`;
+    }
+    async function loadIntakeKeys() {
+      if (intakeKeys.loading) return;
+      intakeKeys = { ...intakeKeys, loading: true };
+      try {
+        const payload = await responseJson(await apiFetch('/api/lead-intake/keys', { headers: { Accept: 'application/json' } }));
+        intakeKeys = { loaded: true, loading: false, error: '', keys: Array.isArray(payload.keys) ? payload.keys : [] };
+      } catch (failure) {
+        intakeKeys = { loaded: true, loading: false, error: failure?.payload?.error?.message || 'Não foi possível carregar as chaves de captação.', keys: [] };
+      }
+      if (activeView === 'admin') render();
+    }
+    function intakeResponsibleUsers() {
+      return state.users.filter(user => user.status === 'Ativo' && ['Administrador', 'Gestor', 'Vendedor', 'Faturamento'].includes(user.role));
+    }
+    function intakeDateTime(value) {
+      return value ? trackingDateTime(value) : 'Nunca usada';
+    }
+    function intakeSectionHTML() {
+      const busy = intakeActionInFlight ? ' disabled' : '';
+      const secret = intakeSecret ? `<div class="intake-secret" data-intake-secret role="status"><b>Copie a chave “${escapeHTML(intakeSecret.name)}” agora: ela não será mostrada de novo.</b><div class="intake-secret-value"><code data-intake-secret-value>${escapeHTML(intakeSecret.secret)}</code><button type="button" class="button small" data-action="copy-intake-key">Copiar</button><button type="button" class="button small" data-action="dismiss-intake-key">Já copiei</button></div><p class="hint">Exemplo de chamada:</p><pre data-intake-example>${escapeHTML(`curl -X POST ${intakeEndpoint()} \\\n  -H "Content-Type: application/json" \\\n  -H "X-SmartCRM-Key: ${intakeSecret.secret}" \\\n  -d '{"name":"Maria","phone":"(11) 99999-0000","externalId":"id-no-instagram","message":"Quero um orçamento"}'`)}</pre></div>` : '';
+      const rows = intakeKeys.keys.map(key => `<tr data-intake-key="${escapeHTML(key.id)}"><td><strong>${escapeHTML(key.name)}</strong></td><td>${escapeHTML(key.defaultChannel)}</td><td>${escapeHTML(userName(key.defaultResponsibleId))}</td><td>${escapeHTML(intakeDateTime(key.lastUsedAt))}</td><td><span class="tag ${key.active ? 'green' : 'red'}">${key.active ? 'Ativa' : 'Revogada'}</span></td><td>${key.active ? `<button type="button" class="button small" data-action="revoke-intake-key" data-id="${escapeHTML(key.id)}" aria-label="Revogar ${escapeHTML(key.name)}"${busy}>Revogar</button>` : ''}</td></tr>`).join('');
+      const body = intakeKeys.error
+        ? `<p class="field-manager-error" data-intake-error>${escapeHTML(intakeKeys.error)}</p>`
+        : !intakeKeys.loaded ? '<p class="hint">Carregando chaves...</p>'
+        : rows ? `<div class="table-wrap"><table><thead><tr><th>Chave</th><th>Canal padrão</th><th>Responsável</th><th>Último uso</th><th>Situação</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : '<p class="hint" data-intake-empty>Nenhuma chave criada. Crie uma para o bot do Instagram enviar Leads automaticamente.</p>';
+      return `<section class="list-card intake-card" data-intake-section aria-labelledby="intakeTitle"><div class="intake-head"><div><h3 id="intakeTitle">Captação de Leads</h3><p class="hint">Sistemas externos enviam Leads para <code>${escapeHTML(intakeEndpoint())}</code> com o cabeçalho <code>X-SmartCRM-Key</code>.</p></div><button type="button" class="button primary" data-action="new-intake-key"${busy}>＋ Nova chave</button></div>${secret}${body}</section>`;
+    }
+    function openIntakeKeyDialog() {
+      const form = document.getElementById('intakeKeyForm');
+      form.reset();
+      document.getElementById('intakeKeyError').textContent = '';
+      document.getElementById('intakeKeyChannel').innerHTML = LEAD_CHANNELS.map(channel => `<option value="${escapeHTML(channel)}" ${channel === 'Instagram' ? 'selected' : ''}>${escapeHTML(channel)}</option>`).join('');
+      document.getElementById('intakeKeyResponsible').innerHTML = intakeResponsibleUsers().map(user => `<option value="${escapeHTML(user.id)}" ${user.id === state.currentUserId ? 'selected' : ''}>${escapeHTML(user.name)}</option>`).join('');
+      document.getElementById('intakeKeyDialog').showModal();
+    }
+    async function submitIntakeKey(form) {
+      if (intakeActionInFlight) return;
+      const data = new FormData(form);
+      const button = document.getElementById('intakeKeySubmit');
+      const error = document.getElementById('intakeKeyError');
+      intakeActionInFlight = true;
+      button.disabled = true;
+      error.textContent = '';
+      try {
+        const payload = await postUserAction('/api/lead-intake/keys', {
+          name: String(data.get('name') || '').trim(),
+          defaultChannel: data.get('defaultChannel'),
+          defaultResponsibleId: data.get('defaultResponsibleId')
+        });
+        intakeSecret = { name: payload.key.name, secret: payload.secret };
+        intakeKeys = { ...intakeKeys, error: '', keys: [payload.key, ...intakeKeys.keys.filter(key => key.id !== payload.key.id)] };
+        document.getElementById('intakeKeyDialog').close();
+        showToast('Chave de captação criada. Copie-a agora.');
+      } catch (failure) {
+        error.textContent = failure?.payload?.error?.message || 'Não foi possível criar a chave.';
+      } finally {
+        intakeActionInFlight = false;
+        button.disabled = false;
+        render();
+      }
+    }
+    async function revokeIntakeKey(id) {
+      const key = intakeKeys.keys.find(item => item.id === id);
+      if (!key || intakeActionInFlight) return;
+      if (!confirm(`Revogar a chave “${key.name}”? Os sistemas que a usam deixarão de enviar Leads.`)) return;
+      intakeActionInFlight = true;
+      render();
+      try {
+        const payload = await postUserAction(`/api/lead-intake/keys/${encodeURIComponent(id)}/revoke`);
+        intakeKeys = { ...intakeKeys, keys: intakeKeys.keys.map(item => item.id === id ? payload.key : item) };
+        showToast(`Chave “${key.name}” revogada.`);
+      } catch (failure) {
+        showToast(failure?.payload?.error?.message || 'Não foi possível revogar a chave.');
+      } finally {
+        intakeActionInFlight = false;
+        render();
+      }
+    }
+    async function copyIntakeKey() {
+      if (!intakeSecret) return;
+      try {
+        await navigator.clipboard.writeText(intakeSecret.secret);
+        showToast('Chave copiada.');
+      } catch (_) {
+        const code = document.querySelector('[data-intake-secret-value]');
+        if (code) window.getSelection()?.selectAllChildren(code);
+        showToast('Selecione e copie a chave manualmente.');
+      }
+    }
+
     function usersAdminHTML() {
       if (currentUser().role !== 'Administrador') return '';
       const statusClass = status => status === 'Ativo' ? 'green' : status === 'Pendente' ? 'amber' : status === 'Cancelado' ? 'red' : '';
@@ -2755,7 +2874,7 @@
         return `<tr data-user-id="${escapeHTML(user.id)}"><td><div class="entity"><span class="entity-avatar">${initials(user.name)}</span><div><strong>${escapeHTML(user.name)}</strong><small>${escapeHTML(user.email)}</small></div></div></td><td>${escapeHTML(user.jobTitle)}</td><td>${escapeHTML(user.team)}</td><td>${escapeHTML(user.role)}</td><td><span class="tag ${statusClass(user.status)}">${escapeHTML(user.status)}</span>${deliveryNote}</td><td><div class="user-actions"><button class="button small" data-action="edit-user" data-id="${escapeHTML(user.id)}" aria-label="Editar ${escapeHTML(user.name)}">Editar</button>${pendingActions}${deactivate}${reactivate}</div></td></tr>`;
       }).join('');
       const total = status => state.users.filter(user => user.status === status).length;
-      return `<div class="page-toolbar"><div><h2>Usuários e permissões</h2><p>Gerencie cargos, equipes e acesso dos funcionários da empresa.</p></div><div class="toolbar-actions"><button class="button primary" data-action="new-user">＋ Convidar funcionário</button></div></div><div class="user-summary"><div><span class="hint">Ativos</span><b>${total('Ativo')}</b></div><div><span class="hint">Pendentes</span><b>${total('Pendente')}</b></div><div><span class="hint">Inativos</span><b>${total('Inativo')}</b></div><div><span class="hint">Cancelados</span><b>${total('Cancelado')}</b></div></div><div class="list-card"><div class="table-wrap"><table><thead><tr><th>Funcionário</th><th>Cargo profissional</th><th>Equipe</th><th>Perfil de acesso</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer"><span>${state.users.length} usuário(s)</span><span>Convites enviados por e-mail · links válidos por 48 horas</span></div></div>`;
+      return `<div class="page-toolbar"><div><h2>Usuários e permissões</h2><p>Gerencie cargos, equipes e acesso dos funcionários da empresa.</p></div><div class="toolbar-actions"><button class="button primary" data-action="new-user">＋ Convidar funcionário</button></div></div><div class="user-summary"><div><span class="hint">Ativos</span><b>${total('Ativo')}</b></div><div><span class="hint">Pendentes</span><b>${total('Pendente')}</b></div><div><span class="hint">Inativos</span><b>${total('Inativo')}</b></div><div><span class="hint">Cancelados</span><b>${total('Cancelado')}</b></div></div><div class="list-card"><div class="table-wrap"><table><thead><tr><th>Funcionário</th><th>Cargo profissional</th><th>Equipe</th><th>Perfil de acesso</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer"><span>${state.users.length} usuário(s)</span><span>Convites enviados por e-mail · links válidos por 48 horas</span></div></div>${intakeSectionHTML()}`;
     }
 
     function openUserDialog(id = '') {
@@ -2968,6 +3087,7 @@
     function showView(view, closeMobile = true) {
       if (['admin', 'pipeline-admin'].includes(view) && currentUser().role !== 'Administrador') view = 'dashboard';
       if (!pageMeta[view]) view = 'dashboard';
+      const entering = activeView !== view;
       activeView = view;
       document.querySelectorAll('.page').forEach(page => page.classList.toggle('active', page.id === `page-${view}`));
       document.querySelectorAll('.nav button').forEach(button => button.classList.toggle('active', button.dataset.view === view));
@@ -2977,6 +3097,8 @@
       if (closeMobile) toggleSidebar(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
       if (view === 'pipeline-admin' && currentUser().role === 'Administrador' && pipelineHistoryState.items === null && !pipelineHistoryState.loading) void loadPipelineHistory();
+      // Keys are refreshed on every visit so "last use" stays current.
+      if (entering && view === 'admin' && currentUser().role === 'Administrador') void loadIntakeKeys();
     }
 
     // Company and contact references -------------------------------------------
@@ -4798,6 +4920,10 @@
       if (action === 'save-field-visibility') saveFieldVisibility();
       if (action === 'create-custom-field') createCustomField();
       if (action === 'new-user') openUserDialog();
+      if (action === 'new-intake-key') openIntakeKeyDialog();
+      if (action === 'revoke-intake-key') revokeIntakeKey(button.dataset.id);
+      if (action === 'copy-intake-key') copyIntakeKey();
+      if (action === 'dismiss-intake-key') { intakeSecret = null; render(); }
       if (action === 'edit-user') openUserDialog(button.dataset.id);
       if (action === 'open-deleted') openDeletedRecords();
       if (action === 'restore-deleted') restoreDeletedRecord(button.dataset.module, button.dataset.id);
@@ -4899,6 +5025,7 @@
     document.getElementById('bitrixImportForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) importBitrixSample(event.currentTarget); });
     document.getElementById('filterForm').addEventListener('submit', event => { event.preventDefault(); applyFilterPanel(); });
     document.getElementById('userForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveUser(event.currentTarget); });
+    document.getElementById('intakeKeyForm').addEventListener('submit', event => { event.preventDefault(); submitIntakeKey(event.currentTarget); });
     document.getElementById('pipelineArchiveForm').addEventListener('submit', event => { event.preventDefault(); submitPipelineStageArchive(document.getElementById('pipelineArchiveTarget').value); });
     document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));
     document.getElementById('sidebarOverlay').addEventListener('click', () => toggleSidebar(false));

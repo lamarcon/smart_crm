@@ -137,6 +137,7 @@ async function openFresh(options = {}) {
     companyDealRequests: [], companyDealFailures: new Set(), companyDealGates: new Map(),
     disableBillingAutomation: Boolean(options.disableBillingAutomation),
     userRequests: [], inviteDeliveryStatus: 'sent', userActionFailure: null, userActionGate: null,
+    intakeKeys: [], intakeRequests: [], intakeFailure: null,
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], products: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
@@ -375,6 +376,33 @@ async function openFresh(options = {}) {
         ? { error: { code: 'database_unavailable', message: 'Funil indisponível.' } }
         : api.pipeline)
     });
+  });
+  await context.route('**/api/lead-intake/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    let body = null;
+    try { body = request.postDataJSON(); } catch (_) { body = null; }
+    api.intakeRequests.push({ method: request.method(), path: url.pathname, body });
+    const json = (status, payload) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(payload) });
+    if (api.intakeFailure) {
+      const failure = api.intakeFailure;
+      api.intakeFailure = null;
+      return json(failure.status, { error: { code: failure.code, message: failure.message, field: failure.field || null } });
+    }
+    if (request.method() === 'GET' && url.pathname === '/api/lead-intake/keys') return json(200, { keys: api.intakeKeys });
+    if (request.method() === 'POST' && url.pathname === '/api/lead-intake/keys') {
+      const key = { id: `key-${api.intakeKeys.length + 1}`, name: body.name, defaultChannel: body.defaultChannel, defaultResponsibleId: body.defaultResponsibleId, createdAt: '2026-11-16T12:00:00Z', lastUsedAt: null, revokedAt: null, active: true };
+      api.intakeKeys.unshift(key);
+      return json(201, { key, secret: `sck_segredo-${api.intakeKeys.length}` });
+    }
+    const revoke = url.pathname.match(/^\/api\/lead-intake\/keys\/([^/]+)\/revoke$/);
+    if (request.method() === 'POST' && revoke) {
+      const key = api.intakeKeys.find(item => item.id === decodeURIComponent(revoke[1]));
+      if (!key) return json(404, { error: { code: 'not_found', message: 'Chave não encontrada.' } });
+      Object.assign(key, { revokedAt: '2026-11-16T13:00:00Z', active: false });
+      return json(200, { key });
+    }
+    return json(404, { error: { code: 'not_found', message: 'Rota inexistente.' } });
   });
   await context.route('**/api/users/**', async route => {
     const request = route.request();
@@ -3357,6 +3385,63 @@ async function storageEntries(page) {
     await page.locator('#page-contacts .entity-link').first().click();
     await drawer.locator('#drawerCompanySummary').waitFor();
     assert.equal(await drawer.locator('#drawerLeadTracking').isVisible(), false);
+  });
+
+  await run('INTAKE-01 Administrador cria, mostra uma vez e revoga chaves de captação', async page => {
+    const api = apiByPage.get(page);
+    api.intakeKeys.push({ id: 'key-old', name: 'Formulário antigo', defaultChannel: 'Site', defaultResponsibleId: 'u-paula', createdAt: '2026-10-01T12:00:00Z', lastUsedAt: '2026-11-15T18:30:00Z', revokedAt: null, active: true });
+    await goTo(page, 'Usuários e permissões');
+    const section = page.locator('[data-intake-section]');
+    await section.locator('[data-intake-key="key-old"]').waitFor();
+    assert.match(await section.innerText(), /\/api\/public\/[^/\s]+\/leads/);
+    assert.match(await section.locator('[data-intake-key="key-old"]').innerText(), /Formulário antigo\s+Site\s+Paula[^\n]*\s+15\/11\/2026/);
+
+    // A server refusal stays in the dialog.
+    await section.getByRole('button', { name: '＋ Nova chave' }).click();
+    const dialog = page.locator('#intakeKeyDialog');
+    assert.equal(await dialog.getByLabel('Canal padrão').inputValue(), 'Instagram');
+    const responsibles = await dialog.getByLabel('Responsável pelos Leads').locator('option').allTextContents();
+    assert.equal(responsibles.includes('Camila Rodrigues'), false);
+    await dialog.getByLabel('Nome da chave').fill('Bot Instagram');
+    await dialog.getByLabel('Responsável pelos Leads').selectOption('u-paula');
+    api.intakeFailure = { status: 422, code: 'validation_error', message: 'Escolha um responsável ativo.', field: 'defaultResponsibleId' };
+    await dialog.getByRole('button', { name: 'Criar chave' }).click();
+    await dialog.locator('#intakeKeyError').getByText('Escolha um responsável ativo.').waitFor();
+    assert.equal(await dialog.evaluate(element => element.open), true);
+
+    await dialog.getByRole('button', { name: 'Criar chave' }).click();
+    await page.locator('#toastRegion').getByText('Chave de captação criada. Copie-a agora.', { exact: true }).waitFor();
+    assert.deepEqual(api.intakeRequests.filter(item => item.method === 'POST').at(-1).body, { name: 'Bot Instagram', defaultChannel: 'Instagram', defaultResponsibleId: 'u-paula' });
+    const secret = section.locator('[data-intake-secret]');
+    assert.equal(await secret.locator('[data-intake-secret-value]').innerText(), 'sck_segredo-2');
+    assert.match(await secret.locator('[data-intake-example]').innerText(), /X-SmartCRM-Key: sck_segredo-2/);
+    assert.match(await section.locator('tbody tr').first().innerText(), /Bot Instagram\s+Instagram\s+Paula[^\n]*\s+Nunca usada\s+Ativa/);
+
+    // Leaving and coming back keeps the secret until dismissed; dismissing hides it for good.
+    await goTo(page, 'Leads');
+    await goTo(page, 'Usuários e permissões');
+    assert.equal(await section.locator('[data-intake-secret]').count(), 1);
+    await section.getByRole('button', { name: 'Já copiei' }).click();
+    assert.equal(await section.locator('[data-intake-secret]').count(), 0);
+    assert.equal((await section.innerText()).includes('sck_segredo-2'), false);
+
+    // Revoke only after confirming.
+    page.once('dialog', confirmation => confirmation.dismiss());
+    await section.getByRole('button', { name: 'Revogar Formulário antigo' }).click();
+    assert.equal(api.intakeRequests.some(item => item.path.endsWith('/revoke')), false);
+    page.once('dialog', confirmation => confirmation.accept());
+    await section.getByRole('button', { name: 'Revogar Formulário antigo' }).click();
+    await page.locator('#toastRegion').getByText('Chave “Formulário antigo” revogada.', { exact: true }).waitFor();
+    assert.match(await section.locator('[data-intake-key="key-old"]').innerText(), /Revogada/);
+    assert.equal(await section.getByRole('button', { name: 'Revogar Formulário antigo' }).count(), 0);
+    assert.equal(api.intakeKeys.find(item => item.id === 'key-old').active, false);
+  });
+
+  await run('INTAKE-02 a seção de captação é só do Administrador', async page => {
+    const api = apiByPage.get(page);
+    await selectProfile(page, 'u-manager');
+    assert.equal(await page.locator('[data-intake-section]').count(), 0);
+    assert.equal(api.intakeRequests.length, 0);
   });
 
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {
