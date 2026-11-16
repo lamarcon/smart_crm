@@ -51,6 +51,7 @@ def normalize_tenant_identifier(identifier: str) -> str:
 
 
 RoleName = Literal["Administrador", "Gestor", "Vendedor", "Assistente", "Faturamento"]
+LocaleName = Literal["pt-BR", "en", "es"]
 
 
 def _normalize_email(value: str) -> str:
@@ -106,6 +107,11 @@ class SessionResponse(AuthContractModel):
     user_name: str = Field(min_length=1, max_length=255)
     email: str = Field(min_length=3, max_length=254)
     role: RoleName
+    locale: LocaleName = "pt-BR"
+
+
+class PreferencesRequest(AuthContractModel):
+    locale: LocaleName
 
 
 class AuthErrorResponse(AuthContractModel):
@@ -138,6 +144,7 @@ class InvitationCreateRequest(AccountAdminContractModel):
     job_title: str = Field(alias="jobTitle", min_length=1, max_length=255)
     team: str | None = Field(default=None, min_length=1, max_length=255)
     role: RoleName
+    locale: LocaleName = "pt-BR"
 
     @field_validator("name", "job_title", mode="before")
     @classmethod

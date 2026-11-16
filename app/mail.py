@@ -11,6 +11,8 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Callable, Mapping, Protocol
 
+from app.i18n import translate
+
 
 _TLS_MODES = frozenset({"starttls", "implicit_tls"})
 
@@ -132,15 +134,16 @@ def render_invitation_email(
     company: str,
     recipient: str,
     link: str,
+    locale: str = "pt-BR",
 ) -> OutboundMessage:
     return _render_message(
         company=company,
         recipient=recipient,
         link=link,
-        subject="Você foi convidado para o Smart CRM da {company}",
-        heading="Seu convite para o Smart CRM",
-        instruction="Use o link abaixo para criar sua senha e aceitar o convite.",
-        action_label="Aceitar convite",
+        subject=translate("Você foi convidado para o Smart CRM da {company}", locale),
+        heading=translate("Seu convite para o Smart CRM", locale),
+        instruction=translate("Use o link abaixo para criar sua senha e aceitar o convite.", locale),
+        action_label=translate("Aceitar convite", locale),
     )
 
 
@@ -148,15 +151,16 @@ def render_password_reset_email(
     company: str,
     recipient: str,
     link: str,
+    locale: str = "pt-BR",
 ) -> OutboundMessage:
     return _render_message(
         company=company,
         recipient=recipient,
         link=link,
-        subject="Redefina sua senha no Smart CRM da {company}",
-        heading="Redefinição de senha",
-        instruction="Use o link abaixo para criar uma nova senha.",
-        action_label="Redefinir senha",
+        subject=translate("Redefina sua senha no Smart CRM da {company}", locale),
+        heading=translate("Redefinição de senha", locale),
+        instruction=translate("Use o link abaixo para criar uma nova senha.", locale),
+        action_label=translate("Redefinir senha", locale),
     )
 
 

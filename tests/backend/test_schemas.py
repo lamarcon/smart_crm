@@ -339,6 +339,7 @@ def test_session_response_exposes_identity_without_secret_fields() -> None:
         "user_name": "Ana",
         "email": "ana@example.test",
         "role": "Administrador",
+        "locale": "pt-BR",
     }
     assert {"password_hash", "token", "dsn"}.isdisjoint(SessionResponse.model_fields)
 

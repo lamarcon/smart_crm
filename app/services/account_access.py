@@ -20,6 +20,7 @@ from app.mail import (
     render_invitation_email,
     render_password_reset_email,
 )
+from app.i18n import SUPPORTED_LOCALES, read_user_locale, write_user_locale
 from app.models import AccountActionToken, CrmUser, Team, Workspace
 from app.policies import Action, CURRENT_ROLES, PrincipalScope, can_perform_action
 from app.repositories.account_actions import AccountActionRepository
@@ -107,6 +108,7 @@ class InvitationCommand:
     team_id: str | None
     role: str
     team_name: str | None = None
+    locale: str = "pt-BR"
 
 
 @dataclass(frozen=True)
@@ -151,6 +153,7 @@ class _PreparedInvitation:
     raw_token: str
     action: str
     workspace_version: int | None = None
+    locale: str = "pt-BR"
 
 
 @dataclass(frozen=True)
@@ -159,6 +162,7 @@ class _PreparedReset:
     email: str
     token_id: UUID
     raw_token: str
+    locale: str = "pt-BR"
 
 
 class TenantRouter(Protocol):
@@ -271,6 +275,7 @@ class AccountAccessService:
             team_id=team_id_for_name(team_name) if team_name else command.team_id,
             role=command.role,
             team_name=team_name,
+            locale=command.locale if command.locale in SUPPORTED_LOCALES else "pt-BR",
         )
 
     @staticmethod
@@ -393,6 +398,8 @@ class AccountAccessService:
                         user.auth_enabled = False
                         user.invited_at = now
 
+                    session.flush()
+                    write_user_locale(session, workspace_id, user.id, command.locale)
                     repository = self._account_action_repository_factory(
                         session, workspace_id
                     )
@@ -411,6 +418,7 @@ class AccountAccessService:
                         raw_token=raw_token,
                         action="created" if created else "resent",
                         workspace_version=self._advance_workspace_version(workspace),
+                        locale=command.locale,
                     )
             except IntegrityError:
                 if attempt == 0:
@@ -462,6 +470,7 @@ class AccountAccessService:
                 raw_token=raw_token,
                 action="resent",
                 workspace_version=self._advance_workspace_version(workspace),
+                locale=read_user_locale(session, workspace_id, user.id),
             )
 
     def _deliver(
@@ -493,6 +502,7 @@ class AccountAccessService:
                 f"{self._public_origin}/{tenant.slug}/accept-invite"
                 f"#token={prepared.raw_token}"
             ),
+            prepared.locale,
         )
         delivery_status = "sent"
         failure_code = None
@@ -1010,6 +1020,7 @@ class AccountAccessService:
                 email=user.normalized_email,
                 token_id=token.id,
                 raw_token=raw_token,
+                locale=read_user_locale(session, user.workspace_id, user.id),
             )
 
     def _deliver_reset(self, tenant, prepared: _PreparedReset) -> None:  # noqa: ANN001
@@ -1020,6 +1031,7 @@ class AccountAccessService:
                 f"{self._public_origin}/{tenant.slug}/reset-password"
                 f"#token={prepared.raw_token}"
             ),
+            prepared.locale,
         )
         delivery_status = "sent"
         failure_code = None

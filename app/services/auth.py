@@ -9,10 +9,11 @@ from typing import Callable, Protocol
 from uuid import UUID
 
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.control_database import ControlDatabase, ControlRepository
 from app.control_models import LoginThrottle
+from app.i18n import read_user_locale
 from app.models import CrmUser
 from app.policies import CURRENT_ROLES, PrincipalScope
 from app.schemas import LOGIN_FAILURE_MESSAGE
@@ -48,6 +49,7 @@ class TenantUserIdentity:
     role: str
     team_id: str | None
     status: str
+    locale: str = "pt-BR"
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,7 @@ class SessionContext:
     user_name: str
     email: str
     token_digest: str
+    locale: str = "pt-BR"
 
 
 @dataclass(frozen=True)
@@ -145,6 +148,7 @@ def _identity(user: CrmUser | None) -> TenantUserIdentity | None:
         role=user.role,
         team_id=user.team_id,
         status=user.status,
+        locale=read_user_locale(object_session(user), user.workspace_id, user.id),
     )
 
 
@@ -393,6 +397,7 @@ class AuthService:
             user_name=user.name,
             email=user.email,
             token_digest=token_digest,
+            locale=getattr(user, "locale", None) or "pt-BR",
         )
 
     def current_session(self, token: str, *, now: datetime) -> SessionContext:

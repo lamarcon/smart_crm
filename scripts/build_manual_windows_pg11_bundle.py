@@ -32,6 +32,10 @@ REQUIRED_DEPLOYMENT_FILES = (
     Path("deploy/manual-windows-pg11/run-fleet-migration.ps1"),
     Path("deploy/manual-windows-pg11/invoke-fleet-migration-task.ps1"),
     Path("deploy/manual-windows-pg11/set-smtp-password.ps1"),
+    Path("app/locales/en.json"),
+    Path("app/locales/es.json"),
+    Path("app/static/i18n/en.js"),
+    Path("app/static/i18n/es.js"),
 )
 IGNORED_PARTS = {"__pycache__", ".pytest_cache"}
 SAFE_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")

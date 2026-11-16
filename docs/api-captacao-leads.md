@@ -65,6 +65,8 @@ O responsável recebe uma notificação nos dois casos.
 | `429` | Muitas requisições; respeite o cabeçalho `Retry-After` (segundos) |
 | `503` | CRM temporariamente indisponível; tente de novo mais tarde |
 
+As mensagens de erro (`error.message`) vêm em português. Para recebê-las em inglês ou espanhol, envie o cabeçalho `Accept-Language: en` ou `Accept-Language: es`. O `error.code` não muda com o idioma: use-o nas regras do bot.
+
 **Limites de requisições:**
 
 - 60 por minuto para cada chave;

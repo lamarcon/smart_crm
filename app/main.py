@@ -26,6 +26,7 @@ from app.auth import (
     unauthenticated_error,
 )
 from app.database import Database, database
+from app.i18n import SUPPORTED_LOCALES, ErrorMessageTranslationMiddleware, write_user_locale
 from app.policies import Action, can_perform_action
 from app.schemas import (
     ACCOUNT_USER_ID_MAX_LENGTH,
@@ -56,6 +57,7 @@ from app.schemas import (
     LocateTenantResponse,
     LoginRequest,
     ObservationCreateRequest,
+    PreferencesRequest,
     ResetRequest,
     RestoreRequest,
     SaveRequest,
@@ -175,6 +177,7 @@ def _session_payload(context: SessionContext) -> SessionResponse:
         user_name=context.user_name,
         email=context.email,
         role=context.principal.role,
+        locale=context.locale if context.locale in SUPPORTED_LOCALES else "pt-BR",
     )
 
 
@@ -343,6 +346,7 @@ def create_app(
                 "/api/users",
                 "/api/lead-intake",
                 "/api/public",
+                "/api/me",
             )
         ):
             response.headers["Cache-Control"] = "no-store"
@@ -817,6 +821,7 @@ def create_app(
                     team_id=None,
                     role=payload.role,
                     team_name=payload.team,
+                    locale=payload.locale,
                 ),
                 source_ip(request),
             )
@@ -1040,6 +1045,23 @@ def create_app(
             "version": loaded.version,
             "state": _state_payload(loaded.state) if loaded.state is not None else None,
         }
+
+    @app.put("/api/me/preferences")
+    def update_my_preferences(
+        payload: PreferencesRequest,
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> dict:
+        # Only the signed-in user's own language; it is not part of the workspace
+        # snapshot, so the workspace version does not change.
+        context = principal.context
+        if not write_user_locale(
+            principal.tenant_session,
+            context.principal.workspace_id,
+            context.principal.user_id,
+            payload.locale,
+        ):
+            return _error(404, "record_not_found", "Registro não encontrado.")
+        return {"locale": payload.locale}
 
     @app.post("/api/workspace/bootstrap", status_code=201)
     def bootstrap_workspace(
@@ -1423,6 +1445,8 @@ def create_app(
         return FileResponse(static_dir / "index.html")
 
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    # Outermost: error messages follow the language the client asked for.
+    app.add_middleware(ErrorMessageTranslationMiddleware)
     return app
 
 

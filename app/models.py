@@ -232,6 +232,10 @@ class CrmUser(Base, TimestampMixin, SoftDeleteMixin):
     role: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="Ativo")
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # crm_users.locale (migration e9a4c2b7d1f3) is read and written only through
+    # app.i18n.read_user_locale/write_user_locale, never mapped: ORM inserts would
+    # otherwise send it (as NULL) and fleet provisioning still runs against older
+    # tenant revisions that lack the column.
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
 
