@@ -40,7 +40,7 @@ TEST_DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
-TENANT_HEAD = "c3d9a1f4b7e2"
+TENANT_HEAD = "d7e1b3c9a2f4"
 WORKSPACE_ID = "default"
 
 

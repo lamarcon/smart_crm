@@ -20,7 +20,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 ACTIVITY_HEAD = "e1c4a7b9d2f6"
-TENANT_HEAD = "c3d9a1f4b7e2"
+TENANT_HEAD = "d7e1b3c9a2f4"
 
 
 def alembic_config(connection=None) -> Config:  # noqa: ANN001
@@ -350,3 +350,39 @@ def test_upgrade_current_database_preserves_existing_probe(
     assert after == before
     assert head == TENANT_HEAD
     engine.dispose()
+
+
+def test_products_and_lead_intake_keys_have_constraints_and_tenant_rls(isolated_migration) -> None:
+    connection, schema, config = isolated_migration
+    command.upgrade(config, "head")
+    inspector = inspect(connection)
+    product_checks = {item["name"] for item in inspector.get_check_constraints("products", schema=schema)}
+    assert {
+        "ck_products_valid_currency", "ck_products_nonnegative_price",
+        "ck_products_name_present", "ck_products_metadata_is_list",
+    } <= product_checks
+    quote_fks = {
+        (tuple(item["constrained_columns"]), item["referred_table"])
+        for item in inspector.get_foreign_keys("quotes", schema=schema)
+    }
+    assert (("product_id",), "products") in quote_fks
+    key_uniques = {tuple(item["column_names"]) for item in inspector.get_unique_constraints("lead_intake_keys", schema=schema)}
+    assert ("key_digest",) in key_uniques
+    rows = connection.execute(
+        text(
+            "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity, "
+            "EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = :schema AND p.tablename = c.relname "
+            "AND p.policyname = 'smartcrm_workspace_scope') AS has_policy "
+            "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = :schema AND c.relname IN ('products', 'lead_intake_keys') ORDER BY c.relname"
+        ),
+        {"schema": schema},
+    ).all()
+    assert [tuple(row) for row in rows] == [("lead_intake_keys", True, True, True), ("products", True, True, True)]
+
+    command.downgrade(config, "c3d9a1f4b7e2")
+    tables = set(inspect(connection).get_table_names(schema=schema))
+    assert not {"products", "lead_intake_keys"} & tables
+    assert "product_id" not in {item["name"] for item in inspect(connection).get_columns("quotes", schema=schema)}
+    command.upgrade(config, "head")
+    assert {"products", "lead_intake_keys"} <= set(inspect(connection).get_table_names(schema=schema))

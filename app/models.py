@@ -503,6 +503,57 @@ Index(
 )
 
 
+class Product(Base, TimestampMixin, SoftDeleteMixin):
+    """Catalog item usable in deal quotes; ``metadata`` is a free key/value list."""
+
+    __tablename__ = "products"
+    __table_args__ = (
+        CheckConstraint("currency IN ('BRL', 'USD', 'EUR')", name="valid_currency"),
+        CheckConstraint("price >= 0", name="nonnegative_price"),
+        CheckConstraint("char_length(btrim(name)) > 0", name="name_present"),
+        CheckConstraint("jsonb_typeof(metadata) = 'array'", name="metadata_is_list"),
+        Index("ix_products_workspace_active", "workspace_id", "deleted_at"),
+        Index("ix_products_workspace_sku", "workspace_id", "sku"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    sku: Mapped[str] = mapped_column(String(128), nullable=False, default="", server_default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    category: Mapped[str] = mapped_column(String(255), nullable=False, default="", server_default="")
+    price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, default=0, server_default="0")
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False, default="BRL", server_default="BRL")
+    unit: Mapped[str] = mapped_column(String(32), nullable=False, default="un", server_default="un")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    # "metadata" is reserved on declarative classes; the column keeps that name.
+    product_metadata: Mapped[list[Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+
+
+class LeadIntakeKey(Base, TimestampMixin):
+    """Secret key (sha256 digest only) that lets an external system create leads."""
+
+    __tablename__ = "lead_intake_keys"
+    __table_args__ = (
+        CheckConstraint("char_length(key_digest) = 64", name="digest_length"),
+        CheckConstraint("char_length(btrim(name)) > 0", name="name_present"),
+        UniqueConstraint("key_digest"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    key_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    default_channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    default_responsible_id: Mapped[str] = mapped_column(ForeignKey("crm_users.id", ondelete="RESTRICT"), nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("crm_users.id", ondelete="SET NULL"))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Quote(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "quotes"
     __table_args__ = (Index("ix_quotes_deal_active", "deal_id", "deleted_at"),)
@@ -511,6 +562,7 @@ class Quote(Base, TimestampMixin, SoftDeleteMixin):
     )
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     deal_id: Mapped[str] = mapped_column(ForeignKey("deals.id", ondelete="RESTRICT"), nullable=False)
+    product_id: Mapped[str | None] = mapped_column(ForeignKey("products.id", ondelete="RESTRICT"))
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=1)

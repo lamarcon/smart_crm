@@ -17,6 +17,8 @@ EXPECTED_TABLES = {
     "deal_assistants",
     "deal_stage_history",
     "quotes",
+    "products",
+    "lead_intake_keys",
     "notifications",
     "custom_field_definitions",
     "custom_field_values",
