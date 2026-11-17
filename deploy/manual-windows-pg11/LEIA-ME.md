@@ -532,7 +532,8 @@ Sem usar `-k` ou `--insecure`, confirme:
 - logout revoga a sessao;
 - workspace `default` preserva contagens e dados comerciais anteriores;
 - leitura, alteracao, exclusao e restauracao ficam limitadas ao tenant BRBots;
-- tarefa aponta para `C:\brbots\apps\smart-crm-<SHA>` e roda como `SmartCRMService`.
+- tarefa aponta para `C:\brbots\apps\smart-crm-<SHA>` e roda como `SmartCRMService`;
+- a tela **Permissoes** (menu do Administrador) abre com o padrao de cada perfil: sem alteracao salva, Gestor, Vendedor, Assistente e Faturamento seguem as mesmas regras da versao anterior, e Exportar CSV nasce liberado somente para o Administrador.
 
 Somente depois do UAT registre essa release como ativa. Remover Basic Auth ou alterar o Apache e outro corte e exige autorizacao propria.
 
