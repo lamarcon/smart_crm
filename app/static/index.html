@@ -586,6 +586,7 @@
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
         <button data-view="pipeline-admin" data-admin-nav hidden><span class="nav-icon">⇄</span>Funil de negócios</button>
         <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
+        <button data-view="permissions" data-admin-nav hidden><span class="nav-icon">⚿</span>Permissões</button>
       </nav>
       <small class="app-version" id="appVersion" hidden></small>
     </aside>
@@ -617,6 +618,7 @@
         <section class="page" id="page-notifications"></section>
         <section class="page" id="page-pipeline-admin"></section>
         <section class="page" id="page-admin"></section>
+        <section class="page" id="page-permissions"></section>
       </div>
     </main>
   </div>
@@ -1084,7 +1086,8 @@
       deals: ['Negócios', 'Pipeline Vendas CMS e orçamentos'],
       notifications: ['Notificações', 'Atualizações relevantes da sua operação'],
       'pipeline-admin': ['Funil de negócios', 'Configure etapas, ordem e estado inicial'],
-      admin: ['Usuários e permissões', 'Convites, cargos e perfis de acesso']
+      admin: ['Usuários e permissões', 'Convites, cargos e perfis de acesso'],
+      permissions: ['Permissões', 'O que cada perfil pode fazer em cada módulo']
     };
     const entityConfigs = {
       leads: {
@@ -2026,15 +2029,44 @@
       if (document.documentElement.dataset.workspaceReady === 'true') render();
     }
     function nextId(prefix, items) { return `${prefix}-${Math.max(0, ...items.map(item => Number(String(item.id).split('-')[1]) || 0)) + 1}`; }
-    function canSee(record) {
-      const user = currentUser();
-      if (user.role === 'Administrador') return true;
-      const responsibleTeam = state.users.find(candidate => candidate.id === record.responsibleId)?.team;
-      if (user.role === 'Gestor') return (record.team || responsibleTeam) === user.team;
-      return record.responsibleId === user.id || (record.assistants || []).includes(user.id);
+    // Permissions --------------------------------------------------------------
+    // The server decides; these mirror its matrix so screens only offer what is allowed.
+    const PERMISSION_MODULES = ['leads', 'contacts', 'companies', 'deals', 'products'];
+    const PERMISSION_ACTIONS = ['read', 'create', 'update', 'delete', 'import', 'export'];
+    const OWNED_MODULES = ['leads', 'deals', 'companies'];
+    function legacyPermissions(role) {
+      // What a session without a matrix (older server) allows: the fixed rules.
+      const scoped = scope => ({ read: scope, create: 'all', update: scope, delete: scope, import: 'none', export: 'none' });
+      const open = { read: 'all', create: 'all', update: 'all', delete: 'all', import: 'none', export: 'none' };
+      const readOnly = { read: 'all', create: 'none', update: 'none', delete: 'none', import: 'none', export: 'none' };
+      const scope = role === 'Gestor' ? 'team' : 'own';
+      return { leads: scoped(scope), deals: scoped(scope), contacts: open, companies: open, products: role === 'Gestor' ? open : readOnly };
     }
-    function visibleLeads() { return state.leads.filter(canSee); }
-    function visibleDeals() { return state.deals.filter(canSee); }
+    function permissionScope(module, action) {
+      const user = currentUser();
+      if (!user) return 'none';
+      if (user.role === 'Administrador') return 'all';
+      const matrix = sessionIdentity?.permissions && Object.keys(sessionIdentity.permissions).length ? sessionIdentity.permissions : legacyPermissions(user.role);
+      return matrix?.[module]?.[action] || 'none';
+    }
+    function can(module, action) { return permissionScope(module, action) !== 'none'; }
+    function teamOfUser(id) { return state.users.find(candidate => candidate.id === id)?.team; }
+    function canRecord(module, action, record) {
+      if (!record || record.restricted) return false;
+      const scope = permissionScope(module, action);
+      if (scope === 'all') return true;
+      if (scope === 'none') return false;
+      const user = currentUser();
+      const responsible = module === 'companies' ? record.ownerId : record.responsibleId;
+      if (scope === 'own') return responsible === user.id || (module === 'companies' ? false : (record.assistants || []).includes(user.id));
+      const team = module === 'companies' ? teamOfUser(record.ownerId) : (record.team || teamOfUser(record.responsibleId));
+      return Boolean(user.team) && team === user.team;
+    }
+    // Records listed in a module: never the name-only links the server sends.
+    function listed(module) { return (state[module] || []).filter(record => !record.restricted && canRecord(module, 'read', record)); }
+    function canSee(record, module = 'leads') { return canRecord(module, 'read', record); }
+    function visibleLeads() { return listed('leads'); }
+    function visibleDeals() { return listed('deals'); }
 
     let filterPanelScope = null;
     let filterDraft = null;
@@ -2458,7 +2490,7 @@
       const dashboardFilterCount = activeFilterCount(`dashboard_${dashboard.scope}`);
       const scopeLabel = ({ all: 'Todos', leads: 'Leads', deals: 'Negócios' })[dashboard.scope];
       return `
-        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions">${currentUser().role === 'Administrador' ? '<button class="button" data-action="open-deleted">↺ Recuperar excluídos</button><button class="button" data-action="open-bitrix-import" aria-label="Importar">⇩ Importar</button>' : ''}<button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar dados iniciais</button><button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button></div></div>
+        <div class="page-toolbar"><div><h2>Olá, ${escapeHTML(currentUser().name.split(' ')[0])}!</h2><p>Veja o panorama da operação com o perfil <b>${escapeHTML(currentUser().role)}</b> · escopo <b>${scopeLabel}</b>.</p></div><div class="toolbar-actions">${currentUser().role === 'Administrador' ? '<button class="button" data-action="open-deleted">↺ Recuperar excluídos</button>' : ''}${IMPORT_MODULES.some(module => can(module, 'import')) ? '<button class="button" data-action="open-bitrix-import" aria-label="Importar">⇩ Importar</button>' : ''}<button class="button" data-action="open-dashboard-filters">⚙ Filtrar painel${dashboardFilterCount ? ` (${dashboardFilterCount})` : ''}</button><button class="button" data-action="reset-dashboard-filters">↻ Redefinir painel</button><button class="button" data-action="reset">Restaurar dados iniciais</button>${can('leads', 'create') ? '<button class="button primary" data-action="new" data-entity="lead">＋ Novo Lead</button>' : ''}</div></div>
         <div class="stats">
           <article class="stat" style="--stat-color:var(--blue-100)"><div class="stat-top"><span>Leads em contato</span><span class="stat-icon">◎</span></div><strong>${leads.filter(item => item.stage === 'Em contato').length}</strong><small><b>Dados locais</b> deste perfil</small></article>
           <article class="stat" style="--stat-color:var(--purple-100)"><div class="stat-top"><span>Negócios abertos</span><span class="stat-icon">◇</span></div><strong>${openDeals.length}</strong><small>${money(total)} em pipeline${unconverted ? ` · ${unconverted} sem cotação` : ''}</small></article>
@@ -2531,7 +2563,7 @@
 
     function contactsForCompany(companyName) {
       const key = normalizedRelationshipName(companyName);
-      return key ? state.contacts.filter(contact => normalizedRelationshipName(contact.company) === key) : [];
+      return key ? listed('contacts').filter(contact => normalizedRelationshipName(contact.company) === key) : [];
     }
     function renderKanban(scope, records) {
       const isLead = scope === 'leads';
@@ -2543,7 +2575,7 @@
           const title = isLead ? record.name : record.title;
           const subtitle = isLead ? `${record.id} · ${record.company}` : `${record.id} · ${dealMoneyText(record)}`;
           const options = stages.map(option => `<option value="${escapeHTML(option.id)}" ${(isLead ? option.id === record.stage : option.id === record.stageId) ? 'selected' : ''}>${escapeHTML(option.name)}</option>`).join('');
-          return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small>${!isLead ? dealRelationshipsHTML(record) : ''}<div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}">${options}</select>${!isLead ? `<div class="kanban-actions"><button class="button small" data-action="quote" data-id="${record.id}">Orçamento</button></div>` : ''}</article>`;
+          return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small>${!isLead ? dealRelationshipsHTML(record) : ''}<div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}" ${canRecord(isLead ? 'leads' : 'deals', 'update', record) ? '' : 'disabled'}>${options}</select>${!isLead ? `<div class="kanban-actions"><button class="button small" data-action="quote" data-id="${record.id}">Orçamento</button></div>` : ''}</article>`;
         }).join('');
         return `<section class="kanban-column" data-kanban-stage="${escapeHTML(stage.id)}"><div class="kanban-column-head"><span>${escapeHTML(stage.name)}</span><span class="kanban-count">${stageRecords.length}</span></div><div class="kanban-cards">${cards || '<p class="hint">Nenhum registro nesta etapa.</p>'}</div></section>`;
       }).join('')}</div>`;
@@ -2561,29 +2593,31 @@
       const mode = stageOptions.length ? getViewMode(entity) : 'list';
       const viewSwitch = stageOptions.length ? `<div class="view-switch" aria-label="Modo de visualização"><button type="button" aria-label="Lista" class="${mode === 'list' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="list">☷ Lista</button><button type="button" aria-label="Kanban" class="${mode === 'kanban' ? 'active' : ''}" data-action="set-view-mode" data-scope="${entity}" data-mode="kanban">▦ Kanban</button></div>` : '';
       const manageFields = currentUser().role === 'Administrador' ? `<button class="button" data-action="manage-fields" data-scope="${entity}">Gerenciar campos</button>` : '';
-      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}${manageFields}<button class="button primary" data-action="new" data-entity="${singular}">＋ Novo ${plural}</button></div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados do workspace</span></div></div>`;
+      const exportButton = can(entity, 'export') ? `<button class="button" data-action="export" data-scope="${entity}">⇩ Exportar</button>` : '';
+      const newButton = can(entity, 'create') ? `<button class="button primary" data-action="new" data-entity="${singular}">＋ Novo ${plural}</button>` : '';
+      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}${manageFields}${exportButton}${newButton}</div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados do workspace</span></div></div>`;
     }
 
     function leadsHTML() {
       const records = applyRecordFilters('leads', visibleLeads());
       if (getViewMode('leads') === 'kanban') return listShell('leads', 'Leads', 'Cada nova solicitação comercial pode originar uma oportunidade.', renderKanban('leads', records), records.length, leadStages);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="lead" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small>${leadChannelLabel(item.source) ? `<span class="tag channel-tag" data-lead-channel title="Origem do Lead">${escapeHTML(leadChannelLabel(item.source))}</span>` : ''}</div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${renderStageProgress(leadStages, item.stage, 'lead', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}<button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="lead" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)} · ${escapeHTML(item.company)}</small>${leadChannelLabel(item.source) ? `<span class="tag channel-tag" data-lead-channel title="Origem do Lead">${escapeHTML(leadChannelLabel(item.source))}</span>` : ''}</div></div></td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td>${escapeHTML(item.segment)}</td><td>${renderStageProgress(leadStages, item.stage, 'lead', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td><div class="row-actions">${item.stage === 'Em contato' ? `<button class="button small accent" data-action="convert" data-id="${item.id}">Converter</button><button class="row-action" data-action="discard" data-id="${item.id}" title="Descartar">⊘</button>` : ''}${canRecord('leads', 'delete', item) ? `<button class="row-action" data-action="delete" data-entity="lead" data-id="${item.id}" title="Excluir">⌫</button>` : ''}</div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Lead</th><th>Contato</th><th>Segmento</th><th>Etapa</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Lead encontrado');
       return listShell('leads', 'Leads', 'Cada nova solicitação comercial pode originar uma oportunidade.', table, records.length, leadStages);
     }
 
     function contactsHTML() {
-      const records = applyRecordFilters('contacts', state.contacts);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="contact" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${contactCompanyHTML(item)}</td><td>${escapeHTML(item.role)}</td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="contact" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const records = applyRecordFilters('contacts', listed('contacts'));
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="contact" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${contactCompanyHTML(item)}</td><td>${escapeHTML(item.role)}</td><td>${escapeHTML(item.email)}<br><small>${escapeHTML(item.phone)}</small></td><td><div class="row-actions">${canRecord('contacts', 'delete', item) ? `<button class="row-action" data-action="delete" data-entity="contact" data-id="${item.id}" title="Excluir">⌫</button>` : ''}</div></td></tr>`).join('');
       return listShell('contacts', 'Contatos', 'Pessoas vinculadas a Empresas e Negócios.', rows ? `<table><thead><tr><th>Contato</th><th>Empresa</th><th>Cargo</th><th>Dados de contato</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Contato encontrado'), records.length);
     }
 
     function companiesHTML() {
-      const records = applyRecordFilters('companies', state.companies);
+      const records = applyRecordFilters('companies', listed('companies'));
       const rows = records.map(item => {
         const contacts = contactsForCompany(item.name);
         const contactNames = contacts.length ? contacts.map(contact => escapeHTML(contact.name)).join(', ') : 'Nenhum contato';
-        return `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="company" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td><b>${contacts.length} ${contacts.length === 1 ? 'contato' : 'contatos'}</b><br><small>${contactNames}</small></td><td>${escapeHTML(item.segment)}</td><td>${escapeHTML(item.city)}</td><td>${escapeHTML(item.phone)}</td><td>${escapeHTML(userName(item.ownerId))}</td><td><div class="row-actions"><button class="row-action" data-action="delete" data-entity="company" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`;
+        return `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="company" data-id="${item.id}">${escapeHTML(item.name)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td><b>${contacts.length} ${contacts.length === 1 ? 'contato' : 'contatos'}</b><br><small>${contactNames}</small></td><td>${escapeHTML(item.segment)}</td><td>${escapeHTML(item.city)}</td><td>${escapeHTML(item.phone)}</td><td>${escapeHTML(userName(item.ownerId))}</td><td><div class="row-actions">${canRecord('companies', 'delete', item) ? `<button class="row-action" data-action="delete" data-entity="company" data-id="${item.id}" title="Excluir">⌫</button>` : ''}</div></td></tr>`;
       }).join('');
       return listShell('companies', 'Empresas', 'Contas com histórico e vínculos comerciais.', rows ? `<table><thead><tr><th>Empresa</th><th>Contatos</th><th>Segmento</th><th>Cidade</th><th>Telefone</th><th>Responsável</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhuma Empresa encontrada'), records.length);
     }
@@ -2593,13 +2627,13 @@
     function productsHTML() {
       const query = normalizedName(productSearch);
       const manage = canManageProducts();
-      const records = (state.products || [])
+      const records = listed('products')
         .filter(item => (showInactiveProducts || item.active !== false)
           && (!query || [item.name, item.sku, item.category, item.description].some(value => normalizedName(value).includes(query))))
         .sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'));
-      const rows = records.map(item => `<tr data-product-row="${escapeHTML(item.id)}"><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="product" data-id="${escapeHTML(item.id)}">${escapeHTML(item.name)}</button><small>${item.sku ? `SKU ${escapeHTML(item.sku)}` : 'Sem código'}</small></div></div></td><td>${escapeHTML(item.category || '—')}</td><td><b>${escapeHTML(money(item.price, dealCurrency(item)))}</b><small> / ${escapeHTML(item.unit || 'un')}</small></td><td><span class="tag ${item.active !== false ? 'green' : ''}">${item.active !== false ? 'Ativo' : 'Inativo'}</span></td><td>${manage ? `<div class="row-actions"><button class="row-action" data-action="delete" data-entity="product" data-id="${escapeHTML(item.id)}" title="Excluir">⌫</button></div>` : ''}</td></tr>`).join('');
+      const rows = records.map(item => `<tr data-product-row="${escapeHTML(item.id)}"><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="product" data-id="${escapeHTML(item.id)}">${escapeHTML(item.name)}</button><small>${item.sku ? `SKU ${escapeHTML(item.sku)}` : 'Sem código'}</small></div></div></td><td>${escapeHTML(item.category || '—')}</td><td><b>${escapeHTML(money(item.price, dealCurrency(item)))}</b><small> / ${escapeHTML(item.unit || 'un')}</small></td><td><span class="tag ${item.active !== false ? 'green' : ''}">${item.active !== false ? 'Ativo' : 'Inativo'}</span></td><td>${can('products', 'delete') ? `<div class="row-actions"><button class="row-action" data-action="delete" data-entity="product" data-id="${escapeHTML(item.id)}" title="Excluir">⌫</button></div>` : ''}</td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Produto</th><th>Categoria</th><th>Preço</th><th>Situação</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Produto encontrado');
-      return `<div class="page-toolbar"><div><h2>Produtos</h2><p>Catálogo usado nos orçamentos dos Negócios.${manage ? '' : ' Somente Administrador e Gestor alteram o catálogo.'}</p></div><div class="toolbar-actions">${manage ? '<button class="button primary" data-action="new" data-entity="product">＋ Novo Produto</button>' : ''}</div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-product-search value="${escapeHTML(productSearch)}" placeholder="Buscar por nome, código ou categoria..." aria-label="Buscar produtos"></div><label class="inline-check"><input type="checkbox" data-product-inactive ${showInactiveProducts ? 'checked' : ''}> Mostrar inativos</label></div><div class="table-wrap">${table}</div><div class="table-footer"><span>${records.length} registro(s) visível(is)</span><span>Catálogo do workspace</span></div></div>`;
+      return `<div class="page-toolbar"><div><h2>Produtos</h2><p>Catálogo usado nos orçamentos dos Negócios.${manage ? '' : ' Seu perfil não altera o catálogo.'}</p></div><div class="toolbar-actions">${can('products', 'export') ? '<button class="button" data-action="export" data-scope="products">⇩ Exportar</button>' : ''}${can('products', 'create') ? '<button class="button primary" data-action="new" data-entity="product">＋ Novo Produto</button>' : ''}</div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-product-search value="${escapeHTML(productSearch)}" placeholder="Buscar por nome, código ou categoria..." aria-label="Buscar produtos"></div><label class="inline-check"><input type="checkbox" data-product-inactive ${showInactiveProducts ? 'checked' : ''}> Mostrar inativos</label></div><div class="table-wrap">${table}</div><div class="table-footer"><span>${records.length} registro(s) visível(is)</span><span>Catálogo do workspace</span></div></div>`;
     }
 
     function dealsHTML() {
@@ -2607,7 +2641,7 @@
       const records = applyRecordFilters('deals', visibleDeals());
       const stages = activeDealStages();
       if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Funil configurado da empresa com acompanhamento por etapas.', renderKanban('deals', records), records.length, stages);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td>${dealMoneyHTML(item)}<small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(stages, item.stageId, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button><button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button></div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td>${dealMoneyHTML(item)}<small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(stages, item.stageId, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button>${canRecord('deals', 'delete', item) ? `<button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button>` : ''}</div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Negócio</th><th>Empresa e Contato</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
       return listShell('deals', 'Negócios', 'Funil configurado da empresa com acompanhamento por etapas.', table, records.length, stages);
     }
@@ -2985,6 +3019,116 @@
       }
       if (activeView === 'admin') render();
     }
+    // Permissions screen (Administrador) --------------------------------------
+    const PERMISSION_ROLES = ['Gestor', 'Vendedor', 'Assistente', 'Faturamento'];
+    const PERMISSION_MODULE_LABELS = { leads: 'Leads', contacts: 'Contatos', companies: 'Empresas', deals: 'Negócios', products: 'Produtos' };
+    const PERMISSION_ACTION_LABELS = { read: 'Ver', create: 'Criar', update: 'Editar', delete: 'Excluir', import: 'Importar', export: 'Exportar' };
+    const PERMISSION_SCOPE_LABELS = { none: 'Nenhum', own: 'Próprios', team: 'Equipe', all: 'Todos' };
+    const PERMISSION_FLAG_LABELS = { none: 'Não', all: 'Sim' };
+    let permissionsState = { loaded: false, loading: false, error: '', role: 'Gestor', roles: null, defaults: null, options: null, draft: null, dirty: false, saving: false };
+    function clonePermissions(value) { return JSON.parse(JSON.stringify(value || {})); }
+    async function loadPermissions() {
+      if (permissionsState.loading || permissionsState.dirty) return;
+      permissionsState = { ...permissionsState, loading: true, error: '' };
+      try {
+        const payload = await responseJson(await apiFetch('/api/permissions', { headers: { Accept: 'application/json' } }));
+        permissionsState = { ...permissionsState, loaded: true, loading: false, roles: payload.roles, defaults: payload.defaults, options: payload.options, draft: clonePermissions(payload.roles), dirty: false };
+      } catch (failure) {
+        permissionsState = { ...permissionsState, loaded: true, loading: false, error: failure?.payload?.error?.message || 'Não foi possível carregar as permissões.' };
+      }
+      rerenderPermissions();
+    }
+    function rerenderPermissions() {
+      const page = document.getElementById('page-permissions');
+      if (page) page.innerHTML = permissionsAdminHTML();
+    }
+    function permissionCellHTML(module, action) {
+      const choices = permissionsState.options?.[module]?.[action] || [];
+      const value = permissionsState.draft?.[permissionsState.role]?.[module]?.[action];
+      const labels = ['create', 'import', 'export'].includes(action) ? PERMISSION_FLAG_LABELS : PERMISSION_SCOPE_LABELS;
+      const options = choices.map(choice => `<option value="${choice}" ${choice === value ? 'selected' : ''}>${labels[choice] || choice}</option>`).join('');
+      return `<td><select data-permission-module="${module}" data-permission-action="${action}" aria-label="${escapeHTML(`${PERMISSION_ACTION_LABELS[action]} · ${PERMISSION_MODULE_LABELS[module]}`)}"${permissionsState.saving ? ' disabled' : ''}>${options}</select></td>`;
+    }
+    function permissionsAdminHTML() {
+      if (currentUser()?.role !== 'Administrador') return '';
+      const tabs = PERMISSION_ROLES.map(role => `<button type="button" class="${role === permissionsState.role ? 'active' : ''}" data-action="permissions-role" data-role="${role}" aria-pressed="${role === permissionsState.role}">${escapeHTML(role)}</button>`).join('');
+      let body;
+      if (permissionsState.error) body = `<p class="field-manager-error" data-permissions-error>${escapeHTML(permissionsState.error)}</p>`;
+      else if (!permissionsState.draft) body = '<p class="hint">Carregando permissões...</p>';
+      else {
+        const head = `<tr><th>Módulo</th>${PERMISSION_ACTIONS.map(action => `<th>${PERMISSION_ACTION_LABELS[action]}</th>`).join('')}</tr>`;
+        const rows = PERMISSION_MODULES.map(module => `<tr data-permission-row="${module}"><th scope="row">${PERMISSION_MODULE_LABELS[module]}</th>${PERMISSION_ACTIONS.map(action => permissionCellHTML(module, action)).join('')}</tr>`).join('');
+        body = `<div class="table-wrap"><table class="permissions-table">${head}${rows}</table></div>`;
+      }
+      const status = permissionsState.dirty ? '<span class="hint" data-permissions-status>Alterações ainda não salvas.</span>' : '';
+      const busy = permissionsState.saving || !permissionsState.draft ? ' disabled' : '';
+      return `<div class="page-toolbar"><div><h2>Permissões</h2><p>Defina o que cada perfil pode fazer em cada módulo. O Administrador sempre tem acesso total.</p></div></div><div class="list-card permissions-card"><div class="list-tools"><div class="view-switch" role="group" aria-label="Perfil">${tabs}</div></div>${body}<p class="hint permissions-hint">Próprios: registros em que a pessoa é responsável ou assistente. Equipe: registros da equipe da pessoa. As mudanças valem no próximo carregamento de cada usuário.</p><div class="table-footer">${status}<span class="toolbar-actions"><button type="button" class="button" data-action="reset-permissions"${busy}>Restaurar padrão</button><button type="button" class="button primary" data-action="save-permissions"${busy}>Salvar permissões</button></span></div></div>`;
+    }
+    function updatePermissionCell(select) {
+      const role = permissionsState.role;
+      permissionsState.draft[role][select.dataset.permissionModule][select.dataset.permissionAction] = select.value;
+      permissionsState.dirty = true;
+      rerenderPermissions();
+    }
+    function resetRolePermissions() {
+      if (!permissionsState.defaults) return;
+      permissionsState.draft[permissionsState.role] = clonePermissions(permissionsState.defaults[permissionsState.role]);
+      permissionsState.dirty = true;
+      rerenderPermissions();
+    }
+    async function savePermissions() {
+      if (!permissionsState.draft || permissionsState.saving) return;
+      permissionsState = { ...permissionsState, saving: true };
+      rerenderPermissions();
+      try {
+        const payload = await responseJson(await apiFetch('/api/permissions', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ roles: permissionsState.draft })
+        }));
+        permissionsState = { ...permissionsState, saving: false, dirty: false, roles: payload.roles, defaults: payload.defaults, options: payload.options, draft: clonePermissions(payload.roles) };
+        toast('Permissões salvas.');
+      } catch (failure) {
+        permissionsState = { ...permissionsState, saving: false };
+        showToast(failure?.payload?.error?.message || 'Não foi possível salvar as permissões.');
+      }
+      rerenderPermissions();
+    }
+
+    // Export ------------------------------------------------------------------
+    function exportedIds(module) {
+      if (module === 'products') {
+        const query = normalizedName(productSearch);
+        return listed('products')
+          .filter(item => (showInactiveProducts || item.active !== false)
+            && (!query || [item.name, item.sku, item.category, item.description].some(value => normalizedName(value).includes(query))))
+          .map(item => item.id);
+      }
+      return applyRecordFilters(module, listed(module)).map(item => item.id);
+    }
+    async function exportModule(module) {
+      if (!can(module, 'export')) { showToast('Seu perfil não tem permissão para esta ação.'); return; }
+      try {
+        const response = await apiFetch(`/api/export/${encodeURIComponent(module)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: exportedIds(module) })
+        });
+        if (!response.ok) await responseJson(response);
+        const blob = await response.blob();
+        const match = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '');
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = match ? match[1] : `smart-crm-${module}.csv`;
+        link.hidden = true;
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+        toast('Arquivo exportado.');
+      } catch (failure) {
+        showToast(failure?.payload?.error?.message || 'Não foi possível exportar.');
+      }
+    }
     function intakeResponsibleUsers() {
       return state.users.filter(user => user.status === 'Ativo' && ['Administrador', 'Gestor', 'Vendedor', 'Faturamento'].includes(user.role));
     }
@@ -3280,6 +3424,7 @@
       renderSessionIdentity();
       updateCounts();
       document.querySelectorAll('[data-admin-nav]').forEach(item => { item.hidden = currentUser().role !== 'Administrador'; });
+      PERMISSION_MODULES.forEach(module => { document.querySelector(`.nav [data-view="${module}"]`).hidden = !can(module, 'read'); });
       document.getElementById('page-dashboard').innerHTML = dashboardHTML();
       document.getElementById('page-leads').innerHTML = leadsHTML();
       document.getElementById('page-contacts').innerHTML = contactsHTML();
@@ -3289,12 +3434,14 @@
       document.getElementById('page-notifications').innerHTML = notificationsHTML();
       document.getElementById('page-pipeline-admin').innerHTML = pipelineEditorHTML();
       document.getElementById('page-admin').innerHTML = usersAdminHTML();
+      document.getElementById('page-permissions').innerHTML = permissionsAdminHTML();
       showView(activeView, false);
       syncBootstrapAccess();
     }
 
     function showView(view, closeMobile = true) {
-      if (['admin', 'pipeline-admin'].includes(view) && currentUser().role !== 'Administrador') view = 'dashboard';
+      if (['admin', 'pipeline-admin', 'permissions'].includes(view) && currentUser().role !== 'Administrador') view = 'dashboard';
+      if (PERMISSION_MODULES.includes(view) && !can(view, 'read')) view = 'dashboard';
       if (!pageMeta[view]) view = 'dashboard';
       const entering = activeView !== view;
       activeView = view;
@@ -3308,6 +3455,7 @@
       if (view === 'pipeline-admin' && currentUser().role === 'Administrador' && pipelineHistoryState.items === null && !pipelineHistoryState.loading) void loadPipelineHistory();
       // Keys are refreshed on every visit so "last use" stays current.
       if (entering && view === 'admin' && currentUser().role === 'Administrador') void loadIntakeKeys();
+      if (entering && view === 'permissions' && currentUser().role === 'Administrador') void loadPermissions();
     }
 
     // Company and contact references -------------------------------------------
@@ -3327,7 +3475,7 @@
       }));
     }
     function companyChoices() {
-      return choicesFor(state.companies || [], company => [company.city, company.id].filter(Boolean).join(' · '));
+      return choicesFor(listed('companies'), company => [company.city, company.id].filter(Boolean).join(' · '));
     }
     function contactBelongsTo(contact, company) {
       if (!company) return true;
@@ -3335,7 +3483,7 @@
       return normalizedName(contact.company) === normalizedName(company.name);
     }
     function contactChoices(company) {
-      return choicesFor((state.contacts || []).filter(contact => contactBelongsTo(contact, company)), contact => contact.email || contact.id);
+      return choicesFor(listed('contacts').filter(contact => contactBelongsTo(contact, company)), contact => contact.email || contact.id);
     }
     function resolveChoice(choices, text) {
       const exact = choices.filter(choice => choice.value === String(text ?? '').trim());
@@ -3350,7 +3498,7 @@
     // Suggestion list (combobox) for company and contact fields. A custom list is
     // used instead of <datalist>, whose popup is misplaced inside modal dialogs.
     function productChoices() {
-      return choicesFor((state.products || []).filter(item => item.active !== false), item => item.sku || item.id);
+      return choicesFor(listed('products').filter(item => item.active !== false), item => item.sku || item.id);
     }
     function suggestionChoices(input) {
       const container = input.closest('form') || document;
@@ -4022,9 +4170,9 @@
       customTab.hidden = entity === 'product';
       quotesTab.hidden = entity !== 'deal';
       document.getElementById('drawerTabs').hidden = entity === 'product';
-      const readOnlyProduct = entity === 'product' && !canManageProducts();
-      document.querySelectorAll('#drawerFields input, #drawerFields select, #drawerFields textarea, #drawerFields button').forEach(element => { element.disabled = readOnlyProduct; });
-      drawer.dataset.readOnly = String(readOnlyProduct);
+      const readOnly = !canRecord(collection, 'update', record);
+      document.querySelectorAll('#drawerFields input, #drawerFields select, #drawerFields textarea, #drawerFields button, #drawerCustomFields input, #drawerCustomFields select, #drawerCustomFields textarea').forEach(element => { element.disabled = readOnly; });
+      drawer.dataset.readOnly = String(readOnly);
       if (entity === 'deal') renderDrawerQuotes(record);
       const primary = document.getElementById('drawerPrimary');
       primary.setAttribute('aria-label', entity === 'deal' ? 'Dados do negócio' : entity === 'company' ? 'Informações da empresa' : 'Dados do cadastro');
@@ -4270,7 +4418,7 @@
         .map(row => ({ key: row.querySelector('[data-meta-key]').value.trim(), value: row.querySelector('[data-meta-value]').value }))
         .filter(item => item.key || item.value.trim());
     }
-    function canManageProducts() { return ['Administrador', 'Gestor'].includes(currentUser()?.role); }
+    function canManageProducts() { return can('products', 'update'); }
 
     function fieldHTML(name, label, type, required, value, idPrefix = 'field') {
       const requiredAttr = required ? 'required' : '';
@@ -4352,7 +4500,7 @@
       }));
       const existing = form.dataset.id ? state[collection].find(item => item.id === form.dataset.id) : null;
       if (entity === 'product') {
-        if (!canManageProducts()) { showToast('Somente Administrador e Gestor podem alterar produtos.'); return; }
+        if (existing ? !canRecord('products', 'update', existing) : !can('products', 'create')) { showToast('Seu perfil não tem permissão para esta ação.'); return; }
         const metadata = collectMetadata(form);
         if (metadata.some(item => !item.key)) { showToast('Informe a chave de cada metadado.'); return; }
         const keys = metadata.map(item => item.key.toLocaleLowerCase('pt-BR'));
@@ -4440,9 +4588,9 @@
     function collectionFor(entity) { return ({ lead: 'leads', contact: 'contacts', company: 'companies', deal: 'deals', product: 'products' })[entity]; }
 
     function deleteEntity(entity, id) {
-      if (entity === 'product' && !canManageProducts()) { showToast('Somente Administrador e Gestor podem alterar produtos.'); return; }
-      if (!confirm(`Excluir este ${entityLabel(entity)}?`)) return;
       const collection = collectionFor(entity);
+      if (!canRecord(collection, 'delete', state[collection].find(item => item.id === id))) { showToast('Seu perfil não tem permissão para esta ação.'); return; }
+      if (!confirm(`Excluir este ${entityLabel(entity)}?`)) return;
       state[collection] = state[collection].filter(item => item.id !== id);
       saveState(); render(); toast(`${entityLabel(entity)} removido.`);
     }
@@ -4770,9 +4918,16 @@
       });
     }
 
+    const IMPORT_MODULES = ['deals', 'contacts', 'companies', 'leads'];
+    const BITRIX_ENTITY_MODULES = { deal: 'deals', contact: 'contacts', company: 'companies', lead: 'leads' };
     function openBitrixImport() {
       const form = document.getElementById('bitrixImportForm');
       form.reset();
+      form.querySelectorAll('[data-bitrix-entity]').forEach(input => {
+        const allowedHere = can(BITRIX_ENTITY_MODULES[input.dataset.bitrixEntity], 'import');
+        input.disabled = !allowedHere;
+        input.closest('.field').hidden = !allowedHere;
+      });
       document.getElementById('bitrixImportSubmit').disabled = true;
       document.getElementById('bitrixImportSummary').hidden = true;
       document.getElementById('bitrixImportDetails').innerHTML = '';
@@ -5118,6 +5273,10 @@
       if (action === 'pipeline-history-older') loadOlderPipelineHistory();
       if (action === 'pipeline-history-newer') loadNewerPipelineHistory();
       if (action === 'new') openEntityDialog(button.dataset.entity);
+      if (action === 'export') void exportModule(button.dataset.scope);
+      if (action === 'permissions-role') { permissionsState.role = button.dataset.role; rerenderPermissions(); }
+      if (action === 'save-permissions') void savePermissions();
+      if (action === 'reset-permissions') resetRolePermissions();
       if (action === 'open-record' || action === 'edit') openEntityDrawer(button.dataset.entity, button.dataset.id);
       if (action === 'open-company-deal') openCompanyDeal(button.dataset.id);
       if (action === 'open-company-contact') openCompanyContact(button.dataset.id);
@@ -5217,6 +5376,7 @@
 
     document.addEventListener('change', event => {
       if (event.target.dataset.bitrixEntity) syncBitrixImportButton();
+      if (event.target.dataset.permissionModule) updatePermissionCell(event.target);
       if (event.target.id === 'deletedModule') loadDeletedRecords();
       if (event.target.id === 'customFieldType') document.getElementById('customFieldOptionsWrap').hidden = !['select', 'multiselect'].includes(event.target.value);
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }

@@ -175,5 +175,15 @@ window.SMART_CRM_I18N['pt-PT'] = {
   "Excluir este Empresa?": "Eliminar esta Empresa?",
   "O e-mail de convite e a tela começam neste idioma.": "O e-mail de convite e o ecrã começam neste idioma.",
   "{0} enviou um novo contato pelo canal {1}.": "{0} enviou um novo contacto pelo canal {1}.",
-  "Sua sessão expirou. Entre novamente para continuar.": "A sua sessão expirou. Inicie sessão novamente para continuar."
+  "Sua sessão expirou. Entre novamente para continuar.": "A sua sessão expirou. Inicie sessão novamente para continuar.",
+  "Seu perfil não altera o catálogo.": "O seu perfil não altera o catálogo.",
+  "Carregando permissões...": "A carregar permissões...",
+  "Próprios: registros em que a pessoa é responsável ou assistente. Equipe: registros da equipe da pessoa. As mudanças valem no próximo carregamento de cada usuário.": "Próprios: registos em que a pessoa é responsável ou assistente. Equipa: registos da equipa da pessoa. As alterações aplicam-se no próximo carregamento de cada utilizador.",
+  "Restaurar padrão": "Repor predefinições",
+  "Salvar permissões": "Guardar permissões",
+  "Permissões salvas.": "Permissões guardadas.",
+  "Não foi possível salvar as permissões.": "Não foi possível guardar as permissões.",
+  "Seu perfil não tem permissão para esta ação.": "O seu perfil não tem permissão para esta ação.",
+  "Arquivo exportado.": "Ficheiro exportado.",
+  "{p6} registro(s) visível(is)": "{p6} registo(s) visível(eis)"
 };

@@ -139,6 +139,7 @@ async function openFresh(options = {}) {
     userRequests: [], inviteDeliveryStatus: 'sent', userActionFailure: null, userActionGate: null,
     intakeKeys: [], intakeRequests: [], intakeFailure: null,
     preferenceRequests: [], preferenceFailure: false,
+    permissionRequests: [], permissionRoles: null, exportRequests: [],
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], products: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
@@ -166,6 +167,25 @@ async function openFresh(options = {}) {
     }
     api.session = { ...api.session, locale: body.locale };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ locale: body.locale }) });
+  });
+  await context.route('**/api/permissions', route => {
+    const request = route.request();
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON();
+      api.permissionRequests.push(body);
+      api.permissionRoles = clone(body.roles);
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(permissionsAnswer(api.permissionRoles)) });
+  });
+  await context.route('**/api/export/*', route => {
+    const request = route.request();
+    const module = new URL(request.url()).pathname.split('/').pop();
+    api.exportRequests.push({ module, body: request.postDataJSON() });
+    return route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="smart-crm-${module}-2026-11-17.csv"` },
+      body: '\ufeffIdentificador;Nome\r\n'
+    });
   });
   await context.route('**/api/deals/*/activities**', async route => {
     const request = route.request();
@@ -863,6 +883,25 @@ async function createLead(page, name, options = {}) {
   await dialog.getByLabel('Assistente').selectOption('u-camila');
   await dialog.getByRole('button', { name: 'Salvar registro' }).click();
   if (options.waitForSaved !== false) await page.locator('#page-leads .entity-link').filter({ hasText: name }).waitFor();
+}
+
+// Permission matrix as the server answers it (defaults equal the fixed rules).
+function defaultRolePermissions(role) {
+  const scoped = scope => ({ read: scope, create: 'all', update: scope, delete: scope, import: 'none', export: 'none' });
+  const open = { read: 'all', create: 'all', update: 'all', delete: 'all', import: 'none', export: 'none' };
+  const readOnly = { read: 'all', create: 'none', update: 'none', delete: 'none', import: 'none', export: 'none' };
+  const scope = role === 'Gestor' ? 'team' : 'own';
+  return { leads: scoped(scope), contacts: clone(open), companies: clone(open), deals: scoped(scope), products: role === 'Gestor' ? clone(open) : readOnly };
+}
+function permissionsAnswer(roles) {
+  const names = ['Gestor', 'Vendedor', 'Assistente', 'Faturamento'];
+  const defaults = Object.fromEntries(names.map(role => [role, defaultRolePermissions(role)]));
+  const owned = ['leads', 'deals', 'companies'];
+  const options = Object.fromEntries(['leads', 'contacts', 'companies', 'deals', 'products'].map(module => [module, Object.fromEntries(
+    ['read', 'create', 'update', 'delete', 'import', 'export'].map(action => [action,
+      ['create', 'import', 'export'].includes(action) || !owned.includes(module) ? ['none', 'all'] : ['none', 'own', 'team', 'all']])
+  )]));
+  return { roles: clone(roles || defaults), defaults, options, administrator: {} };
 }
 
 function minimalWorkspace() {
@@ -1691,9 +1730,9 @@ async function storageEntries(page) {
       ['Visão geral', 'Visão geral'], ['Leads', 'Leads'], ['Contatos', 'Contatos'],
       ['Empresas', 'Empresas'], ['Produtos', 'Produtos'], ['Negócios', 'Negócios'], ['Notificações', 'Notificações'],
       ['Funil de negócios', 'Funil de negócios'],
-      ['Usuários e permissões', 'Usuários e permissões']
+      ['Usuários e permissões', 'Usuários e permissões'], ['Permissões', 'Permissões']
     ];
-    assert.equal(await page.locator('.nav button:visible').count(), 9);
+    assert.equal(await page.locator('.nav button:visible').count(), 10);
     for (const [button, heading] of destinations) {
       await goTo(page, button);
       assert.equal(await page.locator('#topTitle').innerText(), heading);
@@ -3326,7 +3365,7 @@ async function storageEntries(page) {
     const list = page.locator('#page-products');
     assert.equal(await list.getByRole('button', { name: '＋ Novo Produto' }).count(), 0);
     assert.equal(await list.getByTitle('Excluir').count(), 0);
-    assert.match(await list.locator('.page-toolbar').innerText(), /Somente Administrador e Gestor alteram o catálogo/);
+    assert.match(await list.locator('.page-toolbar').innerText(), /Seu perfil não altera o catálogo/);
     await list.getByRole('button', { name: 'Licença Smart CRM' }).click();
     const drawer = page.locator('#entityDrawer');
     assert.equal(await drawer.getByLabel('Nome do produto *').isDisabled(), true);
@@ -3334,7 +3373,7 @@ async function storageEntries(page) {
     assert.equal(await drawer.locator('#drawerFoot').isVisible(), false);
     await drawer.getByRole('button', { name: 'Fechar painel' }).click();
     const blocked = await page.evaluate(() => { openEntityDialog('product', 'P-1'); const form = document.getElementById('entityForm'); saveEntity(form); return document.getElementById('toastRegion').innerText; });
-    assert.match(blocked, /Somente Administrador e Gestor podem alterar produtos/);
+    assert.match(blocked, /Seu perfil não tem permissão para esta ação/);
 
     await selectProfile(page, 'u-manager');
     await goTo(page, 'Produtos');
@@ -3541,7 +3580,7 @@ async function storageEntries(page) {
     };
     for (const locale of ['en', 'es']) {
       await page.locator('.top-actions [data-locale-select]').selectOption(locale);
-      for (const view of ['dashboard', 'leads', 'contacts', 'companies', 'products', 'deals', 'notifications', 'pipeline-admin', 'admin']) {
+      for (const view of ['dashboard', 'leads', 'contacts', 'companies', 'products', 'deals', 'notifications', 'pipeline-admin', 'admin', 'permissions']) {
         await step(`${locale} view ${view}`, () => page.locator(`.nav [data-view="${view}"]`).click());
       }
       for (const view of ['leads', 'contacts', 'companies', 'products', 'deals']) {
@@ -3711,6 +3750,108 @@ async function storageEntries(page) {
     assert.equal(message, 'Eliminar este Lead?');
     await page.locator('.top-actions [data-locale-select]').selectOption('pt-BR');
     assert.match(await nav('contacts').innerText(), /Contatos/);
+  });
+
+  await run('PERM-01 Administrador muda e salva a tabela de permissões', async page => {
+    const api = apiByPage.get(page);
+    await page.locator('.nav [data-view="permissions"]').click();
+    const screen = page.locator('#page-permissions');
+    await screen.locator('[data-permission-row="deals"]').waitFor();
+    assert.equal(await page.locator('#topTitle').innerText(), 'Permissões');
+    await screen.getByRole('button', { name: 'Vendedor', exact: true }).click();
+    const cell = screen.getByLabel('Excluir · Negócios');
+    assert.equal(await cell.inputValue(), 'own');
+    assert.deepEqual(await cell.locator('option').allTextContents(), ['Nenhum', 'Próprios', 'Equipe', 'Todos']);
+    assert.deepEqual(await screen.getByLabel('Ver · Contatos').locator('option').allTextContents(), ['Nenhum', 'Todos']);
+    assert.deepEqual(await screen.getByLabel('Exportar · Leads').locator('option').allTextContents(), ['Não', 'Sim']);
+    await cell.selectOption('none');
+    await screen.getByLabel('Exportar · Leads').selectOption('all');
+    await screen.locator('[data-permissions-status]').getByText('Alterações ainda não salvas.').waitFor();
+    // Switching role keeps the draft of every role.
+    await screen.getByRole('button', { name: 'Gestor', exact: true }).click();
+    assert.equal(await screen.getByLabel('Ver · Negócios').inputValue(), 'team');
+    await screen.getByRole('button', { name: 'Salvar permissões' }).click();
+    await page.locator('#toastRegion').getByText('Permissões salvas.', { exact: true }).waitFor();
+    assert.equal(api.permissionRequests.length, 1);
+    assert.equal(api.permissionRequests[0].roles.Vendedor.deals.delete, 'none');
+    assert.equal(api.permissionRequests[0].roles.Vendedor.leads.export, 'all');
+    assert.equal(api.permissionRequests[0].roles.Gestor.deals.read, 'team');
+    await screen.getByRole('button', { name: 'Vendedor', exact: true }).click();
+    await screen.getByRole('button', { name: 'Restaurar padrão' }).click();
+    assert.equal(await screen.getByLabel('Excluir · Negócios').inputValue(), 'own');
+  });
+
+  await run('PERM-02 Vendedor só vê menus e botões que a tabela permite', async page => {
+    assert.equal(await page.locator('.nav [data-view="permissions"]').isHidden(), true);
+    assert.equal(await page.locator('.nav [data-view="contacts"]').isHidden(), true);
+    assert.equal(await page.locator('.nav [data-view="products"]').isHidden(), true);
+    await page.evaluate(() => showView('contacts'));
+    assert.equal(await page.locator('#topTitle').innerText(), 'Visão geral');
+    assert.equal(await page.locator('#page-dashboard [data-action="new"][data-entity="lead"]').count(), 0);
+    assert.equal(await page.locator('#page-dashboard [data-action="open-bitrix-import"]').count(), 0);
+    await page.locator('.nav [data-view="deals"]').click();
+    const deals = page.locator('#page-deals');
+    await deals.getByText('Negócio da Vendedora').waitFor();
+    assert.equal(await deals.locator('[data-action="delete"]').count(), 0);
+    assert.equal(await deals.locator('[data-action="new"]').count(), 1);
+    // The linked company keeps its name although the user cannot open Empresas.
+    assert.match(await deals.locator('tbody').innerText(), /Empresa Restrita/);
+    await deals.getByRole('button', { name: 'Negócio da Vendedora' }).click();
+    assert.equal(await page.locator('#entityDrawer').getAttribute('data-read-only'), 'true');
+    assert.equal(await page.locator('#drawerFields input').first().isDisabled(), true);
+  }, {
+    session: {
+      ...{ user_id: 'u-vera', user_name: 'Vera Vendas', role: 'Vendedor' },
+      permissions: {
+        ...defaultRolePermissions('Vendedor'),
+        leads: { ...defaultRolePermissions('Vendedor').leads, create: 'none' },
+        contacts: { read: 'none', create: 'none', update: 'none', delete: 'none', import: 'none', export: 'none' },
+        companies: { read: 'none', create: 'none', update: 'none', delete: 'none', import: 'none', export: 'none' },
+        products: { read: 'none', create: 'none', update: 'none', delete: 'none', import: 'none', export: 'none' },
+        deals: { read: 'own', create: 'all', update: 'none', delete: 'none', import: 'none', export: 'all' }
+      }
+    },
+    preloadState: (() => {
+      const workspace = workspaceWithDeal();
+      workspace.users.push({ id: 'u-vera', name: 'Vera Vendas', role: 'Vendedor', team: 'Vendas CMS', status: 'Ativo' });
+      workspace.companies.push({ id: 'E-900', name: 'Empresa Restrita', restricted: true });
+      workspace.deals.push({
+        id: 'N-900', title: 'Negócio da Vendedora', company: 'Empresa Restrita', companyId: 'E-900', contact: '', amount: 1000,
+        stage: DEAL_STAGES[0], responsibleId: 'u-vera', assistants: [], updatedAt: '1 out, 10:00', quotes: [], stageHistory: []
+      });
+      return workspace;
+    })()
+  });
+
+  await run('PERM-03 exportar envia os registros filtrados e baixa o CSV', async page => {
+    const api = apiByPage.get(page);
+    await page.locator('.nav [data-view="deals"]').click();
+    const deals = page.locator('#page-deals');
+    const download = page.waitForEvent('download');
+    await deals.getByRole('button', { name: '⇩ Exportar' }).click();
+    const file = await download;
+    assert.equal(file.suggestedFilename(), 'smart-crm-deals-2026-11-17.csv');
+    await page.locator('#toastRegion').getByText('Arquivo exportado.', { exact: true }).waitFor();
+    assert.deepEqual(api.exportRequests, [{ module: 'deals', body: { ids: ['deal-pipeline-active'] } }]);
+    // Import shows only the modules the profile may import.
+    await page.locator('.nav [data-view="dashboard"]').click();
+    await page.locator('[data-action="open-bitrix-import"]').click();
+    const dialog = page.locator('#bitrixImportDialog');
+    assert.equal(await dialog.locator('#bitrixDealFile').isVisible(), true);
+    assert.equal(await dialog.locator('#bitrixLeadFile').isVisible(), false);
+  }, {
+    session: {
+      user_id: 'u-gil', user_name: 'Gil Gestor', role: 'Gestor',
+      permissions: {
+        ...defaultRolePermissions('Gestor'),
+        deals: { read: 'all', create: 'all', update: 'all', delete: 'all', import: 'all', export: 'all' }
+      }
+    },
+    preloadState: (() => {
+      const workspace = workspaceWithDeal();
+      workspace.users.push({ id: 'u-gil', name: 'Gil Gestor', role: 'Gestor', team: 'Gestão', status: 'Ativo' });
+      return workspace;
+    })()
   });
 
   await run('AUTH-EXP sessão expirada durante o uso volta para o login', async page => {
