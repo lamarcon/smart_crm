@@ -107,5 +107,6 @@
   "Schema do workspace não foi inicializado": "Workspace schema was not initialized",
   "E-mail já pertence a um usuário ativo": "Email already belongs to an active user",
   "Somente Administrador e Gestor podem alterar produtos.": "Only Administrators and Managers can change products.",
-  "Idioma não suportado.": "Unsupported language."
+  "Idioma não suportado.": "Unsupported language.",
+  "Permissões inválidas.": "Invalid permissions."
 }

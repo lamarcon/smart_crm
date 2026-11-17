@@ -108,10 +108,17 @@ class SessionResponse(AuthContractModel):
     email: str = Field(min_length=3, max_length=254)
     role: RoleName
     locale: LocaleName = "pt-BR"
+    # {module: {action: scope}} the signed-in user's role is allowed.
+    permissions: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class PreferencesRequest(AuthContractModel):
     locale: LocaleName
+
+
+class PermissionsRequest(AuthContractModel):
+    # {role: {module: {action: scope}}} for every configurable role.
+    roles: dict[str, dict[str, dict[str, str]]]
 
 
 class AuthErrorResponse(AuthContractModel):

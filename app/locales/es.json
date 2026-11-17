@@ -107,5 +107,6 @@
   "Schema do workspace não foi inicializado": "El esquema del workspace no se inicializó",
   "E-mail já pertence a um usuário ativo": "El correo ya pertenece a un usuario activo",
   "Somente Administrador e Gestor podem alterar produtos.": "Solo el Administrador y el Gerente pueden modificar productos.",
-  "Idioma não suportado.": "Idioma no admitido."
+  "Idioma não suportado.": "Idioma no admitido.",
+  "Permissões inválidas.": "Permisos no válidos."
 }

@@ -28,7 +28,23 @@ from app.auth import (
 )
 from app.database import Database, database
 from app.i18n import SUPPORTED_LOCALES, ErrorMessageTranslationMiddleware, write_user_locale
-from app.policies import Action, can_perform_action
+from app.policies import (
+    ADMIN_ROLE,
+    CONFIGURABLE_ROLES,
+    MODULE_ACTIONS,
+    MODULES,
+    Action,
+    allowed_scopes,
+    can_perform_action,
+    effective_permissions,
+    permissions_payload,
+)
+from app.repositories.permissions import (
+    InvalidPermissionError,
+    read_all_role_permissions,
+    replace_role_permissions,
+    validate_matrix,
+)
 from app.schemas import (
     ACCOUNT_USER_ID_MAX_LENGTH,
     INVALID_ACTION_LINK_MESSAGE,
@@ -58,6 +74,7 @@ from app.schemas import (
     LocateTenantResponse,
     LoginRequest,
     ObservationCreateRequest,
+    PermissionsRequest,
     PreferencesRequest,
     ResetRequest,
     RestoreRequest,
@@ -179,6 +196,9 @@ def _session_payload(context: SessionContext) -> SessionResponse:
         email=context.email,
         role=context.principal.role,
         locale=context.locale if context.locale in SUPPORTED_LOCALES else "pt-BR",
+        permissions=permissions_payload(
+            effective_permissions(context.principal.role, context.principal.permissions or ())
+        ),
     )
 
 
@@ -1063,6 +1083,52 @@ def create_app(
         ):
             return _error(404, "record_not_found", "Registro não encontrado.")
         return {"locale": payload.locale}
+
+    def _permissions_answer(session, workspace_id: str) -> dict:  # noqa: ANN001
+        stored = read_all_role_permissions(session, workspace_id)
+        return {
+            "roles": {
+                role: permissions_payload(effective_permissions(role, stored[role]))
+                for role in CONFIGURABLE_ROLES
+            },
+            "defaults": {
+                role: permissions_payload(effective_permissions(role)) for role in CONFIGURABLE_ROLES
+            },
+            "administrator": permissions_payload(effective_permissions(ADMIN_ROLE)),
+            "options": {
+                module: {action: list(allowed_scopes(module, action)) for action in MODULE_ACTIONS}
+                for module in MODULES
+            },
+        }
+
+    @app.get("/api/permissions")
+    def read_permissions(principal: ResolvedPrincipal = Depends(resolve_principal)):  # noqa: ANN202
+        require_action(principal, Action.MANAGE_USERS)
+        response = JSONResponse(
+            _permissions_answer(principal.tenant_session, principal.context.principal.workspace_id)
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.put("/api/permissions")
+    def update_permissions(
+        payload: PermissionsRequest,
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ):  # noqa: ANN202
+        require_action(principal, Action.MANAGE_USERS)
+        try:
+            rows = validate_matrix(payload.roles)
+        except InvalidPermissionError as error:
+            return _error(422, "validation_error", "Permissões inválidas.", field=f"roles.{error}")
+        workspace_id = principal.context.principal.workspace_id
+        replace_role_permissions(principal.tenant_session, workspace_id, rows)
+        LOG.info(
+            "role permissions updated",
+            extra={"workspace_id": workspace_id, "user_id": principal.context.principal.user_id},
+        )
+        response = JSONResponse(_permissions_answer(principal.tenant_session, workspace_id))
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.post("/api/workspace/bootstrap", status_code=201)
     def bootstrap_workspace(

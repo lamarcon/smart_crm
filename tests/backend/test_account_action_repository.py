@@ -25,7 +25,7 @@ TEST_DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
-TENANT_HEAD = "f2b8d4a6c1e9"
+TENANT_HEAD = "c4e8a2f6b9d1"
 WORKSPACE_ID = "default"
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
 

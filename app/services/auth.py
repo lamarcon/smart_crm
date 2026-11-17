@@ -16,6 +16,7 @@ from app.control_models import LoginThrottle
 from app.i18n import read_user_locale
 from app.models import CrmUser
 from app.policies import CURRENT_ROLES, PrincipalScope
+from app.repositories.permissions import read_role_permissions
 from app.schemas import LOGIN_FAILURE_MESSAGE
 from app.security.passwords import (
     IDLE_SESSION_TTL,
@@ -50,6 +51,8 @@ class TenantUserIdentity:
     team_id: str | None
     status: str
     locale: str = "pt-BR"
+    # Stored permission cells of the user's role; None means the defaults.
+    permissions: tuple[tuple[str, str, str], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -149,6 +152,7 @@ def _identity(user: CrmUser | None) -> TenantUserIdentity | None:
         team_id=user.team_id,
         status=user.status,
         locale=read_user_locale(object_session(user), user.workspace_id, user.id),
+        permissions=read_role_permissions(object_session(user), user.workspace_id, user.role),
     )
 
 
@@ -391,6 +395,7 @@ class AuthService:
                 role=user.role,
                 team_id=user.team_id,
                 auth_version=user.auth_version,
+                permissions=getattr(user, "permissions", None),
             ),
             tenant_slug=tenant.slug,
             tenant_display_name=tenant.display_name,

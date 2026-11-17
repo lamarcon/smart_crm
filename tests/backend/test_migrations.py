@@ -20,7 +20,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 ACTIVITY_HEAD = "e1c4a7b9d2f6"
-TENANT_HEAD = "f2b8d4a6c1e9"
+TENANT_HEAD = "c4e8a2f6b9d1"
 
 
 def alembic_config(connection=None) -> Config:  # noqa: ANN001
@@ -386,3 +386,33 @@ def test_products_and_lead_intake_keys_have_constraints_and_tenant_rls(isolated_
     assert "product_id" not in {item["name"] for item in inspect(connection).get_columns("quotes", schema=schema)}
     command.upgrade(config, "head")
     assert {"products", "lead_intake_keys"} <= set(inspect(connection).get_table_names(schema=schema))
+
+
+def test_role_permissions_table_has_checks_tenant_rls_and_round_trips(isolated_migration) -> None:
+    connection, schema, config = isolated_migration
+    command.upgrade(config, "head")
+    inspector = inspect(connection)
+    checks = {item["name"] for item in inspector.get_check_constraints("role_permissions", schema=schema)}
+    assert {
+        "ck_role_permissions_valid_role", "ck_role_permissions_valid_module",
+        "ck_role_permissions_valid_action", "ck_role_permissions_valid_scope",
+    } <= checks
+    assert inspector.get_pk_constraint("role_permissions", schema=schema)["constrained_columns"] == [
+        "workspace_id", "role", "module", "action",
+    ]
+    row = connection.execute(
+        text(
+            "SELECT c.relrowsecurity, c.relforcerowsecurity, "
+            "EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = :schema AND p.tablename = c.relname "
+            "AND p.policyname = 'smartcrm_workspace_scope') "
+            "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = :schema AND c.relname = 'role_permissions'"
+        ),
+        {"schema": schema},
+    ).one()
+    assert tuple(row) == (True, True, True)
+
+    command.downgrade(config, "f2b8d4a6c1e9")
+    assert "role_permissions" not in set(inspect(connection).get_table_names(schema=schema))
+    command.upgrade(config, "head")
+    assert "role_permissions" in set(inspect(connection).get_table_names(schema=schema))
