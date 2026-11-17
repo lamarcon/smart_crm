@@ -348,7 +348,7 @@ def test_invite_creates_one_pending_disabled_user_and_sends_after_commit(
         NOW + timedelta(hours=48),
     )
     assert tokens[0].token_digest != raw_token
-    assert mail.messages[0].subject == "Você foi convidado para o Smart CRM da BRBots"
+    assert mail.messages[0].subject == "BRBots convidou você para o Smart CRM"
     assert mail.messages[0].action_link.startswith(
         "https://crm.example.test/brbots/accept-invite#token="
     )
@@ -696,7 +696,7 @@ def test_resent_invitation_email_carries_one_fresh_link_bound_to_the_live_token(
     second_token = second.action_link.split("#token=", 1)[1]
     tokens = _read_tokens(account_access_database_url, invited.user_id)
     live = [token for token in tokens if token.invalidated_at is None]
-    assert second.subject == "Você foi convidado para o Smart CRM da BRBots"
+    assert second.subject == "BRBots convidou você para o Smart CRM"
     assert second.action_link.startswith(
         "https://crm.example.test/brbots/accept-invite#token="
     )
@@ -2052,3 +2052,35 @@ def test_sent_invitation_is_not_an_error_when_only_recording_the_delivery_fails(
     assert (token.delivery_status, token.invalidated_at, token.consumed_at) == ("pending", None, None)
     raw_token = mail.messages[-1].action_link.split("#token=", 1)[1]
     assert service.inspect_action("brbots", "invitation", raw_token).email == email
+
+
+def test_invitation_email_names_invitee_inviter_role_and_note(account_access_database_url: str) -> None:
+    from dataclasses import replace
+
+    actor_id = f"admin-{uuid.uuid4().hex}"
+    email = f"note-{uuid.uuid4().hex}@example.test"
+    _seed_user(
+        account_access_database_url,
+        user_id=actor_id,
+        email=f"{actor_id}@example.test",
+        role="Administrador",
+        status="Ativo",
+        auth_enabled=True,
+        password_hash="$argon2id$existing",
+    )
+    mail = InMemoryMailSender()
+    service, _router, _audit = _service(account_access_database_url, mail)
+
+    service.invite(
+        TENANT_ID,
+        _principal(actor_id),
+        replace(_command(email), message="  Bem-vinda ao time!  "),
+        "203.0.113.10",
+    )
+
+    body = mail.messages[0].text_body
+    assert "Olá, Funcionário!" in body
+    assert f"{actor_id}, da BRBots, convidou você" in body  # the seeded admin's name is its id
+    assert f"Mensagem de {actor_id}:\nBem-vinda ao time!" in body
+    assert "Perfil: Vendedor" in body
+    assert f"Seu login: {email}" in body

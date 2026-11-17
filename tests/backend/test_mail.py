@@ -71,7 +71,7 @@ def smtp_settings(tls_mode: str = "starttls") -> SmtpSettings:
 @pytest.mark.parametrize(
     ("renderer", "subject_fragment", "path_fragment"),
     [
-        (render_invitation_email, "Você foi convidado", "accept"),
+        (render_invitation_email, "convidou você para o Smart CRM", "accept"),
         (render_password_reset_email, "Redefina sua senha", "reset"),
     ],
 )
@@ -87,7 +87,9 @@ def test_fixed_templates_include_identity_and_escape_html(
     assert COMPANY in message.subject
     assert COMPANY in message.text_body
     assert message.text_body.count(message.action_link) == 1
-    assert message.html_body.count("href=") == 1
+    # The button and the fallback address point to the same link.
+    assert message.html_body.count("href=") == 2
+    assert message.html_body.count('href="https://crm.example/brbots/') == 2
     assert message.html_body.count("&lt;") >= 2
     assert "<Comercial>" not in message.html_body
     assert 'next=<login>' not in message.html_body
@@ -127,7 +129,7 @@ def test_smtp_sender_uses_starttls_before_authentication(monkeypatch) -> None:  
         "exit",
     ]
     assert client.message is not None
-    assert client.message["From"] == "Smart CRM — BRBots <smart-crm@example.com>"
+    assert client.message["From"] == "BRBots · Smart CRM <smart-crm@example.com>"
     assert client.message["To"] == RECIPIENT
 
 
@@ -406,3 +408,61 @@ def test_smtp_smoke_reports_an_unreadable_secret(monkeypatch, capsys) -> None:  
 
     assert code == 2
     assert capsys.readouterr().out.strip() == "smtp smoke: FAIL code=smtp_password_unreadable"
+
+
+def test_invitation_names_the_company_people_role_and_optional_note() -> None:
+    message = render_invitation_email(
+        "BRBots",
+        "juliana@brbots.com",
+        "https://sc2030.brbots.com/brbots/accept-invite#token=abc",
+        recipient_name="Juliana Lima",
+        inviter_name="Luiz Felipe",
+        role="Vendedor",
+        message="Bem-vinda!\n<b>Seus Leads</b> já estão no funil.",
+    )
+    assert message.subject == "BRBots convidou você para o Smart CRM"
+    for text in (
+        "Olá, Juliana!",
+        "Luiz Felipe, da BRBots, convidou você para acessar o Smart CRM da empresa.",
+        "Mensagem de Luiz Felipe:",
+        "Empresa: BRBots",
+        "Endereço: https://sc2030.brbots.com/brbots",
+        "Perfil: Vendedor",
+        "Seu login: juliana@brbots.com",
+        "O link vale por 48 horas.",
+        "Enviado pelo Smart CRM em nome da BRBots.",
+    ):
+        assert text in message.text_body, text
+    assert "Aceitar convite da BRBots" in message.html_body
+    assert "&lt;b&gt;Seus Leads&lt;/b&gt;" in message.html_body
+    assert "<b>Seus Leads</b>" not in message.html_body
+    assert ">BR<" in message.html_body  # company initials in the header
+
+
+def test_invitation_without_names_or_note_stays_complete() -> None:
+    message = render_invitation_email("ACME Ltda", "ana@example.test", "https://crm.test/acme/accept-invite#token=x")
+    assert "Olá!" in message.text_body
+    assert "A ACME Ltda convidou você" in message.text_body
+    assert "Mensagem" not in message.text_body
+    assert "Perfil" not in message.text_body
+    assert ">AL<" in message.html_body
+
+
+def test_invitation_translates_role_and_texts() -> None:
+    message = render_invitation_email(
+        "ACME", "ann@example.test", "https://crm.test/acme/accept-invite#token=x", "en",
+        recipient_name="Ann Smith", inviter_name="Bob", role="Gestor",
+    )
+    assert "Hi Ann," in message.text_body
+    assert "Bob from ACME invited you" in message.text_body
+    assert "Role: Manager" in message.text_body
+
+
+def test_password_reset_greets_the_person_and_reassures_them() -> None:
+    message = render_password_reset_email(
+        "BRBots", "ana@brbots.com", "https://sc2030.brbots.com/brbots/reset-password#token=x", recipient_name="Ana Souza",
+    )
+    assert "Olá, Ana!" in message.text_body
+    assert "sua senha atual continua valendo" in message.text_body
+    assert "Criar nova senha" in message.html_body
+    assert "Endereço: https://sc2030.brbots.com/brbots" in message.text_body

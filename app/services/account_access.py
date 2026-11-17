@@ -109,6 +109,8 @@ class InvitationCommand:
     role: str
     team_name: str | None = None
     locale: str = "pt-BR"
+    # Optional note from the administrator, shown in the invitation e-mail.
+    message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -154,6 +156,10 @@ class _PreparedInvitation:
     action: str
     workspace_version: int | None = None
     locale: str = "pt-BR"
+    name: str = ""
+    role: str = ""
+    inviter_name: str = ""
+    message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +169,7 @@ class _PreparedReset:
     token_id: UUID
     raw_token: str
     locale: str = "pt-BR"
+    name: str = ""
 
 
 class TenantRouter(Protocol):
@@ -276,6 +283,7 @@ class AccountAccessService:
             role=command.role,
             team_name=team_name,
             locale=command.locale if command.locale in SUPPORTED_LOCALES else "pt-BR",
+            message=(command.message or "").strip()[:500] or None,
         )
 
     @staticmethod
@@ -288,6 +296,15 @@ class AccountAccessService:
         if team is None:
             session.add(Team(id=command.team_id, workspace_id=workspace_id, name=command.team_name))
             session.flush()
+
+    @staticmethod
+    def _user_name(session: Session, workspace_id: str, user_id: str) -> str:
+        """Name of the administrator sending an invitation, for the e-mail."""
+
+        name = session.scalar(
+            select(CrmUser.name).where(CrmUser.workspace_id == workspace_id, CrmUser.id == user_id)
+        )
+        return str(name or "")
 
     @staticmethod
     def _account_by_email(session: Session, workspace_id: str, email: str) -> CrmUser | None:
@@ -419,6 +436,10 @@ class AccountAccessService:
                         action="created" if created else "resent",
                         workspace_version=self._advance_workspace_version(workspace),
                         locale=command.locale,
+                        name=user.name or "",
+                        role=user.role or "",
+                        inviter_name=self._user_name(session, workspace_id, actor.user_id),
+                        message=command.message,
                     )
             except IntegrityError:
                 if attempt == 0:
@@ -471,6 +492,9 @@ class AccountAccessService:
                 action="resent",
                 workspace_version=self._advance_workspace_version(workspace),
                 locale=read_user_locale(session, workspace_id, user.id),
+                name=user.name or "",
+                role=user.role or "",
+                inviter_name=self._user_name(session, workspace_id, actor.user_id),
             )
 
     def _deliver(
@@ -503,6 +527,10 @@ class AccountAccessService:
                 f"#token={prepared.raw_token}"
             ),
             prepared.locale,
+            recipient_name=prepared.name,
+            inviter_name=prepared.inviter_name,
+            role=prepared.role,
+            message=prepared.message,
         )
         delivery_status = "sent"
         failure_code = None
@@ -1021,6 +1049,7 @@ class AccountAccessService:
                 token_id=token.id,
                 raw_token=raw_token,
                 locale=read_user_locale(session, user.workspace_id, user.id),
+                name=user.name or "",
             )
 
     def _deliver_reset(self, tenant, prepared: _PreparedReset) -> None:  # noqa: ANN001
@@ -1032,6 +1061,7 @@ class AccountAccessService:
                 f"#token={prepared.raw_token}"
             ),
             prepared.locale,
+            recipient_name=prepared.name,
         )
         delivery_status = "sent"
         failure_code = None

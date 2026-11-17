@@ -4718,6 +4718,7 @@ async function storageEntries(page) {
     await dialog.getByLabel('Cargo profissional').fill(values.jobTitle || 'Consultora comercial');
     await dialog.getByLabel('Equipe').fill(values.team || 'Vendas CMS');
     await dialog.getByLabel('Perfil de acesso').selectOption(values.role || 'Vendedor');
+    if (values.message !== undefined) await dialog.getByLabel('Mensagem no convite (opcional)').fill(values.message);
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
     return dialog;
   }
@@ -4747,7 +4748,7 @@ async function storageEntries(page) {
     const [request] = api.userRequests;
     assert.deepEqual(
       { method: request.method, path: request.path, body: request.body },
-      { method: 'POST', path: '/api/users/invitations', body: { name: 'Juliana Lima', email: 'Juliana@Teste.Invalid', jobTitle: 'Consultora comercial', team: 'Vendas CMS', role: 'Vendedor', locale: 'pt-BR' } }
+      { method: 'POST', path: '/api/users/invitations', body: { name: 'Juliana Lima', email: 'Juliana@Teste.Invalid', jobTitle: 'Consultora comercial', team: 'Vendas CMS', role: 'Vendedor', locale: 'pt-BR', message: null } }
     );
     const row = page.locator('tr', { has: page.getByText('juliana@teste.invalid', { exact: true }) });
     assert.equal(await row.locator('.tag').first().innerText(), 'Pendente');
@@ -4757,6 +4758,20 @@ async function storageEntries(page) {
     assert.equal(juliana.status, 'Pendente');
     assert.equal(api.workspaceWrites.length, writesBefore, 'o convite não deve gravar o snapshot');
     assert.equal((await assignableUserIds(page)).includes(juliana.id), false);
+  });
+
+  await run('INVUI-09 mensagem opcional segue no convite e não aparece ao editar', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Usuários e permissões');
+    const dialog = await inviteFromDialog(page, { name: 'Marina Nota', email: 'marina@teste.invalid', message: '  Bem-vinda ao time!\nQualquer dúvida, me chame.  ' });
+    await page.locator('#toastRegion').getByText('Convite enviado para marina@teste.invalid.', { exact: true }).waitFor();
+    const sent = api.userRequests.find(item => item.path === '/api/users/invitations');
+    assert.equal(sent.body.message, 'Bem-vinda ao time!\nQualquer dúvida, me chame.');
+    await page.getByRole('button', { name: 'Convidar funcionário' }).click();
+    assert.equal(await dialog.getByLabel('Mensagem no convite (opcional)').inputValue(), '');
+    await dialog.locator('[data-close="userDialog"]').first().click();
+    await page.locator('[data-action="edit-user"]').first().click();
+    assert.equal(await page.locator('#userMessageField').isHidden(), true);
   });
 
   await run('INVUI-08 aba do administrador acompanha a versão avançada pelo convite e salva sem conflito', async page => {

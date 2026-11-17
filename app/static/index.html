@@ -807,6 +807,7 @@
         <div class="field"><label for="userTeam">Equipe</label><input id="userTeam" name="team" required></div>
         <div class="field full"><label for="userRole">Perfil de acesso</label><select id="userRole" name="role" required><option value="Administrador">Administrador</option><option value="Gestor">Gestor</option><option value="Vendedor" selected>Vendedor</option><option value="Assistente">Assistente</option><option value="Faturamento">Faturamento</option></select><span class="hint">O perfil define permissões; o cargo descreve a função profissional.</span></div>
         <div class="field full" id="userLocaleField"><label for="userLocale">Idioma do convite</label><select id="userLocale" name="locale" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select><span class="hint">O e-mail de convite e a tela começam neste idioma.</span></div>
+        <div class="field full" id="userMessageField"><label for="userMessage">Mensagem no convite (opcional)</label><textarea id="userMessage" name="message" rows="3" maxlength="500" placeholder="Bem-vinda ao time! Seus Leads já estão no funil."></textarea><span class="hint">Aparece no e-mail, logo abaixo da saudação.</span></div>
       </div><p class="field-manager-error" id="userDialogError" role="alert"></p></div>
       <div class="modal-foot"><button type="button" class="button" data-close="userDialog">Fechar</button><button type="submit" class="button primary" id="userSubmitButton">Enviar convite</button></div>
     </form>
@@ -3243,6 +3244,8 @@
       // The invitation language only applies to new invitations.
       document.getElementById('userLocale').value = currentLocale();
       document.getElementById('userLocaleField').hidden = Boolean(user);
+      document.getElementById('userMessage').value = '';
+      document.getElementById('userMessageField').hidden = Boolean(user);
       document.getElementById('userDialogError').textContent = '';
       document.getElementById('userDialog').showModal();
       return true;
@@ -3319,7 +3322,8 @@
       try {
         const payload = await postUserAction('/api/users/invitations', {
           name: data.name.trim(), email: data.email.trim(), jobTitle: data.jobTitle.trim(),
-          team: data.team.trim() || null, role: data.role, locale: data.locale || 'pt-BR'
+          team: data.team.trim() || null, role: data.role, locale: data.locale || 'pt-BR',
+          message: String(data.message || '').trim() || null
         });
         const user = applyServerUser(payload.user);
         adoptWorkspaceVersion(payload.workspaceVersion);

@@ -157,6 +157,15 @@ class InvitationCreateRequest(AccountAdminContractModel):
     team: str | None = Field(default=None, min_length=1, max_length=255)
     role: RoleName
     locale: LocaleName = "pt-BR"
+    # Optional note from the administrator, shown in the invitation e-mail.
+    message: str | None = Field(default=None, max_length=500)
+
+    @field_validator("message", mode="before")
+    @classmethod
+    def strip_optional_message(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            value = value.strip()
+        return value or None
 
     @field_validator("name", "job_title", mode="before")
     @classmethod

@@ -737,5 +737,8 @@ window.SMART_CRM_I18N['es'] = {
   "Arquivo exportado.": "Archivo exportado.",
   "{p9} em pipeline{p10}": "{p9} en pipeline{p10}",
   "＋ Novo {p1}": "＋ Nuevo {p1}",
-  "{p6} registro(s) visível(is)": "{p6} registro(s) visible(s)"
+  "{p6} registro(s) visível(is)": "{p6} registro(s) visible(s)",
+  "Mensagem no convite (opcional)": "Mensaje en la invitación (opcional)",
+  "Bem-vinda ao time! Seus Leads já estão no funil.": "¡Bienvenida al equipo! Tus Leads ya están en el embudo.",
+  "Aparece no e-mail, logo abaixo da saudação.": "Aparece en el correo, justo debajo del saludo."
 };

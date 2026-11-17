@@ -80,8 +80,8 @@ def test_translate_fills_variable_parts() -> None:
     message = "Já existe um produto com o código LIC-01 (P-7)."
     assert translate(message, "en") == "A product with the code LIC-01 already exists (P-7)."
     assert translate(message, "es") == "Ya existe un producto con el código LIC-01 (P-7)."
-    assert translate("Você foi convidado para o Smart CRM da {company}", "en", company="ACME") == (
-        "You have been invited to ACME's Smart CRM"
+    assert translate("Aceitar convite da {company}", "en", company="ACME") == (
+        "Accept ACME's invitation"
     )
 
 
@@ -185,9 +185,10 @@ def test_portuguese_and_success_answers_are_untouched() -> None:
 @pytest.mark.parametrize(
     ("locale", "subject", "label"),
     [
-        ("pt-BR", "Você foi convidado para o Smart CRM da ACME", "Aceitar convite"),
-        ("en", "You have been invited to ACME's Smart CRM", "Accept invitation"),
-        ("es", "Has sido invitado al Smart CRM de ACME", "Aceptar invitación"),
+        ("pt-BR", "ACME convidou você para o Smart CRM", "Aceitar convite da ACME"),
+        ("en", "ACME invited you to Smart CRM", "Accept ACME&#x27;s invitation"),
+        ("es", "ACME te invitó a Smart CRM", "Aceptar la invitación de ACME"),
+        ("pt-PT", "A ACME enviou-lhe um convite para o Smart CRM", "A ligação é válida durante 48 horas."),
     ],
 )
 def test_invitation_email_is_written_in_the_requested_language(locale, subject, label) -> None:  # noqa: ANN001
@@ -199,7 +200,8 @@ def test_invitation_email_is_written_in_the_requested_language(locale, subject, 
 def test_password_reset_email_is_written_in_the_requested_language() -> None:
     message = render_password_reset_email("ACME", "ana@example.test", "https://crm.test/acme/reset-password#token=x", "es")
     assert message.subject == "Restablece tu contraseña en el Smart CRM de ACME"
-    assert "Restablecer contraseña" in message.html_body
+    assert "Crear nueva contraseña" in message.html_body
+    assert "tu contraseña actual sigue siendo válida" in message.text_body
 
 
 # --- The user's language, live ------------------------------------------------------------
@@ -232,7 +234,7 @@ def test_user_language_is_saved_returned_by_the_session_and_used_for_invitations
         json={"name": "Ann", "email": email, "jobTitle": "Sales", "team": "Global", "role": "Vendedor", "locale": "en"},
     )
     assert created.status_code == 201, created.text
-    assert live_stack.mail.messages[-1].subject == "You have been invited to BRBots's Smart CRM"
+    assert live_stack.mail.messages[-1].subject == "BRBots invited you to Smart CRM"
     assert _stored_locale(live_stack.database_url, created.json()["user"]["id"]) == "en"
 
     default = live_stack.client.post(
@@ -241,7 +243,7 @@ def test_user_language_is_saved_returned_by_the_session_and_used_for_invitations
         json={"name": "Bia", "email": f"pt-{uuid.uuid4().hex[:8]}@example.test", "jobTitle": "Vendas", "team": "Global", "role": "Vendedor"},
     )
     assert default.status_code == 201, default.text
-    assert live_stack.mail.messages[-1].subject == "Você foi convidado para o Smart CRM da BRBots"
+    assert live_stack.mail.messages[-1].subject == "BRBots convidou você para o Smart CRM"
 
 
 def _stored_locale(database_url: str, user_id: str) -> str:

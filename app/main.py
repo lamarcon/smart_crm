@@ -846,6 +846,7 @@ def create_app(
                     role=payload.role,
                     team_name=payload.team,
                     locale=payload.locale,
+                    message=payload.message,
                 ),
                 source_ip(request),
             )
