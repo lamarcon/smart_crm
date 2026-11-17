@@ -3789,6 +3789,7 @@ async function storageEntries(page) {
     assert.equal(await page.locator('#topTitle').innerText(), 'Visão geral');
     assert.equal(await page.locator('#page-dashboard [data-action="new"][data-entity="lead"]').count(), 0);
     assert.equal(await page.locator('#page-dashboard [data-action="open-bitrix-import"]').count(), 0);
+    assert.equal(await page.locator('#page-leads [data-action="new"]').count(), 0);
     await page.locator('.nav [data-view="deals"]').click();
     const deals = page.locator('#page-deals');
     await deals.getByText('Negócio da Vendedora').waitFor();
@@ -3833,6 +3834,11 @@ async function storageEntries(page) {
     assert.equal(file.suggestedFilename(), 'smart-crm-deals-2026-11-17.csv');
     await page.locator('#toastRegion').getByText('Arquivo exportado.', { exact: true }).waitFor();
     assert.deepEqual(api.exportRequests, [{ module: 'deals', body: { ids: ['deal-pipeline-active'] } }]);
+    // Name-only linked records are never listed nor offered.
+    await page.locator('.nav [data-view="companies"]').click();
+    await page.locator('#page-companies').getByText('Empresa Aberta').waitFor();
+    assert.equal(await page.locator('#page-companies').getByText('Empresa Oculta').count(), 0);
+    assert.deepEqual(await page.evaluate(() => listed('companies').map(item => item.id)), ['E-902']);
     // Import shows only the modules the profile may import.
     await page.locator('.nav [data-view="dashboard"]').click();
     await page.locator('[data-action="open-bitrix-import"]').click();
@@ -3850,6 +3856,8 @@ async function storageEntries(page) {
     preloadState: (() => {
       const workspace = workspaceWithDeal();
       workspace.users.push({ id: 'u-gil', name: 'Gil Gestor', role: 'Gestor', team: 'Gestão', status: 'Ativo' });
+      workspace.companies.push({ id: 'E-901', name: 'Empresa Oculta', restricted: true });
+      workspace.companies.push({ id: 'E-902', name: 'Empresa Aberta', city: '', segment: '', phone: '', ownerId: 'u-gil' });
       return workspace;
     })()
   });

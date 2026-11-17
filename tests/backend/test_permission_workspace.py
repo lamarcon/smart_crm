@@ -166,3 +166,24 @@ def test_hidden_records_survive_a_save_untouched() -> None:
     assert ids(merged.products) == {"P-1"}
     assert merged.products[0] == state().products[0]
     assert ids(merged.contacts) == {"C-1"}
+
+
+def test_taking_over_a_record_outside_the_edit_scope_is_rejected() -> None:
+    # E-2 is readable (companies read "all") but belongs to someone else.
+    def take_over(submitted: WorkspaceState) -> None:
+        other = next(record for record in submitted.companies if record["id"] == "E-2")
+        other.update(name="Mine now", ownerId="u-seller")
+
+    with pytest.raises(WorkspaceAuthorizationError):
+        _submit(seller(("companies", "update", "own")), take_over)
+
+
+def test_records_outside_the_read_scope_cannot_be_edited_even_with_wide_edit_rights() -> None:
+    subject = seller(("leads", "read", "own"), ("leads", "update", "all"))
+
+    def forge(submitted: WorkspaceState) -> None:
+        hidden = next(record for record in state().leads if record["id"] == "L-hidden")
+        submitted.leads.append({**hidden, "name": "Stolen"})
+
+    with pytest.raises(WorkspaceAuthorizationError):
+        _submit(subject, forge)

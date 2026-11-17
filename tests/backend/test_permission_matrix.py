@@ -158,3 +158,19 @@ def test_permissions_payload_lists_every_module_and_action() -> None:
     assert list(payload) == list(MODULES)
     assert payload["leads"] == {"read": "own", "create": "all", "update": "own", "delete": "own", "import": "none", "export": "none"}
     assert payload["products"]["update"] == "none"
+
+
+def test_deal_sql_filter_follows_the_read_scope_only() -> None:
+    from sqlalchemy.dialects import postgresql
+
+    from app.policies import deal_visibility_predicate
+
+    def sql(subject: PrincipalScope) -> str:
+        return str(deal_visibility_predicate(subject).compile(dialect=postgresql.dialect()))
+
+    wide_read = principal("Vendedor", permissions=(("deals", "read", "all"), ("deals", "update", "none")))
+    assert "responsible_id" not in sql(wide_read) and "team_id" not in sql(wide_read)
+    team_read = principal("Vendedor", permissions=(("deals", "read", "team"), ("deals", "update", "all")))
+    assert "team_id" in sql(team_read)
+    no_read = principal("Vendedor", permissions=(("deals", "read", "none"), ("deals", "update", "all")))
+    assert "false" in sql(no_read).lower()
