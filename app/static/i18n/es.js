@@ -714,5 +714,6 @@ window.SMART_CRM_I18N['es'] = {
   "Lead voltou a falar": "El Lead volvió a escribir",
   "{0} enviou um novo contato pelo canal {1}.": "{0} envió un nuevo contacto por el canal {1}.",
   "Novo Lead pelo canal {0}": "Nuevo Lead por el canal {0}",
-  "{0} chegou pela captação automática ({1}).": "{0} llegó por la captación automática ({1})."
+  "{0} chegou pela captação automática ({1}).": "{0} llegó por la captación automática ({1}).",
+  "Sua sessão expirou. Entre novamente para continuar.": "Tu sesión ha caducado. Inicia sesión de nuevo para continuar."
 };

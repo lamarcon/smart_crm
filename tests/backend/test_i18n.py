@@ -50,6 +50,11 @@ SLOT = re.compile(r"\{\w+\}")
         ("en-US,en;q=0.9", "en"),
         ("es-AR", "es"),
         ("pt", "pt-BR"),
+        ("pt-PT", "pt-PT"),
+        ("pt-pt,pt;q=0.8", "pt-PT"),
+        ("pt-AO", "pt-PT"),
+        ("pt-BR, pt-PT;q=0.9", "pt-BR"),
+        ("pt-PTX", "pt-BR"),
         ("fr-FR, es;q=0.8, en;q=0.5", "es"),
         ("de, fr", "pt-BR"),
         ("en;q=0, es", "es"),
@@ -274,6 +279,30 @@ def test_errors_reach_the_client_in_its_language(live_stack: LiveStack) -> None:
 
 
 def test_supported_locales_match_the_database_rule() -> None:
-    migration = (ROOT / "migrations" / "versions" / "e9a4c2b7d1f3_add_user_locale.py").read_text(encoding="utf-8")
-    assert "locale IN ('pt-BR', 'en', 'es')" in migration
-    assert SUPPORTED_LOCALES == ("pt-BR", "en", "es")
+    migration = (ROOT / "migrations" / "versions" / "f2b8d4a6c1e9_allow_portuguese_from_portugal.py").read_text(encoding="utf-8")
+    assert "locale IN ('pt-BR', 'pt-PT', 'en', 'es')" in migration
+    assert SUPPORTED_LOCALES == ("pt-BR", "pt-PT", "en", "es")
+    for locale in SUPPORTED_LOCALES[1:]:
+        assert (ROOT / "app" / "static" / "i18n" / f"{locale}.js").is_file(), locale
+        assert (ROOT / "app" / "locales" / f"{locale}.json").is_file(), locale
+
+
+# --- Portuguese from Portugal --------------------------------------------------------------
+# pt-PT lists only the texts that differ from Brazilian Portuguese; the rest is shown as is.
+
+def test_portuguese_from_portugal_only_rewrites_known_texts_and_keeps_slots() -> None:
+    interface = _interface_dictionary("pt-PT")
+    server = catalog_entries("pt-PT")
+    assert len(interface) > 150 and len(server) > 30
+    for dictionary, source in ((interface, _interface_dictionary("en")), (server, catalog_entries("en"))):
+        assert set(dictionary) <= set(source)
+        for key, value in dictionary.items():
+            assert value != key, key
+            assert sorted(SLOT.findall(value)) == sorted(SLOT.findall(key)), key
+
+
+def test_portuguese_from_portugal_server_messages() -> None:
+    assert translate("Este e-mail já pertence a um usuário ativo.", "pt-PT") == "Este e-mail já pertence a um utilizador ativo."
+    assert translate("Já existe um contato com o e-mail a@b.pt (C-1).", "pt-PT") == "Já existe um contacto com o e-mail a@b.pt (C-1)."
+    # Texts that are the same in both variants pass through unchanged.
+    assert translate("Acesso negado.", "pt-PT") == "Acesso negado."

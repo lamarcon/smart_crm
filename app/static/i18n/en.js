@@ -714,5 +714,6 @@ window.SMART_CRM_I18N['en'] = {
   "Lead voltou a falar": "Lead got back in touch",
   "{0} enviou um novo contato pelo canal {1}.": "{0} sent a new message through {1}.",
   "Novo Lead pelo canal {0}": "New Lead from {0}",
-  "{0} chegou pela captação automática ({1}).": "{0} arrived through automatic intake ({1})."
+  "{0} chegou pela captação automática ({1}).": "{0} arrived through automatic intake ({1}).",
+  "Sua sessão expirou. Entre novamente para continuar.": "Your session has expired. Sign in again to continue."
 };

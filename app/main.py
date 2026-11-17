@@ -23,6 +23,7 @@ from app.auth import (
     CookiePrincipalResolver,
     ResolvedPrincipal,
     SESSION_COOKIE_NAME,
+    expire_received_session_cookie,
     unauthenticated_error,
 )
 from app.database import Database, database
@@ -1431,8 +1432,13 @@ def create_app(
                     now=datetime.now(timezone.utc),
                 )
             except AuthenticationError:
+                # A page load with an expired or revoked session shows the login
+                # screen (and drops the cookie) instead of a raw JSON error.
                 audit_request_denial(request, "unauthenticated")
-                raise unauthenticated_error(request) from None
+                response = FileResponse(static_dir / "index.html")
+                response.headers["Cache-Control"] = "no-store"
+                expire_received_session_cookie(request, response)
+                return response
             request.state.session_context = context
             if context.tenant_slug != normalized_slug:
                 raise HTTPException(

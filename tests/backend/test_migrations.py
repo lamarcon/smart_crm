@@ -20,7 +20,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 ACTIVITY_HEAD = "e1c4a7b9d2f6"
-TENANT_HEAD = "e9a4c2b7d1f3"
+TENANT_HEAD = "f2b8d4a6c1e9"
 
 
 def alembic_config(connection=None) -> Config:  # noqa: ANN001

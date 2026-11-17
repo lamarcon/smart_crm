@@ -507,7 +507,7 @@
 <body>
   <section class="auth-screen" id="tenantLocator" hidden>
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1>Acesse sua empresa</h1>
       <p>Informe o identificador ou a URL fornecida pela sua empresa.</p>
       <form class="auth-form" id="tenantLocatorForm">
@@ -520,7 +520,7 @@
 
   <section class="auth-screen" id="tenantLogin" hidden>
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1>Entrar em <span id="tenantLoginName"></span></h1>
       <p>Use suas credenciais corporativas para continuar.</p>
       <form class="auth-form" id="tenantLoginForm">
@@ -536,7 +536,7 @@
 
   <section class="auth-screen" id="tenantForgot" hidden>
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1>Recuperar senha</h1>
       <p>Informe o e-mail cadastrado em <span id="tenantForgotName"></span>. Se ele existir, enviaremos um link para criar uma nova senha.</p>
       <form class="auth-form" id="tenantForgotForm" novalidate>
@@ -551,7 +551,7 @@
 
   <section class="auth-screen" id="accountAction" hidden>
     <div class="auth-card" aria-busy="false" id="accountActionCard">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1 id="accountActionTitle">Criar senha</h1>
       <p id="accountActionStatus" role="status" aria-live="polite"></p>
       <div id="accountActionInvalid" hidden>
@@ -601,7 +601,7 @@
             <div class="avatar" id="profileAvatar">AM</div>
             <div class="session-profile"><strong id="sessionUserName"></strong><small id="sessionUserRole"></small></div>
           </div>
-          <select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select>
+          <select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select>
           <button class="icon-button" data-view="notifications" aria-label="Notificações">♢<span class="badge-count" id="topNoticeCount">0</span></button>
           <button class="button small" type="button" id="logoutButton">Sair</button>
         </div>
@@ -804,7 +804,7 @@
         <div class="field"><label for="userJobTitle">Cargo profissional</label><input id="userJobTitle" name="jobTitle" required></div>
         <div class="field"><label for="userTeam">Equipe</label><input id="userTeam" name="team" required></div>
         <div class="field full"><label for="userRole">Perfil de acesso</label><select id="userRole" name="role" required><option value="Administrador">Administrador</option><option value="Gestor">Gestor</option><option value="Vendedor" selected>Vendedor</option><option value="Assistente">Assistente</option><option value="Faturamento">Faturamento</option></select><span class="hint">O perfil define permissões; o cargo descreve a função profissional.</span></div>
-        <div class="field full" id="userLocaleField"><label for="userLocale">Idioma do convite</label><select id="userLocale" name="locale" translate="no"><option value="pt-BR">Português</option><option value="en">English</option><option value="es">Español</option></select><span class="hint">O e-mail de convite e a tela começam neste idioma.</span></div>
+        <div class="field full" id="userLocaleField"><label for="userLocale">Idioma do convite</label><select id="userLocale" name="locale" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select><span class="hint">O e-mail de convite e a tela começam neste idioma.</span></div>
       </div><p class="field-manager-error" id="userDialogError" role="alert"></p></div>
       <div class="modal-foot"><button type="button" class="button" data-close="userDialog">Fechar</button><button type="submit" class="button primary" id="userSubmitButton">Enviar convite</button></div>
     </form>
@@ -838,6 +838,7 @@
 
   <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
+  <script src="/i18n/pt-PT.js"></script>
   <script src="/i18n/en.js"></script>
   <script src="/i18n/es.js"></script>
   <script>
@@ -848,9 +849,9 @@
     // to its translation; "{name}" marks a variable part. A pass over the rendered
     // DOM translates text nodes and labels, so the rendering code keeps writing
     // Portuguese and stored values (stages, roles, channels) never change.
-    const UI_LOCALES = ['pt-BR', 'en', 'es'];
+    const UI_LOCALES = ['pt-BR', 'pt-PT', 'en', 'es'];
     const LOCALE_STORAGE_KEY = 'smart-crm-locale';
-    const NUMBER_LOCALES = { 'pt-BR': 'pt-BR', en: 'en-US', es: 'es-ES' };
+    const NUMBER_LOCALES = { 'pt-BR': 'pt-BR', 'pt-PT': 'pt-PT', en: 'en-US', es: 'es-ES' };
     const I18N_ATTRIBUTES = ['placeholder', 'title', 'aria-label', 'alt'];
     const i18nTables = new Map();
     const i18nSources = new WeakMap();
@@ -858,6 +859,8 @@
     let i18nApplied = false;
     function supportedLocale(value) {
       const text = String(value || '').toLowerCase();
+      // Portuguese from Portugal and the African countries; any other "pt" is Brazilian.
+      if (/^pt-(pt|ao|mz|cv|gw|st|tl)(?![a-z0-9])/.test(text)) return 'pt-PT';
       if (text.startsWith('pt')) return 'pt-BR';
       if (text.startsWith('en')) return 'en';
       if (text.startsWith('es')) return 'es';
@@ -1447,10 +1450,20 @@
         toast('Não foi possível salvar o idioma no seu perfil.');
       }
     }
-    function apiFetch(input, init = {}) {
+    async function apiFetch(input, init = {}) {
       const headers = new Headers(init.headers || {});
       headers.set('Accept-Language', uiLocale);
-      return fetch(input, { ...init, headers, credentials: 'same-origin' });
+      const response = await fetch(input, { ...init, headers, credentials: 'same-origin' });
+      if (response.status === 401 && !String(input).startsWith('/api/auth/')) handleExpiredSession();
+      return response;
+    }
+    // The session ended on the server (inactivity, revocation): back to the login screen.
+    function handleExpiredSession() {
+      if (document.documentElement.dataset.authenticated !== 'true') return;
+      const slug = tenantSlugFromPath();
+      if (!slug) return;
+      clearSessionUi();
+      showTenantLogin(slug, 'Sua sessão expirou. Entre novamente para continuar.');
     }
     async function loadApplicationVersion() {
       const element = document.getElementById('appVersion');

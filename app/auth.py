@@ -46,6 +46,13 @@ def _received_session_cookie(request: Request) -> bool:
     )
 
 
+def expire_received_session_cookie(request: Request, response) -> None:  # noqa: ANN001
+    """Clears a session cookie the browser sent, on an answer that is not an error."""
+
+    if _received_session_cookie(request):
+        response.headers["Set-Cookie"] = _SESSION_COOKIE_EXPIRATION
+
+
 def unauthenticated_error(request: Request) -> HTTPException:
     return _http_error(
         401,

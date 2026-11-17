@@ -122,7 +122,7 @@ async function openFresh(options = {}) {
   const initialState = options.preloadState ? attachCanonicalDealStages(durableState(options.preloadState), pipeline) : null;
   const api = {
     initialized: Boolean(initialState), version: initialState ? 1 : 0, state: initialState,
-    applicationVersion: options.applicationVersion || '0.4.0', versionFailure: Boolean(options.versionFailure),
+    applicationVersion: options.applicationVersion || '0.4.1', versionFailure: Boolean(options.versionFailure),
     session: { ...AUTH_SESSION, ...(options.session || {}) },
     loadFailure: Boolean(options.loadFailure), writeFailure: false, writeGate: null, assertSynchronized: false,
     pipeline, pipelineFailure: Boolean(options.pipelineFailure), pipelineConflict: false,
@@ -1090,8 +1090,8 @@ async function storageEntries(page) {
   await run('HIST-08 exibe a versão canônica no rodapé autenticado', async page => {
     const version = page.locator('#appVersion');
     await version.waitFor();
-    assert.equal(await version.innerText(), 'v0.4.0');
-    assert.equal(await version.getAttribute('aria-label'), 'Versão instalada 0.4.0');
+    assert.equal(await version.innerText(), 'v0.4.1');
+    assert.equal(await version.getAttribute('aria-label'), 'Versão instalada 0.4.1');
   });
 
   await run('HIST-08 falha de metadados não bloqueia a operação nem inventa versão', async page => {
@@ -3690,6 +3690,41 @@ async function storageEntries(page) {
     await dialog.getByRole('button', { name: 'Crear clave' }).click();
     assert.equal((await sent).headers()['accept-language'], 'es');
     await dialog.locator('#intakeKeyError').getByText('Elige un responsable activo.').waitFor();
+  });
+
+  await run('I18N-06 português de Portugal troca só os termos que mudam', async page => {
+    const api = apiByPage.get(page);
+    const nav = view => page.locator(`.nav [data-view="${view}"]`);
+    await page.locator('.top-actions [data-locale-select]').selectOption('pt-PT');
+    assert.equal(await page.evaluate(() => document.documentElement.lang), 'pt-PT');
+    assert.deepEqual(api.preferenceRequests.at(-1).body, { locale: 'pt-PT' });
+    assert.match(await nav('contacts').innerText(), /Contactos/);
+    assert.match(await nav('dashboard').innerText(), /Visão geral/);
+    await nav('companies').click();
+    assert.equal(await page.locator('#page-companies [data-action="new"]').innerText(), '＋ Nova Empresa');
+    await nav('deals').click();
+    assert.match(await page.locator('#page-deals tbody').innerText(), /48\s500,00\s?R\$/);
+    await nav('leads').click();
+    let message = '';
+    page.once('dialog', dialog => { message = dialog.message(); dialog.dismiss(); });
+    await page.locator('#page-leads [data-action="delete"]').first().click();
+    assert.equal(message, 'Eliminar este Lead?');
+    await page.locator('.top-actions [data-locale-select]').selectOption('pt-BR');
+    assert.match(await nav('contacts').innerText(), /Contatos/);
+  });
+
+  await run('AUTH-EXP sessão expirada durante o uso volta para o login', async page => {
+    assert.equal(await page.locator('#crmApp').isVisible(), true);
+    await page.route('**/api/me/preferences', route => route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'unauthenticated', message: 'Sessão inválida.' } })
+    }));
+    await page.locator('.top-actions [data-locale-select]').selectOption('en');
+    await page.locator('#tenantLogin').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#crmApp').isHidden(), true);
+    assert.equal(await page.locator('#loginNotice').innerText(), 'Your session has expired. Sign in again to continue.');
+    assert.equal(new URL(page.url()).pathname, '/cliente-a');
   });
 
   await run('DEMO-11 expõe exatamente as nove etapas de Negócio', async page => {

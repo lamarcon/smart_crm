@@ -18,7 +18,7 @@ from typing import Iterable
 
 from sqlalchemy import text
 
-SUPPORTED_LOCALES = ("pt-BR", "en", "es")
+SUPPORTED_LOCALES = ("pt-BR", "pt-PT", "en", "es")
 DEFAULT_LOCALE = "pt-BR"
 LOCALES_DIR = Path(__file__).resolve().parent / "locales"
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
@@ -29,6 +29,9 @@ def supported_locale(value: object) -> str | None:
     """Maps a language tag (``en-US``, ``es``, ``pt``) to a supported locale."""
 
     text = str(value or "").strip().lower()
+    # Portuguese from Portugal and the African countries; any other "pt" is Brazilian.
+    if re.match(r"pt[-_](pt|ao|mz|cv|gw|st|tl)(?![a-z0-9])", text):
+        return "pt-PT"
     if text.startswith("pt"):
         return "pt-BR"
     if text.startswith("en"):

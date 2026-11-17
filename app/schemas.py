@@ -51,7 +51,7 @@ def normalize_tenant_identifier(identifier: str) -> str:
 
 
 RoleName = Literal["Administrador", "Gestor", "Vendedor", "Assistente", "Faturamento"]
-LocaleName = Literal["pt-BR", "en", "es"]
+LocaleName = Literal["pt-BR", "pt-PT", "en", "es"]
 
 
 def _normalize_email(value: str) -> str:

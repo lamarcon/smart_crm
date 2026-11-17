@@ -179,7 +179,7 @@ def assert_expired_session_cookie(response) -> None:  # noqa: ANN001
     assert "Domain=" not in cookie
 
 @pytest.mark.parametrize("state", ["malformed", "unknown", "expired", "revoked"])
-def test_tenant_shell_expires_invalid_received_cookie(secure_client_factory, state: str) -> None:  # noqa: ANN001
+def test_tenant_shell_with_invalid_cookie_renders_login_and_expires_it(secure_client_factory, state: str) -> None:  # noqa: ANN001
     client, gateway, _router, _workspace = secure_client_factory()
     token = "short" if state == "malformed" else TOKEN
     if state != "malformed":
@@ -190,8 +190,10 @@ def test_tenant_shell_expires_invalid_received_cookie(secure_client_factory, sta
         headers={"cookie": f"{SESSION_COOKIE_NAME}={token}"},
     )
 
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "unauthenticated"
+    # An expired session on a page load lands on the login screen, not on JSON.
+    assert response.status_code == 200
+    assert "<title>tenant shell</title>" in response.text
+    assert response.headers["cache-control"] == "no-store"
     assert_expired_session_cookie(response)
     assert gateway.calls == [("session", token)]
 
