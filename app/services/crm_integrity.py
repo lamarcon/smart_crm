@@ -14,7 +14,7 @@ from __future__ import annotations
 import unicodedata
 from typing import Any
 
-from app.policies import Action, PrincipalScope, can_perform_action
+from app.policies import PrincipalScope, allowed
 from app.schemas import WorkspaceReferenceError, WorkspaceState
 from app.services.exchange_rates import SUPPORTED_CURRENCIES
 
@@ -40,10 +40,10 @@ def _changed(record: dict, previous: dict | None, fields: tuple[str, ...]) -> bo
     return previous is None or any(record.get(field) != previous.get(field) for field in fields)
 
 
-def _is_import(record: dict, previous: dict | None, principal: PrincipalScope) -> bool:
+def _is_import(record: dict, previous: dict | None, principal: PrincipalScope, module: str) -> bool:
     return (
         bool(record.get("bitrixId"))
-        and can_perform_action(principal, Action.IMPORT_DATA)
+        and allowed(principal, module, "import")
         and (previous is None or record.get("bitrixFields") != previous.get("bitrixFields"))
     )
 
@@ -67,7 +67,7 @@ def _check_company_duplicates(companies: list[dict], previous: dict[str, dict], 
     for index, company in enumerate(companies):
         old = previous.get(str(company.get("id")))
         key = normalized_name(company.get("name"))
-        if not key or _is_import(company, old, principal):
+        if not key or _is_import(company, old, principal, "companies"):
             continue
         if old is not None and normalized_name(old.get("name")) == key:
             continue
@@ -88,7 +88,7 @@ def _check_contact_duplicates(contacts: list[dict], previous: dict[str, dict], p
     for index, contact in enumerate(contacts):
         old = previous.get(str(contact.get("id")))
         key = normalized_email(contact.get("email"))
-        if not key or _is_import(contact, old, principal):
+        if not key or _is_import(contact, old, principal, "contacts"):
             continue
         if old is not None and normalized_email(old.get("email")) == key:
             continue
@@ -173,7 +173,7 @@ def _check_contact_links(
 ) -> None:
     for index, contact in enumerate(contacts):
         old = previous.get(str(contact.get("id")))
-        if _is_import(contact, old, principal) or not _changed(contact, old, ("company", "companyId")):
+        if _is_import(contact, old, principal, "contacts") or not _changed(contact, old, ("company", "companyId")):
             continue
         company = companies.get(str(contact.get("companyId") or ""))
         if not str(contact.get("company") or "").strip() and not contact.get("companyId"):
@@ -195,7 +195,7 @@ def _check_deal_links(
 ) -> None:
     for index, deal in enumerate(deals):
         old = previous.get(str(deal.get("id")))
-        if _is_import(deal, old, principal):
+        if _is_import(deal, old, principal, "deals"):
             continue
         company = companies.get(str(deal.get("companyId") or ""))
         linked_contact = contacts.get(str(deal.get("contactId") or ""))

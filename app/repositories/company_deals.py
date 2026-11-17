@@ -8,6 +8,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.models import Company, CrmUser, Deal, DealPipelineStage
+from app.repositories.permissions import owner_team_id
 from app.policies import PrincipalScope, RecordScope, can_read_record, deal_visibility_predicate
 from app.schemas import CompanyDealMetricResponse, CompanyDealRow, CompanyDealSummaryResponse
 from app.services.exchange_rates import BASE_CURRENCY, ExchangeRateService
@@ -48,7 +49,11 @@ class CompanyDealRepository:
         if company is None or not can_read_record(
             principal,
             "companies",
-            RecordScope(responsible_id=company.owner_id, assistant_ids=(), team_id=None),
+            RecordScope(
+                responsible_id=company.owner_id,
+                assistant_ids=(),
+                team_id=owner_team_id(self.session, principal.workspace_id, company.owner_id),
+            ),
         ):
             return None
 

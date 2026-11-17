@@ -13,13 +13,14 @@ from sqlalchemy.orm import Session
 
 from app.models import Workspace
 from app.policies import (
+    ADMIN_ROLE,
+    MODULES as PERMISSION_MODULES,
     Action,
     PrincipalScope,
     RecordScope,
-    can_manage_products,
-    can_mutate_record,
+    allowed,
     can_perform_action,
-    can_read_record,
+    record_allowed,
 )
 from app.repositories.workspace import WorkspaceRepository, _date as parse_timestamp, team_id_for_name
 from app.repositories.activity import ActivityRepository
@@ -125,6 +126,56 @@ def _project_ui(ui: dict, user_id: str) -> dict:
     }
 
 
+# Fields that point from one record to another module's record.
+_REFERENCE_FIELDS = (("companyId", "companies"), ("contactId", "contacts"))
+
+
+def _user_teams(users: list[dict]) -> dict[str, str | None]:
+    teams: dict[str, str | None] = {}
+    for user in users:
+        team_id = user.get("teamId")
+        team_name = user.get("team")
+        if not team_id and isinstance(team_name, str) and team_name:
+            team_id = team_id_for_name(team_name)
+        teams[str(user.get("id"))] = team_id
+    return teams
+
+
+def _module_scope(module: str, record: dict, user_teams: dict[str, str | None]) -> RecordScope:
+    """Who owns a record, for the scopes "own" and "team"."""
+
+    if module in ("leads", "deals"):
+        return _record_scope(record)
+    if module == "companies":
+        owner = record.get("ownerId")
+        return RecordScope(
+            responsible_id=owner,
+            assistant_ids=(),
+            team_id=user_teams.get(str(owner)) if owner else None,
+        )
+    # Contacts and products have no owner: only "none" or "all" apply.
+    return RecordScope(responsible_id=None, assistant_ids=(), team_id=None)
+
+
+def _restricted_stub(record: dict) -> dict:
+    """What a user sees of a linked record outside their permissions: its name only."""
+
+    return {"id": record.get("id"), "name": record.get("name") or record.get("title") or "", "restricted": True}
+
+
+def _references(data: dict) -> dict[str, set[str]]:
+    found: dict[str, set[str]] = {"companies": set(), "contacts": set(), "products": set()}
+    for module in ("leads", "contacts", "deals"):
+        for record in data[module]:
+            for field, target in _REFERENCE_FIELDS:
+                if record.get(field):
+                    found[target].add(str(record[field]))
+            for quote in record.get("quotes") or []:
+                if quote.get("productId"):
+                    found["products"].add(str(quote["productId"]))
+    return found
+
+
 def project_workspace_state(
     canonical: WorkspaceState,
     principal: PrincipalScope,
@@ -132,15 +183,23 @@ def project_workspace_state(
     _require_action(principal, Action.READ)
     data = deepcopy(canonical.model_dump(by_alias=True, exclude_none=True))
     data.pop("currentUserId", None)
-    if principal.role == "Administrador":
+    if principal.role == ADMIN_ROLE:
         return WorkspaceState.model_validate(data)
 
-    for module in ("leads", "deals"):
+    teams = _user_teams(data.get("users") or [])
+    hidden: dict[str, list[dict]] = {}
+    for module in PERMISSION_MODULES:
+        records = data.get(module) or []
         data[module] = [
             record
-            for record in data[module]
-            if can_read_record(principal, module, _record_scope(record))
+            for record in records
+            if record_allowed(principal, module, "read", _module_scope(module, record, teams))
         ]
+        visible_ids = {record.get("id") for record in data[module]}
+        hidden[module] = [record for record in records if record.get("id") not in visible_ids]
+    # Linked records outside the permissions keep only their name, so screens can show it.
+    for module, ids in _references(data).items():
+        data[module].extend(_restricted_stub(record) for record in hidden[module] if record.get("id") in ids)
     data["notifications"] = [
         item
         for item in data["notifications"]
@@ -150,32 +209,55 @@ def project_workspace_state(
     return WorkspaceState.model_validate(data)
 
 
-def _merge_scoped_records(
+def _merge_module(
     module: str,
     canonical: list[dict],
     submitted: list[dict],
     principal: PrincipalScope,
+    teams: dict[str, str | None],
 ) -> list[dict]:
+    """Applies one module of a submitted snapshot, checking each create, change and delete."""
+
+    def scope(record: dict) -> RecordScope:
+        return _module_scope(module, record, teams)
+
+    def require(condition: bool) -> None:
+        if not condition:
+            raise WorkspaceAuthorizationError(f"{module}: record is outside principal scope")
+
     canonical_by_id = {record.get("id"): record for record in canonical}
-    visible_ids = {
+    readable = {
         record_id
         for record_id, record in canonical_by_id.items()
-        if can_mutate_record(principal, module, _record_scope(record))
+        if record_allowed(principal, module, "read", scope(record))
     }
-    authorized: list[dict] = []
+    result: list[dict] = []
+    seen: set[object] = set()
     for record in submitted:
         record_id = record.get("id")
-        if record_id in canonical_by_id and record_id not in visible_ids:
-            raise WorkspaceAuthorizationError("record is outside principal scope")
-        if not can_mutate_record(principal, module, _record_scope(record)):
-            raise WorkspaceAuthorizationError("record is outside principal scope")
-        authorized.append(deepcopy(record))
-    invisible = [
-        deepcopy(record)
-        for record_id, record in canonical_by_id.items()
-        if record_id not in visible_ids
-    ]
-    return [*authorized, *invisible]
+        seen.add(record_id)
+        before = canonical_by_id.get(record_id)
+        if record.get("restricted") is True:
+            # A name-only stub: whatever comes back, the stored record is kept as it is.
+            require(before is not None and record_id not in readable)
+            continue
+        if before is None:
+            require(allowed(principal, module, "create"))
+            require(record_allowed(principal, module, "read", scope(record)))
+            if record.get("bitrixId"):
+                require(allowed(principal, module, "import"))
+            result.append(deepcopy(record))
+            continue
+        require(record_id in readable)
+        if record != before:
+            require(record_allowed(principal, module, "update", scope(before)))
+            require(record_allowed(principal, module, "update", scope(record)))
+        result.append(deepcopy(record))
+    for record_id in readable - seen:
+        require(record_allowed(principal, module, "delete", scope(canonical_by_id[record_id])))
+    # Records the user cannot see are kept as they are.
+    invisible = [deepcopy(record) for record_id, record in canonical_by_id.items() if record_id not in readable]
+    return [*result, *invisible]
 
 
 def _merge_notifications(
@@ -230,7 +312,7 @@ def merge_authorized_state(
     _require_action(principal, Action.UPDATE)
     canonical_data = canonical.model_dump(by_alias=True, exclude_none=True)
     submitted_data = submitted.model_dump(by_alias=True, exclude_none=True)
-    if principal.role == "Administrador":
+    if principal.role == ADMIN_ROLE:
         merged_data = deepcopy(submitted_data)
     else:
         projected_data = project_workspace_state(canonical, principal).model_dump(
@@ -242,18 +324,14 @@ def merge_authorized_state(
                 raise WorkspaceAuthorizationError("administrative snapshot change")
 
         merged_data = deepcopy(canonical_data)
-        for module in ("contacts", "companies"):
-            merged_data[module] = deepcopy(submitted_data[module])
-        if can_manage_products(principal):
-            merged_data["products"] = deepcopy(submitted_data.get("products") or [])
-        elif (submitted_data.get("products") or []) != (projected_data.get("products") or []):
-            raise WorkspaceAuthorizationError("products are read-only for this role")
-        for module in ("leads", "deals"):
-            merged_data[module] = _merge_scoped_records(
+        teams = _user_teams(canonical_data.get("users") or [])
+        for module in PERMISSION_MODULES:
+            merged_data[module] = _merge_module(
                 module,
-                canonical_data[module],
-                submitted_data[module],
+                canonical_data.get(module) or [],
+                submitted_data.get(module) or [],
                 principal,
+                teams,
             )
         merged_data["notifications"] = _merge_notifications(
             canonical_data["notifications"],

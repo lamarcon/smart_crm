@@ -92,3 +92,14 @@ def replace_role_permissions(session: Session, workspace_id: str, rows: Iterable
             ),
             payload,
         )
+
+
+def owner_team_id(session: Session, workspace_id: str, owner_id: str | None) -> str | None:
+    """The team of a company's responsible person (companies have no team of their own)."""
+
+    if not owner_id:
+        return None
+    return session.scalar(
+        text("SELECT team_id FROM crm_users WHERE workspace_id = :workspace_id AND id = :user_id"),
+        {"workspace_id": workspace_id, "user_id": owner_id},
+    )

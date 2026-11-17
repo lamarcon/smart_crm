@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Company, CrmActivityEvent, CrmUser, Deal, DealAssistant, DealPipelineStage
+from app.repositories.permissions import owner_team_id
 from app.policies import PrincipalScope, RecordScope, can_mutate_record, can_read_record
 from app.repositories.activity import ActivityPageRows, ActivityRepository, NewActivityEvent
 from app.schemas import (
@@ -380,7 +381,7 @@ class ActivityService:
             record = RecordScope(
                 responsible_id=subject.owner_id,
                 assistant_ids=(),
-                team_id=None,
+                team_id=owner_team_id(session, principal.workspace_id, subject.owner_id),
             )
             module = "companies"
 
