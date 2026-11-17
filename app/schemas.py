@@ -116,6 +116,11 @@ class PreferencesRequest(AuthContractModel):
     locale: LocaleName
 
 
+class ExportRequest(AuthContractModel):
+    # The ids currently listed on screen (filters applied); None exports every visible record.
+    ids: list[str] | None = Field(default=None, max_length=50000)
+
+
 class PermissionsRequest(AuthContractModel):
     # {role: {module: {action: scope}}} for every configurable role.
     roles: dict[str, dict[str, dict[str, str]]]

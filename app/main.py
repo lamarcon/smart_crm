@@ -27,13 +27,15 @@ from app.auth import (
     unauthenticated_error,
 )
 from app.database import Database, database
-from app.i18n import SUPPORTED_LOCALES, ErrorMessageTranslationMiddleware, write_user_locale
+from app.i18n import SUPPORTED_LOCALES, ErrorMessageTranslationMiddleware, resolve_locale, write_user_locale
+from app.services.export import export_csv
 from app.policies import (
     ADMIN_ROLE,
     CONFIGURABLE_ROLES,
     MODULE_ACTIONS,
     MODULES,
     Action,
+    allowed,
     allowed_scopes,
     can_perform_action,
     effective_permissions,
@@ -74,6 +76,7 @@ from app.schemas import (
     LocateTenantResponse,
     LoginRequest,
     ObservationCreateRequest,
+    ExportRequest,
     PermissionsRequest,
     PreferencesRequest,
     ResetRequest,
@@ -1066,6 +1069,39 @@ def create_app(
             "version": loaded.version,
             "state": _state_payload(loaded.state) if loaded.state is not None else None,
         }
+
+    @app.post("/api/export/{module}")
+    def export_module(
+        module: str,
+        payload: ExportRequest,
+        request: Request,
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ):  # noqa: ANN202
+        require_action(principal, Action.READ)
+        if module not in MODULES:
+            return _error(404, "record_not_found", "Registro não encontrado.")
+        scope = principal.context.principal
+        if not allowed(scope, module, "export"):
+            audit_request_denial(request, "forbidden")
+            return _error(403, "forbidden", "Acesso negado.")
+        loaded = service.load(principal.tenant_session, scope)
+        if loaded.state is None:
+            return _error(409, "workspace_not_initialized", "Workspace não inicializado.")
+        locale = resolve_locale(request.headers.get("accept-language"))
+        body, rows = export_csv(loaded.state, module, payload.ids, locale)
+        LOG.info(
+            "module exported",
+            extra={"workspace_id": scope.workspace_id, "user_id": scope.user_id, "module": module, "rows": rows},
+        )
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return Response(
+            content=body,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="smart-crm-{module}-{stamp}.csv"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.put("/api/me/preferences")
     def update_my_preferences(
