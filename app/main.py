@@ -1117,7 +1117,11 @@ def create_app(
         if loaded.state is None:
             return _error(409, "workspace_not_initialized", "Workspace não inicializado.")
         locale = resolve_locale(request.headers.get("accept-language"))
-        body, rows = export_csv(loaded.state, module, payload.ids, locale)
+        pipeline_names = {
+            str(item.id): item.name
+            for item in active_pipeline_service.list(principal.tenant_session, scope)
+        } if module == "deals" else None
+        body, rows = export_csv(loaded.state, module, payload.ids, locale, pipeline_names)
         LOG.info(
             "module exported",
             extra={"workspace_id": scope.workspace_id, "user_id": scope.user_id, "module": module, "rows": rows},

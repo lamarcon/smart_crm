@@ -165,5 +165,6 @@
   "O funil principal não pode ser arquivado.": "The main pipeline cannot be archived.",
   "Mova os {n} Negócios deste funil antes de arquivá-lo.": "Move the {n} Deals of this pipeline before archiving it.",
   "Restaure o funil antes de torná-lo principal.": "Restore the pipeline before making it the main one.",
-  "Funil não encontrado.": "Pipeline not found."
+  "Funil não encontrado.": "Pipeline not found.",
+  "Funil": "Pipeline"
 }

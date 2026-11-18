@@ -511,8 +511,8 @@ class WorkspaceService:
         state = _state_with_principal_identity(state, principal)
         repository = self._repository(session, principal)
         pipeline_repository = self._pipeline_repository(session, principal)
-        pipeline_repository.lock_default()
-        aggregate = pipeline_repository.load_default()
+        pipeline_repository.lock_all()
+        aggregate = pipeline_repository.list_pipelines()
         workspace = self._locked_workspace(session, principal)
         if workspace.initialized_at is not None:
             raise WorkspaceAlreadyInitialized(workspace.version)
@@ -541,8 +541,8 @@ class WorkspaceService:
         _require_action(principal, Action.UPDATE)
         repository = self._repository(session, principal)
         pipeline_repository = self._pipeline_repository(session, principal)
-        pipeline_repository.lock_default()
-        aggregate = pipeline_repository.load_default()
+        pipeline_repository.lock_all()
+        aggregate = pipeline_repository.list_pipelines()
         workspace = self._locked_initialized(session, principal)
         self._check_version(workspace, expected_version)
         canonical = repository.read_active()
@@ -569,7 +569,7 @@ class WorkspaceService:
         transitions = collect_deal_transitions(
             canonical,
             merged,
-            aggregate.stages,
+            tuple(stage for pipeline in aggregate for stage in pipeline.stages),
             principal,
             occurred_at=occurred_at,
         )
@@ -613,8 +613,8 @@ class WorkspaceService:
         state = _state_with_principal_identity(state, principal)
         repository = self._repository(session, principal)
         pipeline_repository = self._pipeline_repository(session, principal)
-        pipeline_repository.lock_default()
-        aggregate = pipeline_repository.load_default()
+        pipeline_repository.lock_all()
+        aggregate = pipeline_repository.list_pipelines()
         workspace = self._locked_initialized(session, principal)
         self._check_version(workspace, expected_version)
         canonical = repository.read_active()
@@ -682,7 +682,7 @@ class WorkspaceService:
         self,
         submitted: WorkspaceState,
         canonical: WorkspaceState | None,
-        aggregate: DealPipelineAggregate,
+        aggregate: tuple[DealPipelineAggregate, ...] | DealPipelineAggregate,
         principal: PrincipalScope,
         workspace_version: int,
         *,
@@ -694,9 +694,21 @@ class WorkspaceService:
             str(record.get("id")): record
             for record in (canonical.deals if canonical is not None else [])
         }
-        active_by_id = {stage.id: stage for stage in aggregate.stages}
-        active_by_name = {stage.name: stage for stage in aggregate.stages}
-        pipeline = aggregate.pipeline
+        pipelines = (aggregate,) if isinstance(aggregate, DealPipelineAggregate) else tuple(aggregate)
+        pipelines_by_id = {item.pipeline.id: item.pipeline for item in pipelines}
+        default_pipeline = next(
+            (item.pipeline for item in pipelines if item.pipeline.is_default), pipelines[0].pipeline
+        )
+        active_by_id = {stage.id: stage for item in pipelines for stage in item.stages}
+        names_by_pipeline = {
+            item.pipeline.id: {stage.name: stage for stage in item.stages} for item in pipelines
+        }
+
+        def by_name(name: object, pipeline_id: UUID | None):  # noqa: ANN202
+            """A stage name inside one pipeline (the main one when none is named)."""
+
+            return names_by_pipeline.get(pipeline_id or default_pipeline.id, {}).get(str(name or ""))
+
         now = occurred_at or self.clock()
         now_text = now.isoformat().replace("+00:00", "Z")
 
@@ -714,32 +726,34 @@ class WorkspaceService:
                 stage_value = existing.get("stageId")
             elif pipeline_value is None or stage_value is None:
                 if allow_legacy_new and existing is None:
-                    legacy = active_by_name.get(str(record.get("stage", "")))
+                    named = parse_uuid(pipeline_value) if pipeline_value is not None else None
+                    legacy = by_name(record.get("stage"), named)
                     if legacy is not None:
                         return legacy
                 raise WorkspaceStageConflict(workspace_version)
             pipeline_id = parse_uuid(pipeline_value)
             stage_id = parse_uuid(stage_value)
             stage = active_by_id.get(stage_id)
-            if pipeline_id != pipeline.id or stage is None:
+            # The stage must belong to the deal's pipeline, and that pipeline must be active.
+            if pipeline_id not in pipelines_by_id or stage is None or stage.pipeline_id != pipeline_id:
                 raise WorkspaceStageConflict(workspace_version)
             return stage
 
-        def imported_history(items: list[dict]) -> list[dict]:
+        def imported_history(items: list[dict], pipeline_id: UUID) -> list[dict]:
             result: list[dict] = []
             for item in items:
                 target = None
                 if item.get("toStageId") is not None:
                     target = active_by_id.get(parse_uuid(item["toStageId"]))
                 if target is None:
-                    target = active_by_name.get(str(item.get("to", "")))
+                    target = by_name(item.get("to"), pipeline_id)
                 if target is None:
                     raise WorkspaceStageConflict(workspace_version)
                 source = None
                 if item.get("fromStageId") is not None:
                     source = active_by_id.get(parse_uuid(item["fromStageId"]))
                 if source is None and item.get("from"):
-                    source = active_by_name.get(str(item["from"]))
+                    source = by_name(item["from"], pipeline_id)
                 result.append(
                     {
                         "from": item.get("from"),
@@ -755,12 +769,14 @@ class WorkspaceService:
         for record in data["deals"]:
             existing = canonical_deals.get(str(record.get("id")))
             stage = stage_for_reference(record, existing)
+            pipeline = pipelines_by_id[stage.pipeline_id]
+            # A new deal starts at the initial stage of its own pipeline.
             if existing is None and not allow_legacy_new and stage.id != pipeline.default_stage_id:
                 raise WorkspaceStageConflict(workspace_version)
 
             if existing is None:
                 history = (
-                    imported_history(list(record.get("stageHistory") or []))
+                    imported_history(list(record.get("stageHistory") or []), pipeline.id)
                     if allow_legacy_new
                     else []
                 )

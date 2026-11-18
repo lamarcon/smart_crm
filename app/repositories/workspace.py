@@ -21,6 +21,7 @@ from app.models import (
     Deal,
     DealAssistant,
     DealStageHistory,
+    DealPipeline,
     DealPipelineStage,
     ExternalSourceField,
     Lead,
@@ -440,14 +441,27 @@ class WorkspaceRepository:
         ]
         return position, canonical
 
-    def _legacy_stage(self, name: str) -> DealPipelineStage | None:
-        return self.session.scalar(
-            select(DealPipelineStage).where(
+    def _legacy_stage(self, name: str, pipeline_id: object = None) -> DealPipelineStage | None:
+        """A stage by name: in the given pipeline, otherwise in the main one."""
+
+        query = (
+            select(DealPipelineStage)
+            .join(
+                DealPipeline,
+                (DealPipeline.workspace_id == DealPipelineStage.workspace_id)
+                & (DealPipeline.id == DealPipelineStage.pipeline_id),
+            )
+            .where(
                 DealPipelineStage.workspace_id == self.workspace_id,
                 DealPipelineStage.name == name,
                 DealPipelineStage.archived_at.is_(None),
             )
         )
+        if pipeline_id is not None:
+            query = query.where(DealPipelineStage.pipeline_id == UUID(str(pipeline_id)))
+        else:
+            query = query.where(DealPipeline.is_default.is_(True))
+        return self.session.scalars(query.limit(1)).first()
 
     def _soft_delete_absent(self, model, present: set[str], extra=()) -> None:  # noqa: ANN001
         criteria = [model.deleted_at.is_(None), *extra]
@@ -622,7 +636,7 @@ class WorkspaceRepository:
                 pipeline_id = row.pipeline_id
                 stage_id = row.stage_id
             if pipeline_id is None or stage_id is None:
-                legacy_stage = self._legacy_stage(str(record.get("stage", "")))
+                legacy_stage = self._legacy_stage(str(record.get("stage", "")), pipeline_id)
                 if legacy_stage is None:
                     raise ValueError("deal stage reference unavailable")
                 pipeline_id = legacy_stage.pipeline_id
@@ -694,13 +708,13 @@ class WorkspaceRepository:
             ):
                 to_stage_id = history.get("toStageId")
                 if to_stage_id is None:
-                    to_stage = self._legacy_stage(str(history.get("to", "")))
+                    to_stage = self._legacy_stage(str(history.get("to", "")), record.get("pipelineId"))
                     if to_stage is None:
                         raise ValueError("history target stage reference unavailable")
                     to_stage_id = to_stage.id
                 from_stage_id = history.get("fromStageId")
                 if from_stage_id is None and history.get("from"):
-                    from_stage = self._legacy_stage(str(history["from"]))
+                    from_stage = self._legacy_stage(str(history["from"]), record.get("pipelineId"))
                     from_stage_id = from_stage.id if from_stage is not None else None
                 self.session.add(
                     DealStageHistory(

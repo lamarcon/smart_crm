@@ -32,7 +32,7 @@ COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
     "deals": (
         ("id", "Identificador"), ("title", "Título do Negócio"), ("company", "Empresa"), ("contact", "Contato"),
-        ("amount", "Valor"), ("currency", "Moeda"), ("stage", "Etapa"), ("responsibleId", "Responsável"),
+        ("amount", "Valor"), ("currency", "Moeda"), ("pipelineId", "Funil"), ("stage", "Etapa"), ("responsibleId", "Responsável"),
         ("assistants", "Assistentes"), ("team", "Equipe"), ("createdAt", "Data de criação"), ("updatedAt", "Data de atualização"),
     ),
     "products": (
@@ -49,9 +49,11 @@ def _safe(value: str) -> str:
     return "'" + value if value.startswith(_FORMULA_START) else value
 
 
-def _cell(field: str, value: object, users: dict[str, str], locale: str) -> str:
+def _cell(field: str, value: object, users: dict[str, str], locale: str, pipelines: dict[str, str] | None = None) -> str:
     if value is None:
         return ""
+    if field == "pipelineId":
+        return (pipelines or {}).get(str(value), "")
     if field in _USER_FIELDS:
         return users.get(str(value), str(value))
     if field == "assistants" and isinstance(value, list):
@@ -67,7 +69,13 @@ def _cell(field: str, value: object, users: dict[str, str], locale: str) -> str:
     return str(value)
 
 
-def export_csv(state: WorkspaceState, module: str, ids: Iterable[str] | None, locale: str) -> tuple[bytes, int]:
+def export_csv(
+    state: WorkspaceState,
+    module: str,
+    ids: Iterable[str] | None,
+    locale: str,
+    pipelines: dict[str, str] | None = None,
+) -> tuple[bytes, int]:
     """Returns the CSV (UTF-8 with BOM, ``;``-separated) and how many rows it has."""
 
     data = state.model_dump(by_alias=True, exclude_none=True)
@@ -91,7 +99,7 @@ def export_csv(state: WorkspaceState, module: str, ids: Iterable[str] | None, lo
     for record in records:
         values = record.get("customFields") or {}
         writer.writerow(
-            [_safe(_cell(field, record.get(field), users, locale)) for field, _title in COLUMNS[module]]
+            [_safe(_cell(field, record.get(field), users, locale, pipelines)) for field, _title in COLUMNS[module]]
             + [_safe(_cell(key, values.get(key), users, locale)) for key, _label in custom]
         )
     return ("﻿" + output.getvalue()).encode("utf-8"), len(records)
