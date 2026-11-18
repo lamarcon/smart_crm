@@ -662,3 +662,107 @@ def test_tenant_database_failure_during_put_returns_503_without_fallback_or_writ
     assert "foreign" not in response.text
     assert "other-tenant" not in response.text
     assert _database_snapshot(pipeline_database_url) == before
+
+
+# --- Several pipelines -----------------------------------------------------------------------
+
+def test_admin_creates_renames_defaults_and_archives_pipelines(pipeline_database_url: str, tmp_path: Path) -> None:
+    client = _client(tmp_path, pipeline_database_url)
+    listed = client.get("/api/deal-pipelines")
+    assert listed.status_code == 200
+    assert listed.headers["cache-control"] == "no-store"
+    assert [(item["isDefault"], item["archived"]) for item in listed.json()] == [(True, False)]
+    main = listed.json()[0]
+
+    created = client.post("/api/deal-pipelines", json={"name": "  Pós-venda  "}, headers={"origin": ORIGIN})
+    assert created.status_code == 201, created.text
+    after_sales = created.json()
+    assert (after_sales["name"], after_sales["isDefault"], after_sales["archived"]) == ("Pós-venda", False, False)
+    assert [(stage["name"], stage["semanticType"], stage["initial"]) for stage in after_sales["stages"]] == [
+        ("Em andamento", "open", True), ("Ganho", "won", False), ("Perdido", "lost", False),
+    ]
+    assert [item["name"] for item in client.get("/api/deal-pipelines").json()] == [main["name"], "Pós-venda"]
+
+    duplicate = client.post("/api/deal-pipelines", json={"name": "pós-VENDA"}, headers={"origin": ORIGIN})
+    assert duplicate.status_code == 422
+    assert duplicate.json()["error"]["message"] == "Já existe um funil com esse nome."
+
+    # The stages of one pipeline are edited without touching the other.
+    loaded = client.get(f"/api/deal-pipeline?pipelineId={after_sales['id']}").json()
+    body = _update_body(loaded)
+    body["stages"][0]["name"] = "Atendimento"
+    edited = client.put(f"/api/deal-pipeline?pipelineId={after_sales['id']}", json=body, headers={"origin": ORIGIN})
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["stages"][0]["name"] == "Atendimento"
+    assert client.get("/api/deal-pipeline").json()["stages"][0]["name"] == main["stages"][0]["name"]
+    history = client.get(f"/api/deal-pipeline/history?pipelineId={after_sales['id']}").json()["items"]
+    assert [item["action"] for item in history] == ["pipeline.updated", "pipeline.created"]
+
+    renamed = client.patch(
+        f"/api/deal-pipelines/{after_sales['id']}",
+        json={"pipelineVersion": edited.json()["pipelineVersion"], "name": "Pós-venda 2026"},
+        headers={"origin": ORIGIN},
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "Pós-venda 2026"
+    stale = client.patch(
+        f"/api/deal-pipelines/{after_sales['id']}",
+        json={"pipelineVersion": edited.json()["pipelineVersion"], "name": "Outro"},
+        headers={"origin": ORIGIN},
+    )
+    assert stale.status_code == 409
+
+    # A pipeline with deals cannot be archived; the main one never.
+    _seed_deal(pipeline_database_url, renamed.json()["stages"][0], deal_id="deal-after-sales")
+    blocked = client.patch(
+        f"/api/deal-pipelines/{after_sales['id']}",
+        json={"pipelineVersion": renamed.json()["pipelineVersion"], "archived": True},
+        headers={"origin": ORIGIN},
+    )
+    assert blocked.status_code == 422
+    assert blocked.json()["error"]["message"] == "Mova os 1 Negócios deste funil antes de arquivá-lo."
+    main_archive = client.patch(
+        f"/api/deal-pipelines/{main['id']}",
+        json={"pipelineVersion": main["pipelineVersion"], "archived": True},
+        headers={"origin": ORIGIN},
+    )
+    assert main_archive.status_code == 422
+
+    # Making the second pipeline the default one moves the flag.
+    defaulted = client.patch(
+        f"/api/deal-pipelines/{after_sales['id']}",
+        json={"pipelineVersion": renamed.json()["pipelineVersion"], "isDefault": True},
+        headers={"origin": ORIGIN},
+    )
+    assert defaulted.status_code == 200, defaulted.text
+    flags = {item["name"]: item["isDefault"] for item in client.get("/api/deal-pipelines").json()}
+    assert flags == {main["name"]: False, "Pós-venda 2026": True}
+
+
+def test_empty_pipeline_is_archived_and_hidden_from_the_list(pipeline_database_url: str, tmp_path: Path) -> None:
+    client = _client(tmp_path, pipeline_database_url)
+    created = client.post("/api/deal-pipelines", json={"name": "Temporário"}, headers={"origin": ORIGIN}).json()
+    archived = client.patch(
+        f"/api/deal-pipelines/{created['id']}",
+        json={"pipelineVersion": created["pipelineVersion"], "archived": True},
+        headers={"origin": ORIGIN},
+    )
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["archived"] is True
+    assert [item["name"] for item in client.get("/api/deal-pipelines").json()] == ["Negócios"]
+    everything = client.get("/api/deal-pipelines?include_archived=true").json()
+    assert {item["name"]: item["archived"] for item in everything} == {"Negócios": False, "Temporário": True}
+    body = _update_body(client.get(f"/api/deal-pipeline?pipelineId={created['id']}").json())
+    assert client.put(f"/api/deal-pipeline?pipelineId={created['id']}", json=body, headers={"origin": ORIGIN}).status_code == 422
+
+
+def test_only_administrators_change_pipelines_but_everyone_lists_them(pipeline_database_url: str, tmp_path: Path) -> None:
+    seller = _client(tmp_path, pipeline_database_url, role="Vendedor")
+    assert seller.get("/api/deal-pipelines").status_code == 200
+    assert seller.get("/api/deal-pipelines?include_archived=true").status_code == 403
+    assert seller.post("/api/deal-pipelines", json={"name": "X"}, headers={"origin": ORIGIN}).status_code == 403
+    admin = _client(tmp_path, pipeline_database_url)
+    assert admin.post("/api/deal-pipelines", json={"name": "X"}, headers={"origin": "https://evil.test"}).status_code == 403
+    assert admin.post("/api/deal-pipelines", json={"name": "   "}, headers={"origin": ORIGIN}).status_code == 422
+    missing = admin.patch(f"/api/deal-pipelines/{uuid.uuid4()}", json={"pipelineVersion": 1, "name": "Y"}, headers={"origin": ORIGIN})
+    assert missing.status_code == 404

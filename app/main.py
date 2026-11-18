@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from uuid import UUID
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -70,6 +71,8 @@ from app.schemas import (
     DealPipelineAuditPage,
     DealPipelineHistoryQuery,
     DealPipelineResponse,
+    DealPipelineChangeRequest,
+    DealPipelineCreateRequest,
     DealPipelineUpdateRequest,
     LOGIN_FAILURE_MESSAGE,
     LocateTenantRequest,
@@ -128,7 +131,7 @@ from app.services.pipeline import (
     DealPipelineValidationError,
     DealPipelineVersionConflict,
 )
-from app.repositories.pipeline import PipelineNotFoundError, PipelineScopeError
+from app.repositories.pipeline import PipelineNotFoundError, PipelineScopeError, UnknownPipelineError
 from app.services.workspace import (
     WorkspaceAlreadyInitialized,
     WorkspaceAuthorizationError,
@@ -586,6 +589,10 @@ def create_app(
             "Versão do funil desatualizada.",
             **details,
         )
+
+    @app.exception_handler(UnknownPipelineError)
+    async def pipeline_not_found(_request: Request, _error_value: UnknownPipelineError) -> JSONResponse:
+        return _error(404, "pipeline_not_found", "Funil não encontrado.")
 
     @app.exception_handler(PipelineNotFoundError)
     @app.exception_handler(PipelineScopeError)
@@ -1266,6 +1273,7 @@ def create_app(
     @app.get("/api/deal-pipeline", response_model=DealPipelineResponse)
     def load_deal_pipeline(
         include_archived: bool = Query(default=False),
+        pipeline_id: UUID | None = Query(default=None, alias="pipelineId"),
         principal: ResolvedPrincipal = Depends(resolve_principal),
     ) -> DealPipelineResponse:
         require_action(principal, Action.READ)
@@ -1275,12 +1283,14 @@ def create_app(
             principal.tenant_session,
             principal.context.principal,
             include_archived=include_archived,
+            pipeline_id=pipeline_id,
         )
 
     @app.put("/api/deal-pipeline", response_model=DealPipelineResponse)
     def update_deal_pipeline(
         payload: DealPipelineUpdateRequest,
         request: Request,
+        pipeline_id: UUID | None = Query(default=None, alias="pipelineId"),
         principal: ResolvedPrincipal = Depends(resolve_principal),
     ) -> DealPipelineResponse:
         require_expected_origin(request)
@@ -1289,11 +1299,13 @@ def create_app(
             principal.tenant_session,
             principal.context.principal,
             payload,
+            pipeline_id=pipeline_id,
         )
 
     @app.get("/api/deal-pipeline/history", response_model=DealPipelineAuditPage)
     def deal_pipeline_history(
         query: DealPipelineHistoryQuery = Depends(),
+        pipeline_id: UUID | None = Query(default=None, alias="pipelineId"),
         principal: ResolvedPrincipal = Depends(resolve_principal),
     ) -> DealPipelineAuditPage:
         require_action(principal, Action.MANAGE_PIPELINE)
@@ -1302,6 +1314,54 @@ def create_app(
             principal.context.principal,
             before_id=query.before,
             limit=query.limit,
+            pipeline_id=pipeline_id,
+        )
+
+    @app.get("/api/deal-pipelines", response_model=list[DealPipelineResponse])
+    def list_deal_pipelines(
+        include_archived: bool = Query(default=False),
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> list[DealPipelineResponse]:
+        require_action(principal, Action.READ)
+        if include_archived:
+            require_action(principal, Action.MANAGE_PIPELINE)
+        return active_pipeline_service.list(
+            principal.tenant_session,
+            principal.context.principal,
+            include_archived=include_archived,
+        )
+
+    @app.post("/api/deal-pipelines", response_model=DealPipelineResponse, status_code=201)
+    def create_deal_pipeline(
+        payload: DealPipelineCreateRequest,
+        request: Request,
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> DealPipelineResponse:
+        require_expected_origin(request)
+        require_action(principal, Action.MANAGE_PIPELINE)
+        return active_pipeline_service.create(
+            principal.tenant_session,
+            principal.context.principal,
+            payload.name,
+        )
+
+    @app.patch("/api/deal-pipelines/{pipeline_id}", response_model=DealPipelineResponse)
+    def change_deal_pipeline(
+        pipeline_id: UUID,
+        payload: DealPipelineChangeRequest,
+        request: Request,
+        principal: ResolvedPrincipal = Depends(resolve_principal),
+    ) -> DealPipelineResponse:
+        require_expected_origin(request)
+        require_action(principal, Action.MANAGE_PIPELINE)
+        return active_pipeline_service.change(
+            principal.tenant_session,
+            principal.context.principal,
+            pipeline_id,
+            expected_version=payload.pipeline_version,
+            name=payload.name,
+            archived=payload.archived,
+            is_default=payload.is_default,
         )
 
     @app.get(

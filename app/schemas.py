@@ -328,11 +328,25 @@ class DealPipelineStageResponse(PipelineContractModel):
 class DealPipelineResponse(PipelineContractModel):
     id: UUID
     name: str
+    is_default: bool = Field(default=True, alias="isDefault")
+    position: int = 0
+    archived: bool = False
     pipeline_version: int = Field(alias="pipelineVersion", ge=1)
     workspace_version: int = Field(alias="workspaceVersion", ge=0)
     default_stage_id: UUID = Field(alias="defaultStageId")
     stages: list[DealPipelineStageResponse]
     transfer_counts: dict[UUID, int] = Field(default_factory=dict, alias="transferCounts")
+
+
+class DealPipelineCreateRequest(PipelineContractModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class DealPipelineChangeRequest(PipelineContractModel):
+    pipeline_version: int = Field(alias="pipelineVersion", ge=1)
+    name: str | None = Field(default=None, max_length=200)
+    archived: bool | None = None
+    is_default: bool | None = Field(default=None, alias="isDefault")
 
 
 class DealPipelineAuditEventResponse(PipelineContractModel):

@@ -28,6 +28,10 @@ class PipelineNotFoundError(LookupError):
     pass
 
 
+class UnknownPipelineError(PipelineNotFoundError):
+    """A pipeline id that does not exist in this company."""
+
+
 class PipelineStageNotFoundError(LookupError):
     pass
 
@@ -131,6 +135,139 @@ class DealPipelineRepository:
         if pipeline is None:
             raise PipelineNotFoundError("default pipeline not found")
         return pipeline
+
+    # --- Several pipelines -----------------------------------------------------------
+
+    def _stages(self, pipeline_id: UUID, include_archived: bool) -> tuple[DealPipelineStage, ...]:
+        stage_query = select(DealPipelineStage).where(
+            DealPipelineStage.workspace_id == self.workspace_id,
+            DealPipelineStage.pipeline_id == pipeline_id,
+        )
+        if not include_archived:
+            stage_query = stage_query.where(DealPipelineStage.archived_at.is_(None))
+        return tuple(
+            self.session.scalars(
+                stage_query.order_by(DealPipelineStage.position.asc(), DealPipelineStage.id.asc())
+            ).all()
+        )
+
+    def load(self, pipeline_id: UUID | None = None, *, include_archived: bool = False) -> DealPipelineAggregate:
+        """One pipeline by id (any state); the default one when no id is given."""
+
+        if pipeline_id is None:
+            return self.load_default(include_archived=include_archived)
+        pipeline = self.session.scalar(
+            select(DealPipeline).where(
+                DealPipeline.workspace_id == self.workspace_id,
+                DealPipeline.id == pipeline_id,
+            )
+        )
+        if pipeline is None:
+            raise UnknownPipelineError("pipeline not found")
+        return DealPipelineAggregate(pipeline=pipeline, stages=self._stages(pipeline.id, include_archived))
+
+    def lock(self, pipeline_id: UUID | None = None) -> DealPipeline:
+        if pipeline_id is None:
+            return self.lock_default()
+        pipeline = self.session.scalar(
+            select(DealPipeline)
+            .where(DealPipeline.workspace_id == self.workspace_id, DealPipeline.id == pipeline_id)
+            .with_for_update()
+        )
+        if pipeline is None:
+            raise UnknownPipelineError("pipeline not found")
+        return pipeline
+
+    def list_pipelines(
+        self, *, include_archived: bool = False, include_archived_stages: bool = False
+    ) -> tuple[DealPipelineAggregate, ...]:
+        query = select(DealPipeline).where(DealPipeline.workspace_id == self.workspace_id)
+        if not include_archived:
+            query = query.where(DealPipeline.archived_at.is_(None))
+        pipelines = self.session.scalars(
+            query.order_by(DealPipeline.is_default.desc(), DealPipeline.position.asc(), DealPipeline.name.asc())
+        ).all()
+        return tuple(
+            DealPipelineAggregate(pipeline=pipeline, stages=self._stages(pipeline.id, include_archived_stages))
+            for pipeline in pipelines
+        )
+
+    def lock_all(self) -> tuple[DealPipeline, ...]:
+        """Serializes saves against pipeline changes, in a fixed order (no deadlock)."""
+
+        return tuple(
+            self.session.scalars(
+                select(DealPipeline)
+                .where(DealPipeline.workspace_id == self.workspace_id)
+                .order_by(DealPipeline.id.asc())
+                .with_for_update()
+            ).all()
+        )
+
+    def count_deals(self, pipeline_id: UUID) -> int:
+        return int(
+            self.session.scalar(
+                select(func.count())
+                .select_from(Deal)
+                .where(
+                    Deal.workspace_id == self.workspace_id,
+                    Deal.pipeline_id == pipeline_id,
+                    Deal.deleted_at.is_(None),
+                )
+            )
+            or 0
+        )
+
+    def create_pipeline(self, *, pipeline_id: UUID, name: str, stages: Iterable[dict[str, Any]], now: datetime) -> DealPipeline:
+        """A pipeline and its stages; the first open stage is the initial one."""
+
+        stage_rows = [
+            DealPipelineStage(
+                id=stage["id"],
+                workspace_id=self.workspace_id,
+                pipeline_id=pipeline_id,
+                name=stage["name"],
+                semantic_type=stage["semantic_type"],
+                color=stage["color"],
+                position=position,
+                system_key=None,
+                archived_at=None,
+            )
+            for position, stage in enumerate(stages)
+        ]
+        initial = next(stage for stage in stage_rows if stage.semantic_type == "open")
+        last_position = self.session.scalar(
+            select(func.max(DealPipeline.position)).where(DealPipeline.workspace_id == self.workspace_id)
+        )
+        pipeline = DealPipeline(
+            id=pipeline_id,
+            workspace_id=self.workspace_id,
+            name=name,
+            version=1,
+            is_default=False,
+            default_stage_id=initial.id,
+            position=int(last_position or 0) + 1,
+            archived_at=None,
+        )
+        self.session.add(pipeline)
+        self.session.flush()
+        self.session.add_all(stage_rows)
+        self.session.flush()
+        return pipeline
+
+    def make_default(self, pipeline: DealPipeline) -> None:
+        current = self.session.scalars(
+            select(DealPipeline).where(
+                DealPipeline.workspace_id == self.workspace_id,
+                DealPipeline.is_default.is_(True),
+                DealPipeline.id != pipeline.id,
+            )
+        ).all()
+        for other in current:
+            other.is_default = False
+        self.session.flush()
+        pipeline.is_default = True
+        self.session.flush()
 
     def load_stage(
         self,

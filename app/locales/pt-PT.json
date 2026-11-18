@@ -48,5 +48,6 @@
   "O link vale por 48 horas e só pode ser usado uma vez.": "A ligação é válida durante 48 horas e só pode ser usada uma vez.",
   "Enviado pelo Smart CRM em nome da {company}. Se você não pediu a redefinição, ignore este e-mail: sua senha atual continua valendo.": "Enviado pelo Smart CRM em nome da {company}. Se não pediu a redefinição, ignore este e-mail: a sua palavra-passe atual continua válida.",
   "Seu login": "O seu login",
-  "Seu perfil não pode alterar o preço dos itens nem dar desconto.": "O seu perfil não pode alterar o preço dos itens nem dar desconto."
+  "Seu perfil não pode alterar o preço dos itens nem dar desconto.": "O seu perfil não pode alterar o preço dos itens nem dar desconto.",
+  "Use um nome de funil entre 1 e 80 caracteres.": "Utilize um nome de funil entre 1 e 80 caracteres."
 }

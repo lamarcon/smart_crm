@@ -103,7 +103,10 @@ def _aggregate_state(aggregate: DealPipelineAggregate) -> dict:
 
 
 class DealPipelineService:
-    """Validate and mutate the single default pipeline in the caller transaction."""
+    """Validate and mutate the company's deal pipelines in the caller transaction.
+
+    Every call that names no pipeline acts on the default one, so older clients keep working.
+    """
 
     def __init__(
         self,
@@ -140,12 +143,13 @@ class DealPipelineService:
         principal: PrincipalScope,
         *,
         include_archived: bool = False,
+        pipeline_id: UUID | None = None,
     ) -> DealPipelineResponse:
         self._require_authenticated(principal)
         if include_archived:
             self._require_admin(principal)
         repository = self._repository(session, principal)
-        aggregate = repository.load_default(include_archived=include_archived)
+        aggregate = repository.load(pipeline_id, include_archived=include_archived)
         return self._response(session, principal, aggregate)
 
     def update(
@@ -153,14 +157,18 @@ class DealPipelineService:
         session: Session,
         principal: PrincipalScope,
         request: DealPipelineUpdateRequest,
+        *,
+        pipeline_id: UUID | None = None,
     ) -> DealPipelineResponse:
         self._require_admin(principal)
         repository = self._repository(session, principal)
-        pipeline = repository.lock_default()
+        pipeline = repository.lock(pipeline_id)
         if pipeline.version != request.pipeline_version:
             raise DealPipelineVersionConflict(pipeline.version)
+        if pipeline.archived_at is not None:
+            raise _validation("pipeline_archived", "pipelineId", "Este funil está arquivado.")
 
-        aggregate = repository.load_default(include_archived=True)
+        aggregate = repository.load(pipeline.id, include_archived=True)
         validated = self._validate_configuration(aggregate, request)
         archive_items = [item for item in validated if item.archived]
         active_items = [item for item in validated if not item.archived]
@@ -392,14 +400,143 @@ class DealPipelineService:
         *,
         before_id: int | None = None,
         limit: int = 50,
+        pipeline_id: UUID | None = None,
     ) -> DealPipelineAuditPage:
         self._require_admin(principal)
         repository = self._repository(session, principal)
-        pipeline = repository.load_default().pipeline
+        pipeline = repository.load(pipeline_id).pipeline
         events = repository.list_audit(pipeline.id, before_id=before_id, limit=limit)
         items = [self._audit_response(event) for event in events]
         next_before = items[-1].id if len(items) == limit else None
         return DealPipelineAuditPage(items=items, nextBefore=next_before)
+
+    # --- Several pipelines -----------------------------------------------------------
+
+    BASIC_STAGES = (
+        ("Em andamento", "open", "#3B82F6"),
+        ("Ganho", "won", "#22C55E"),
+        ("Perdido", "lost", "#EF4444"),
+    )
+
+    def list(
+        self, session: Session, principal: PrincipalScope, *, include_archived: bool = False
+    ) -> list[DealPipelineResponse]:
+        self._require_authenticated(principal)
+        if include_archived:
+            self._require_admin(principal)
+        repository = self._repository(session, principal)
+        return [
+            self._response(session, principal, aggregate)
+            for aggregate in repository.list_pipelines(include_archived=include_archived)
+        ]
+
+    @staticmethod
+    def _pipeline_name(value: object) -> str:
+        name = " ".join(str(value or "").split())
+        if not 1 <= len(name) <= 80:
+            raise _validation("invalid_pipeline_name", "name", "Use um nome de funil entre 1 e 80 caracteres.")
+        return name
+
+    @staticmethod
+    def _require_unique_name(repository: DealPipelineRepository, name: str, own_id: UUID | None) -> None:
+        for aggregate in repository.list_pipelines(include_archived=False):
+            if aggregate.pipeline.id != own_id and aggregate.pipeline.name.casefold() == name.casefold():
+                raise _validation("duplicate_pipeline_name", "name", "Já existe um funil com esse nome.")
+
+    def create(self, session: Session, principal: PrincipalScope, name: object) -> DealPipelineResponse:
+        """A new pipeline with the basic stages: in progress (initial), won and lost."""
+
+        self._require_admin(principal)
+        repository = self._repository(session, principal)
+        repository.lock_all()
+        clean = self._pipeline_name(name)
+        self._require_unique_name(repository, clean, None)
+        pipeline = repository.create_pipeline(
+            pipeline_id=self.uuid_factory(),
+            name=clean,
+            stages=[
+                {"id": self.uuid_factory(), "name": stage_name, "semantic_type": semantic, "color": color}
+                for stage_name, semantic, color in self.BASIC_STAGES
+            ],
+            now=self.clock(),
+        )
+        aggregate = repository.load(pipeline.id)
+        repository.append_audit(
+            pipeline_id=pipeline.id,
+            actor_user_id=principal.user_id,
+            pipeline_version=pipeline.version,
+            action="pipeline.created",
+            actions=[{"type": "pipeline.created", "name": clean}],
+            before_state={},
+            after_state=_aggregate_state(aggregate),
+            transfer_summary=[],
+        )
+        return self._response(session, principal, aggregate)
+
+    def change(
+        self,
+        session: Session,
+        principal: PrincipalScope,
+        pipeline_id: UUID,
+        *,
+        expected_version: int,
+        name: object = None,
+        archived: bool | None = None,
+        is_default: bool | None = None,
+    ) -> DealPipelineResponse:
+        """Rename, archive/restore or make a pipeline the default one."""
+
+        self._require_admin(principal)
+        repository = self._repository(session, principal)
+        repository.lock_all()
+        pipeline = repository.lock(pipeline_id)
+        if pipeline.version != expected_version:
+            raise DealPipelineVersionConflict(pipeline.version)
+        before = _aggregate_state(repository.load(pipeline.id))
+        actions: list[dict] = []
+        if name is not None:
+            clean = self._pipeline_name(name)
+            if clean != pipeline.name:
+                self._require_unique_name(repository, clean, pipeline.id)
+                actions.append({"type": "pipeline.renamed", "from": pipeline.name, "to": clean})
+                pipeline.name = clean
+        if archived is True and pipeline.archived_at is None:
+            if pipeline.is_default:
+                raise _validation("default_pipeline_archive", "archived", "O funil principal não pode ser arquivado.")
+            deals = repository.count_deals(pipeline.id)
+            if deals:
+                raise _validation(
+                    "pipeline_not_empty",
+                    "archived",
+                    f"Mova os {deals} Negócios deste funil antes de arquivá-lo.",
+                )
+            pipeline.archived_at = self.clock()
+            actions.append({"type": "pipeline.archived"})
+        elif archived is False and pipeline.archived_at is not None:
+            self._require_unique_name(repository, pipeline.name, pipeline.id)
+            pipeline.archived_at = None
+            actions.append({"type": "pipeline.restored"})
+        if is_default is True and not pipeline.is_default:
+            if pipeline.archived_at is not None:
+                raise _validation("archived_pipeline_default", "isDefault", "Restaure o funil antes de torná-lo principal.")
+            repository.make_default(pipeline)
+            actions.append({"type": "pipeline.default"})
+        if not actions:
+            return self._response(session, principal, repository.load(pipeline.id))
+        pipeline.version += 1
+        session.flush()
+        aggregate = repository.load(pipeline.id)
+        repository.append_audit(
+            pipeline_id=pipeline.id,
+            actor_user_id=principal.user_id,
+            pipeline_version=pipeline.version,
+            action="pipeline.changed",
+            actions=actions,
+            before_state=before,
+            after_state=_aggregate_state(aggregate),
+            transfer_summary=[],
+        )
+        return self._response(session, principal, aggregate)
 
     @staticmethod
     def _validate_configuration(
@@ -635,6 +772,9 @@ class DealPipelineService:
         return DealPipelineResponse(
             id=pipeline.id,
             name=pipeline.name,
+            isDefault=bool(pipeline.is_default),
+            position=int(pipeline.position or 0),
+            archived=pipeline.archived_at is not None,
             pipelineVersion=pipeline.version,
             workspaceVersion=cls._workspace_version(session, principal),
             defaultStageId=pipeline.default_stage_id,

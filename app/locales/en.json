@@ -158,5 +158,12 @@
   "Vendedor": "Salesperson",
   "Assistente": "Assistant",
   "Faturamento": "Billing",
-  "Seu perfil não pode alterar o preço dos itens nem dar desconto.": "Your role cannot change item prices or give discounts."
+  "Seu perfil não pode alterar o preço dos itens nem dar desconto.": "Your role cannot change item prices or give discounts.",
+  "Este funil está arquivado.": "This pipeline is archived.",
+  "Use um nome de funil entre 1 e 80 caracteres.": "Use a pipeline name between 1 and 80 characters.",
+  "Já existe um funil com esse nome.": "A pipeline with this name already exists.",
+  "O funil principal não pode ser arquivado.": "The main pipeline cannot be archived.",
+  "Mova os {n} Negócios deste funil antes de arquivá-lo.": "Move the {n} Deals of this pipeline before archiving it.",
+  "Restaure o funil antes de torná-lo principal.": "Restore the pipeline before making it the main one.",
+  "Funil não encontrado.": "Pipeline not found."
 }

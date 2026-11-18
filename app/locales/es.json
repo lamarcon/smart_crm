@@ -158,5 +158,12 @@
   "Perfil": "Perfil",
   "Administrador": "Administrador",
   "Vendedor": "Vendedor",
-  "Seu perfil não pode alterar o preço dos itens nem dar desconto.": "Tu perfil no puede cambiar el precio de los ítems ni dar descuentos."
+  "Seu perfil não pode alterar o preço dos itens nem dar desconto.": "Tu perfil no puede cambiar el precio de los ítems ni dar descuentos.",
+  "Este funil está arquivado.": "Este embudo está archivado.",
+  "Use um nome de funil entre 1 e 80 caracteres.": "Usa un nombre de embudo de 1 a 80 caracteres.",
+  "Já existe um funil com esse nome.": "Ya existe un embudo con ese nombre.",
+  "O funil principal não pode ser arquivado.": "El embudo principal no se puede archivar.",
+  "Mova os {n} Negócios deste funil antes de arquivá-lo.": "Mueve los {n} Negocios de este embudo antes de archivarlo.",
+  "Restaure o funil antes de torná-lo principal.": "Restaura el embudo antes de hacerlo principal.",
+  "Funil não encontrado.": "Embudo no encontrado."
 }
