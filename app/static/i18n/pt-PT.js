@@ -195,5 +195,6 @@ window.SMART_CRM_I18N['pt-PT'] = {
   "Excluir item {p0}": "Eliminar item {p0}",
   "Salvar item": "Guardar item",
   "Excluir o item \"{p0}\" do orçamento?": "Eliminar o item \"{p0}\" do orçamento?",
-  "Item {p0} excluído.": "Item {p0} eliminado."
+  "Item {p0} excluído.": "Item {p0} eliminado.",
+  "{p14} registro(s) visível(is)": "{p14} registo(s) visível(eis)"
 };

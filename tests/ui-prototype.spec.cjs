@@ -34,6 +34,21 @@ function defaultDealPipeline() {
   };
 }
 
+// A second pipeline as the server creates it: In progress (initial), Won, Lost.
+const AFTER_SALES_STAGE_IDS = ['30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002', '30000000-0000-4000-8000-000000000003'];
+function basicPipeline(id, name, stageIds) {
+  const basics = [['Em andamento', 'open', '#3B82F6'], ['Ganho', 'won', '#22C55E'], ['Perdido', 'lost', '#EF4444']];
+  return {
+    id, name, isDefault: false, archived: false, position: 1,
+    pipelineVersion: 1, workspaceVersion: 1, defaultStageId: stageIds[0], transferCounts: {},
+    stages: basics.map(([stageName, semanticType, color], index) => ({
+      id: stageIds[index], name: stageName, semanticType, color, position: index, systemKey: null,
+      active: true, initial: index === 0, archivedAt: null
+    }))
+  };
+}
+function afterSalesPipeline() { return basicPipeline('20000000-0000-4000-8000-000000000002', 'Pós-venda', AFTER_SALES_STAGE_IDS); }
+
 function attachCanonicalDealStages(source, pipeline) {
   if (!source) return source;
   const byName = new Map(pipeline.stages.map(stage => [stage.name, stage]));
@@ -140,6 +155,7 @@ async function openFresh(options = {}) {
     intakeKeys: [], intakeRequests: [], intakeFailure: null,
     preferenceRequests: [], preferenceFailure: false,
     permissionRequests: [], permissionRoles: null, exportRequests: [],
+    extraPipelines: clone(options.extraPipelines || []), pipelineRequests: [],
     deleted: { users: [], leads: [], contacts: [], companies: [], deals: [], products: [], quotes: [], notifications: [] }
   };
   apiByPage.set(page, api);
@@ -167,6 +183,34 @@ async function openFresh(options = {}) {
     }
     api.session = { ...api.session, locale: body.locale };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ locale: body.locale }) });
+  });
+  await context.route('**/api/deal-pipelines**', route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const all = () => [{ ...api.pipeline, isDefault: api.pipeline.isDefault !== false, archived: false }, ...api.extraPipelines]
+      .filter(item => !item.archived)
+      .sort((left, right) => Number(right.isDefault) - Number(left.isDefault));
+    if (request.method() === 'GET' && api.pipelineFailure) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'pipeline_unavailable', message: 'Funil indisponível.' } }) });
+    if (request.method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(all()) });
+    const body = request.postDataJSON();
+    api.pipelineRequests.push({ method: request.method(), path: url.pathname, body });
+    if (request.method() === 'POST') {
+      const index = api.extraPipelines.length + 2;
+      const created = basicPipeline(`20000000-0000-4000-8000-00000000000${index}`, body.name, [1, 2, 3].map(n => `4000000${index}-0000-4000-8000-00000000000${n}`));
+      api.extraPipelines.push(created);
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(created) });
+    }
+    const id = url.pathname.split('/').pop();
+    const target = id === api.pipeline.id ? api.pipeline : api.extraPipelines.find(item => item.id === id);
+    if (body.archived) {
+      const deals = (api.state?.deals || []).filter(deal => deal.pipelineId === id).length;
+      if (deals) return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: { code: 'pipeline_not_empty', message: `Mova os ${deals} Negócios deste funil antes de arquivá-lo.` } }) });
+      target.archived = true;
+    }
+    if (body.name) target.name = body.name;
+    if (body.isDefault) { api.pipeline.isDefault = false; api.extraPipelines.forEach(item => { item.isDefault = false; }); target.isDefault = true; }
+    target.pipelineVersion += 1;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(target) });
   });
   await context.route('**/api/permissions', route => {
     const request = route.request();
@@ -3864,6 +3908,97 @@ async function storageEntries(page) {
     })()
   });
 
+  await run('PIPE-MULTI-01 seletor de funil filtra lista e kanban pelos Negócios e etapas de cada funil', async page => {
+    await goTo(page, 'Negócios');
+    const deals = page.locator('#page-deals');
+    const picker = deals.locator('[data-pipeline-select]');
+    assert.deepEqual(await picker.locator('option').allTextContents(), ['Vendas CMS ★', 'Pós-venda']);
+    assert.equal(await deals.getByText('Suporte anual Arkos').count(), 0);
+    await picker.selectOption({ label: 'Pós-venda' });
+    await deals.getByText('Suporte anual Arkos').waitFor();
+    assert.equal(await deals.getByText('Implantação Arkos Estética').count(), 0);
+    await page.getByRole('button', { name: 'Kanban' }).click();
+    assert.deepEqual(await page.locator('#page-deals .kanban-column-head span:first-child').allTextContents(), ['Em andamento', 'Ganho', 'Perdido']);
+    // The choice is remembered for the next load.
+    assert.equal(await page.evaluate(() => localStorage.getItem('smart-crm-pipeline')), '20000000-0000-4000-8000-000000000002');
+  }, { extraPipelines: [afterSalesPipeline()], preloadState: (() => {
+    const workspace = workspaceWithDeal();
+    workspace.deals[0].title = 'Implantação Arkos Estética';
+    workspace.deals.push({ id: 'N-PV1', title: 'Suporte anual Arkos', company: 'Arkos', contact: '', amount: 900, additionalAmount: 900, additionalReason: '', pipelineId: '20000000-0000-4000-8000-000000000002', stageId: AFTER_SALES_STAGE_IDS[0], stage: 'Em andamento', responsibleId: 'u-admin', assistants: [], updatedAt: '1 out, 10:00', quotes: [], stageHistory: [] });
+    return workspace;
+  })() });
+
+  await run('PIPE-MULTI-02 Administrador cria, renomeia, torna principal e arquiva funis', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Funil de negócios');
+    const manager = page.locator('.pipeline-manager');
+    page.once('dialog', dialog => dialog.accept('Implantação'));
+    await manager.getByRole('button', { name: '＋ Novo funil' }).click();
+    await page.locator('#toastRegion').getByText('Funil criado com as etapas Em andamento, Ganho e Perdido.').waitFor();
+    assert.deepEqual(api.pipelineRequests.at(-1), { method: 'POST', path: '/api/deal-pipelines', body: { name: 'Implantação' } });
+    assert.equal(await manager.locator('#pipelineManagerSelect').inputValue(), api.extraPipelines[0].id);
+    assert.equal(await page.locator('[data-pipeline-editor-stage]').count(), 3);
+
+    page.once('dialog', dialog => dialog.accept('Implantação 2026'));
+    await manager.getByRole('button', { name: 'Renomear' }).click();
+    await page.locator('#toastRegion').getByText('Funil renomeado.').waitFor();
+    assert.equal(api.pipelineRequests.at(-1).body.name, 'Implantação 2026');
+
+    page.once('dialog', dialog => dialog.accept());
+    await manager.getByRole('button', { name: 'Arquivar funil' }).click();
+    await page.locator('#toastRegion').getByText('Funil arquivado.').waitFor();
+    assert.equal(api.pipelineRequests.at(-1).body.archived, true);
+    assert.equal(await manager.locator('#pipelineManagerSelect option').count(), 1);
+    assert.equal(await manager.getByRole('button', { name: 'Arquivar funil' }).count(), 0);
+  });
+
+  await run('PIPE-MULTI-03 funil com Negócios não é arquivado e pode virar o principal', async page => {
+    const api = apiByPage.get(page);
+    await goTo(page, 'Funil de negócios');
+    const manager = page.locator('.pipeline-manager');
+    await manager.locator('#pipelineManagerSelect').selectOption({ label: 'Pós-venda' });
+    await manager.getByRole('button', { name: 'Arquivar funil' }).click();
+    await page.locator('#toastRegion').getByText('Mova os 1 Negócios deste funil antes de arquivá-lo.').waitFor();
+    assert.equal(api.pipelineRequests.length, 0);
+    page.once('dialog', dialog => dialog.accept());
+    await manager.getByRole('button', { name: 'Tornar principal' }).click();
+    await page.locator('#toastRegion').getByText('Funil principal alterado.').waitFor();
+    assert.equal(api.pipelineRequests.at(-1).body.isDefault, true);
+    assert.match(await manager.innerText(), /Funil principal/);
+  }, { extraPipelines: [afterSalesPipeline()], preloadState: (() => {
+    const workspace = workspaceWithDeal();
+    workspace.deals.push({ id: 'N-PV1', title: 'Suporte anual Arkos', company: 'Arkos', contact: '', amount: 900, additionalAmount: 900, additionalReason: '', pipelineId: '20000000-0000-4000-8000-000000000002', stageId: AFTER_SALES_STAGE_IDS[0], stage: 'Em andamento', responsibleId: 'u-admin', assistants: [], updatedAt: '1 out, 10:00', quotes: [], stageHistory: [] });
+    return workspace;
+  })() });
+
+  await run('PIPE-MULTI-04 converter Lead pergunta o funil e o Negócio nasce na etapa inicial dele', async page => {
+    await goTo(page, 'Leads');
+    const row = page.locator('#page-leads tbody tr').filter({ has: page.getByRole('button', { name: 'Converter' }) }).first();
+    const leadName = await row.locator('.entity-link').innerText();
+    const before = (await stateFrom(page)).deals.map(deal => deal.id);
+    await row.getByRole('button', { name: 'Converter' }).click();
+    const dialog = page.locator('#pipelineChoiceDialog');
+    await dialog.waitFor({ state: 'visible' });
+    assert.equal(await dialog.locator('#pipelineChoiceLead').innerText(), leadName);
+    await dialog.locator('#pipelineChoice').selectOption({ label: 'Pós-venda' });
+    await dialog.getByRole('button', { name: 'Converter' }).click();
+    await page.waitForFunction(count => state.deals.length > count, before.length);
+    const created = (await stateFrom(page)).deals.find(deal => !before.includes(deal.id));
+    assert.deepEqual([created.pipelineId, created.stageId], ['20000000-0000-4000-8000-000000000002', AFTER_SALES_STAGE_IDS[0]]);
+  }, { extraPipelines: [afterSalesPipeline()] });
+
+  await run('PIPE-MULTI-05 formulário escolhe o funil e as etapas acompanham', async page => {
+    await goTo(page, 'Negócios');
+    await page.locator('#page-deals [data-action="new"]').click();
+    const dialog = page.locator('#entityDialog');
+    const pipeline = dialog.getByLabel('Funil *');
+    const stage = dialog.getByLabel('Etapa *');
+    assert.equal((await stage.locator('option').allTextContents()).length, 9);
+    await pipeline.selectOption({ label: 'Pós-venda' });
+    assert.deepEqual(await stage.locator('option').allTextContents(), ['Em andamento', 'Ganho', 'Perdido']);
+    assert.equal(await stage.inputValue(), AFTER_SALES_STAGE_IDS[0]);
+  }, { extraPipelines: [afterSalesPipeline()] });
+
   await run('AUTH-EXP sessão expirada durante o uso volta para o login', async page => {
     assert.equal(await page.locator('#crmApp').isVisible(), true);
     await page.route('**/api/me/preferences', route => route.fulfill({
@@ -4355,7 +4490,7 @@ async function storageEntries(page) {
     await dialog.waitFor({ state: 'visible' });
     assert.equal(await dialog.getByText('Nenhum campo personalizado criado.').count(), 1);
     assert.deepEqual(await dialog.locator('[data-standard-field]').evaluateAll(inputs => inputs.map(input => [input.closest('label').textContent.trim(), input.checked])), [
-      ['Título do Negócio', true], ['Empresa', true], ['Contato', true], ['Valor adicional', true], ['Motivo do valor adicional', true], ['Moeda', true],
+      ['Título do Negócio', true], ['Empresa', true], ['Contato', true], ['Valor adicional', true], ['Motivo do valor adicional', true], ['Moeda', true], ['Funil', true],
       ['Etapa', true], ['Responsável', true], ['Assistente', true]
     ]);
 

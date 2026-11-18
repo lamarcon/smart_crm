@@ -313,6 +313,8 @@
     .drawer-quote-list { display: grid; gap: 10px; }
     .drawer-quote { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; padding: 13px 14px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
     .stage-steps { display: flex; gap: 8px; }
+    .pipeline-manager { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
+    .pipeline-manager-pick { display: grid; gap: 4px; min-width: 220px; }
     .quote-items { width: 100%; font-size: 12px; }
     .quote-items .num { text-align: right; white-space: nowrap; }
     .quote-items small { display: block; color: var(--slate-500); }
@@ -743,6 +745,14 @@
     </form>
   </aside>
 
+  <dialog id="pipelineChoiceDialog">
+    <form method="dialog">
+      <div class="modal-head"><h3>Em qual funil?</h3><button type="submit" class="close-button" value="cancel" aria-label="Fechar">×</button></div>
+      <div class="modal-body"><p>O Negócio de <b id="pipelineChoiceLead"></b> começa na etapa inicial do funil escolhido.</p><div class="field"><label for="pipelineChoice">Funil</label><select id="pipelineChoice"></select></div></div>
+      <div class="modal-foot"><button type="submit" class="button" value="cancel">Cancelar</button><button type="submit" class="button primary" value="ok">Converter</button></div>
+    </form>
+  </dialog>
+
   <dialog id="quoteDialog">
     <form id="quoteForm">
       <div class="modal-head"><h3 id="quoteDialogTitle">Novo item</h3><button type="button" class="close-button" data-close="quoteDialog" aria-label="Fechar">×</button></div>
@@ -1033,8 +1043,11 @@
     const READ_ONLY_WARNING = 'Banco indisponível. Alterações bloqueadas.';
     const GENERIC_LOGIN_ERROR = 'Não foi possível entrar com os dados informados.';
     const leadStages = ['Em contato', 'Lead descartado', 'Lead convertido'];
+    // Every active pipeline of the company; dealPipeline is the one on screen.
+    let dealPipelines = [];
     let dealPipeline = null;
     let dealPipelineError = '';
+    const PIPELINE_STORAGE_KEY = 'smart-crm-pipeline';
     let pipelineEditorDraft = null;
     let pipelineEditorDirty = false;
     let pipelineEditorSaving = false;
@@ -1052,14 +1065,39 @@
       pipelineEditorConflict = false;
     }
 
-    function activeDealStages() {
-      return (dealPipeline?.stages || []).filter(stage => stage.active).sort((left, right) => left.position - right.position);
+    function knownPipelines() { return dealPipelines.length ? dealPipelines : (dealPipeline ? [dealPipeline] : []); }
+    function pipelineById(pipelineId) { return knownPipelines().find(pipeline => pipeline.id === pipelineId) || null; }
+    function mainPipeline() { return knownPipelines().find(pipeline => pipeline.isDefault !== false) || knownPipelines()[0] || null; }
+    function hasSeveralPipelines() { return knownPipelines().length > 1; }
+    function activeDealStages(pipelineId) {
+      const pipeline = pipelineId ? pipelineById(pipelineId) : dealPipeline;
+      return (pipeline?.stages || []).filter(stage => stage.active).sort((left, right) => left.position - right.position);
     }
     function stageById(stageId) {
-      return (dealPipeline?.stages || []).find(stage => stage.id === stageId) || null;
+      for (const pipeline of knownPipelines()) {
+        const stage = (pipeline.stages || []).find(item => item.id === stageId);
+        if (stage) return stage;
+      }
+      return null;
     }
+    function pipelineOfStage(stageId) { return knownPipelines().find(pipeline => (pipeline.stages || []).some(stage => stage.id === stageId)) || null; }
+    function pipelineOfDeal(deal) { return pipelineOfStage(deal?.stageId) || pipelineById(deal?.pipelineId) || mainPipeline(); }
     function dealStage(deal) { return stageById(deal?.stageId); }
-    function initialStage() { return stageById(dealPipeline?.defaultStageId); }
+    function initialStage(pipelineId) {
+      const pipeline = pipelineId ? pipelineById(pipelineId) : dealPipeline;
+      return (pipeline?.stages || []).find(stage => stage.id === pipeline.defaultStageId) || null;
+    }
+    // Shows another pipeline on the deals screen and in the pipeline editor.
+    function selectPipeline(pipelineId) {
+      const pipeline = pipelineById(pipelineId);
+      if (!pipeline) return;
+      dealPipeline = pipeline;
+      try { localStorage.setItem(PIPELINE_STORAGE_KEY, pipeline.id); } catch (_) { /* optional */ }
+      resetPipelineEditorDraft();
+      resetPipelineHistory();
+      if (activeView === 'pipeline-admin') void loadPipelineHistory();
+      render();
+    }
     function isWon(deal) { return dealStage(deal)?.semanticType === 'won'; }
     function isLost(deal) { return dealStage(deal)?.semanticType === 'lost'; }
     function isOpen(deal) { return dealStage(deal)?.semanticType === 'open'; }
@@ -1071,11 +1109,11 @@
     }
     function canonicalizeDealReferences(source = state) {
       if (!dealPipeline) return source;
-      const byName = new Map((dealPipeline.stages || []).map(stage => [stage.name, stage]));
       (source.deals || []).forEach(deal => {
-        const canonical = stageById(deal.stageId) || byName.get(deal.stage);
+        const pipeline = pipelineOfStage(deal.stageId) || pipelineById(deal.pipelineId) || mainPipeline();
+        const canonical = stageById(deal.stageId) || (pipeline?.stages || []).find(stage => stage.name === deal.stage);
         if (!canonical) return;
-        deal.pipelineId = dealPipeline.id;
+        deal.pipelineId = pipelineOfStage(canonical.id)?.id || pipeline.id;
         deal.stageId = canonical.id;
         deal.stage = canonical.name;
         if (canonical.semanticType === 'won') deal.wonAt = ensureIso(deal.wonAt, deal.stageChangedAt || deal.updatedAt);
@@ -1533,15 +1571,24 @@
       showAuthView('app', expectedSlug);
     }
 
+    async function fetchDealPipelines() {
+      const listed = await apiFetch('/api/deal-pipelines', { headers: { Accept: 'application/json' } });
+      if (listed.ok) return responseJson(listed);
+      // A server without several pipelines answers only the main one.
+      return [await responseJson(await apiFetch('/api/deal-pipeline', { headers: { Accept: 'application/json' } }))];
+    }
     async function loadDealPipeline() {
+      const previousId = dealPipeline?.id;
       dealPipeline = null;
       dealPipelineError = '';
       try {
-        const payload = await responseJson(await apiFetch('/api/deal-pipeline', { headers: { Accept: 'application/json' } }));
-        if (!payload?.id || !payload?.defaultStageId || !Array.isArray(payload.stages) || !payload.stages.some(stage => stage.active)) {
-          throw new Error('O funil de Negócios não possui etapas ativas.');
-        }
-        dealPipeline = payload;
+        const payload = await fetchDealPipelines();
+        const usable = (Array.isArray(payload) ? payload : []).filter(item => item?.id && item?.defaultStageId && Array.isArray(item.stages) && item.stages.some(stage => stage.active));
+        if (!usable.length) throw new Error('O funil de Negócios não possui etapas ativas.');
+        dealPipelines = usable;
+        let stored = null;
+        try { stored = localStorage.getItem(PIPELINE_STORAGE_KEY); } catch (_) { /* optional */ }
+        dealPipeline = pipelineById(previousId) || pipelineById(stored) || mainPipeline();
         resetPipelineEditorDraft();
         document.documentElement.dataset.pipelineReady = 'true';
       } catch (failure) {
@@ -1817,6 +1864,7 @@
       workspaceWriteInFlight = false;
       queuedToasts = [];
       dealPipeline = null;
+      dealPipelines = [];
       dealPipelineError = '';
       pipelineEditorDraft = null;
       pipelineEditorDirty = false;
@@ -2623,6 +2671,7 @@
       const selectedStages = filter.criteria.stage?.value || [];
       const quickStage = selectedStages.length === 1 ? selectedStages[0] : 'Todos';
       const normalizedStages = entity === 'deals' ? stageOptions : stageOptions.map(name => ({ id: name, name }));
+      const pipelinePick = entity === 'deals' && hasSeveralPipelines() ? pipelineSelectHTML('data-pipeline-select aria-label="Funil"', dealPipeline?.id) : '';
       const stageFilter = normalizedStages.length ? `<select data-stage-filter="${entity}" aria-label="Filtrar por etapa"><option value="Todos">Todos</option>${normalizedStages.map(stage => `<option value="${escapeHTML(stage.id)}" ${quickStage === stage.id ? 'selected' : ''}>${escapeHTML(stage.name)}</option>`).join('')}</select>` : '';
       const countBadge = activeFilterCount(entity);
       const mode = stageOptions.length ? getViewMode(entity) : 'list';
@@ -2630,7 +2679,7 @@
       const manageFields = currentUser().role === 'Administrador' ? `<button class="button" data-action="manage-fields" data-scope="${entity}">Gerenciar campos</button>` : '';
       const exportButton = can(entity, 'export') ? `<button class="button" data-action="export" data-scope="${entity}">⇩ Exportar</button>` : '';
       const newButton = can(entity, 'create') ? `<button class="button primary" data-action="new" data-entity="${singular}">＋ Novo ${plural}</button>` : '';
-      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}${manageFields}${exportButton}${newButton}</div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados do workspace</span></div></div>`;
+      return `<div class="page-toolbar"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar-actions">${viewSwitch}${manageFields}${exportButton}${newButton}</div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-search="${entity}" value="${escapeHTML(filter.query)}" placeholder="Buscar em ${title.toLowerCase()}..."></div>${pipelinePick}${stageFilter}<button class="button" data-action="open-filters" data-scope="${entity}">⚙ Filtros${countBadge ? ` (${countBadge})` : ''}</button></div><div class="table-wrap">${body}</div><div class="table-footer"><span>${count} registro(s) visível(is)</span><span>${mode === 'kanban' ? 'Kanban' : 'Lista'} · Dados do workspace</span></div></div>`;
     }
 
     function leadsHTML() {
@@ -2673,7 +2722,7 @@
 
     function dealsHTML() {
       if (!dealPipeline) return `<div class="pipeline-unavailable" role="alert"><h2>Negócios indisponíveis</h2><p>${escapeHTML(dealPipelineError || 'Não foi possível carregar o funil desta empresa.')}</p></div>`;
-      const records = applyRecordFilters('deals', visibleDeals());
+      const records = applyRecordFilters('deals', visibleDeals()).filter(deal => !hasSeveralPipelines() || pipelineOfDeal(deal)?.id === dealPipeline.id);
       const stages = activeDealStages();
       if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Funil configurado da empresa com acompanhamento por etapas.', renderKanban('deals', records), records.length, stages);
       const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td>${dealMoneyHTML(item)}<small>${item.quotes.length} item(ns)</small></td><td>${renderStageProgress(stages, item.stageId, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button>${canRecord('deals', 'delete', item) ? `<button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button>` : ''}</div></td></tr>`).join('');
@@ -2721,6 +2770,7 @@
       try {
         const query = new URLSearchParams({ limit: '50' });
         if (before !== null) query.set('before', String(before));
+        if (dealPipeline?.id && hasSeveralPipelines()) query.set('pipelineId', dealPipeline.id);
         const payload = await responseJson(await apiFetch(`/api/deal-pipeline/history?${query}`, { headers: { Accept: 'application/json' } }));
         pipelineHistoryState = {
           items: Array.isArray(payload.items) ? payload.items : [],
@@ -2772,7 +2822,51 @@
         </article>`;
       }).join('');
       const conflict = pipelineEditorConflict ? `<div class="pipeline-conflict" role="alert"><span>O funil foi alterado em outra sessão. Sua edição local foi preservada; recarregue para ver a versão atual.</span><button class="button small" type="button" data-action="reload-pipeline-editor">Recarregar funil</button></div>` : '';
-      return `<div class="page-toolbar"><div><h2>Funil de negócios</h2><p>Versão ${dealPipeline.pipelineVersion} · nomes e cores são editáveis; tipo semântico e automação interna são imutáveis.</p></div><div class="toolbar-actions"><button class="button" type="button" data-action="add-pipeline-stage">+ Adicionar etapa</button><button class="button primary" type="button" data-action="save-pipeline-editor" ${pipelineEditorSaving ? 'disabled' : ''}>${pipelineEditorSaving ? 'Salvando…' : 'Salvar funil'}</button></div></div><section class="pipeline-editor" aria-label="Editor do funil">${conflict}<p class="pipeline-editor-status" id="pipelineEditorStatus" role="status">${pipelineEditorDirty ? 'Alterações ainda não salvas.' : 'Funil sincronizado com o servidor.'}</p><div class="pipeline-stage-list">${rows}</div></section>${pipelineHistoryHTML()}`;
+      return `${pipelineManagerHTML()}<div class="page-toolbar"><div><h2>Funil de negócios</h2><p>Versão ${dealPipeline.pipelineVersion} · nomes e cores são editáveis; tipo semântico e automação interna são imutáveis.</p></div><div class="toolbar-actions"><button class="button" type="button" data-action="add-pipeline-stage">+ Adicionar etapa</button><button class="button primary" type="button" data-action="save-pipeline-editor" ${pipelineEditorSaving ? 'disabled' : ''}>${pipelineEditorSaving ? 'Salvando…' : 'Salvar funil'}</button></div></div><section class="pipeline-editor" aria-label="Editor do funil">${conflict}<p class="pipeline-editor-status" id="pipelineEditorStatus" role="status">${pipelineEditorDirty ? 'Alterações ainda não salvas.' : 'Funil sincronizado com o servidor.'}</p><div class="pipeline-stage-list">${rows}</div></section>${pipelineHistoryHTML()}`;
+    }
+
+    // The pipeline on screen; omitted with a single pipeline (older servers know only that one).
+    function pipelineUrl() { return hasSeveralPipelines() ? `/api/deal-pipeline?pipelineId=${encodeURIComponent(dealPipeline.id)}` : '/api/deal-pipeline'; }
+    function pipelineSelectHTML(attributes, selectedId) {
+      return `<select ${attributes}>${knownPipelines().map(pipeline => `<option value="${escapeHTML(pipeline.id)}" ${pipeline.id === selectedId ? 'selected' : ''}>${escapeHTML(pipeline.name)}${pipeline.isDefault ? ' ★' : ''}</option>`).join('')}</select>`;
+    }
+    function pipelineManagerHTML() {
+      const current = dealPipeline;
+      const deals = (state.deals || []).filter(deal => pipelineOfDeal(deal)?.id === current.id).length;
+      return `<section class="pipeline-manager" aria-label="Funis de negócios"><div class="pipeline-manager-pick"><label for="pipelineManagerSelect">Funil</label>${pipelineSelectHTML('id="pipelineManagerSelect" data-pipeline-select', current.id)}<span class="hint">${current.isDefault ? 'Funil principal' : `${deals} Negócio(s) neste funil`}</span></div><div class="toolbar-actions"><button class="button" type="button" data-action="new-pipeline">＋ Novo funil</button><button class="button" type="button" data-action="rename-pipeline">Renomear</button>${current.isDefault ? '' : `<button class="button" type="button" data-action="default-pipeline">Tornar principal</button><button class="button danger" type="button" data-action="archive-pipeline">Arquivar funil</button>`}</div></section>`;
+    }
+    async function changePipelines(request, success) {
+      try {
+        const answer = await responseJson(await apiFetch(request.url, {
+          method: request.method, headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(request.body)
+        }));
+        await loadDealPipeline();
+        if (answer?.id && !answer.archived) selectPipeline(answer.id);
+        else { const fallback = mainPipeline(); if (fallback) selectPipeline(fallback.id); }
+        toast(success);
+      } catch (failure) {
+        showToast(failure?.payload?.error?.message || 'Não foi possível alterar o funil.');
+      }
+    }
+    function createPipeline() {
+      const name = prompt('Nome do novo funil:');
+      if (!name?.trim()) return;
+      void changePipelines({ url: '/api/deal-pipelines', method: 'POST', body: { name: name.trim() } }, 'Funil criado com as etapas Em andamento, Ganho e Perdido.');
+    }
+    function renamePipeline() {
+      const name = prompt('Novo nome do funil:', dealPipeline.name);
+      if (!name?.trim() || name.trim() === dealPipeline.name) return;
+      void changePipelines({ url: `/api/deal-pipelines/${encodeURIComponent(dealPipeline.id)}`, method: 'PATCH', body: { pipelineVersion: dealPipeline.pipelineVersion, name: name.trim() } }, 'Funil renomeado.');
+    }
+    function makePipelineMain() {
+      if (!confirm(`Tornar "${dealPipeline.name}" o funil principal?`)) return;
+      void changePipelines({ url: `/api/deal-pipelines/${encodeURIComponent(dealPipeline.id)}`, method: 'PATCH', body: { pipelineVersion: dealPipeline.pipelineVersion, isDefault: true } }, 'Funil principal alterado.');
+    }
+    function archivePipeline() {
+      const deals = (state.deals || []).filter(deal => pipelineOfDeal(deal)?.id === dealPipeline.id).length;
+      if (deals) { showToast(`Mova os ${deals} Negócios deste funil antes de arquivá-lo.`); return; }
+      if (!confirm(`Arquivar o funil "${dealPipeline.name}"?`)) return;
+      void changePipelines({ url: `/api/deal-pipelines/${encodeURIComponent(dealPipeline.id)}`, method: 'PATCH', body: { pipelineVersion: dealPipeline.pipelineVersion, archived: true } }, 'Funil arquivado.');
     }
 
     function syncPipelineEditorDraftFromDom() {
@@ -2943,10 +3037,11 @@
       const submit = document.querySelector('#pipelineArchiveForm button[type="submit"]');
       if (submit) { submit.disabled = true; submit.textContent = 'Aplicando…'; }
       try {
-        const updated = await responseJson(await apiFetch('/api/deal-pipeline', {
+        const updated = await responseJson(await apiFetch(pipelineUrl(), {
           method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload)
         }));
         dealPipeline = updated;
+        dealPipelines = knownPipelines().map(item => item.id === updated.id ? updated : item);
         workspaceVersion = updated.workspaceVersion;
         resetPipelineEditorDraft();
         closePipelineArchive();
@@ -2996,10 +3091,11 @@
         transfers: {}
       };
       try {
-        const updated = await responseJson(await apiFetch('/api/deal-pipeline', {
+        const updated = await responseJson(await apiFetch(pipelineUrl(), {
           method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload)
         }));
         dealPipeline = updated;
+        dealPipelines = knownPipelines().map(item => item.id === updated.id ? updated : item);
         canonicalizeDealReferences();
         resetPipelineEditorDraft();
         writeLocalState();
@@ -3668,7 +3764,7 @@
         ['title', 'Título do Negócio', 'text', true], ['company', 'Empresa', 'companyRef', true],
         ['contact', 'Contato', 'contactRef', false], ['additionalAmount', 'Valor adicional', 'number', false],
         ['additionalReason', 'Motivo do valor adicional', 'textarea', false], ['currency', 'Moeda', 'currency', true],
-        ['stage', 'Etapa', 'stage', true], ['responsibleId', 'Responsável', 'user', true],
+        ['pipelineId', 'Funil', 'pipeline', true], ['stage', 'Etapa', 'stage', true], ['responsibleId', 'Responsável', 'user', true],
         ['assistants', 'Assistente', 'assistant', false]
       ]
     };
@@ -4510,9 +4606,17 @@
           : type === 'contactRef' ? '<small class="field-hint">Contatos cadastrados da empresa escolhida.</small>' : '';
         return `<div class="field suggest-field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><div class="suggest-anchor"><input id="${idPrefix}-${name}" name="${name}" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${listId}" autocomplete="off" data-suggest="${kind}" ${reference} value="${escapeHTML(value ?? '')}" ${requiredAttr}><ul id="${listId}" class="suggest-list" role="listbox" aria-label="Sugestões" hidden></ul></div>${hint}</div>`;
       }
+      if (type === 'pipeline') {
+        // Only shown when the company has more than one pipeline.
+        if (!hasSeveralPipelines()) return '';
+        const selected = pipelineById(value)?.id || dealPipeline?.id;
+        return `<div class="field"><label for="${idPrefix}-${name}">${label} *</label>${pipelineSelectHTML(`id="${idPrefix}-${name}" name="pipelineId" data-deal-pipeline required`, selected)}</div>`;
+      }
       if (type === 'stage') {
-        const selectedId = stageById(value)?.id || activeDealStages().find(stage => stage.name === value)?.id || initialStage()?.id;
-        return `<div class="field"><label for="${idPrefix}-${name}">${label} *</label><select id="${idPrefix}-${name}" name="stageId" required>${activeDealStages().map(stage => `<option value="${escapeHTML(stage.id)}" ${stage.id === selectedId ? 'selected' : ''}>${escapeHTML(stage.name)}</option>`).join('')}</select></div>`;
+        const owner = pipelineOfStage(value) || dealPipeline;
+        const stages = activeDealStages(owner?.id);
+        const selectedId = stageById(value)?.id || stages.find(stage => stage.name === value)?.id || initialStage(owner?.id)?.id;
+        return `<div class="field"><label for="${idPrefix}-${name}">${label} *</label><select id="${idPrefix}-${name}" name="stageId" data-deal-stage required>${stages.map(stage => `<option value="${escapeHTML(stage.id)}" ${stage.id === selectedId ? 'selected' : ''}>${escapeHTML(stage.name)}</option>`).join('')}</select></div>`;
       }
       return `<div class="field"><label for="${idPrefix}-${name}">${label}${required ? ' *' : ''}</label><input id="${idPrefix}-${name}" name="${name}" type="${type}" ${type === 'number' ? 'min="0" step="0.01"' : ''} value="${escapeHTML(value ?? '')}" ${requiredAttr}></div>`;
     }
@@ -4589,9 +4693,9 @@
       }
       if (entity === 'deal') {
         if (!requireDealPipeline()) return;
-        const selectedStage = stageById(data.stageId || existing?.stageId || initialStage()?.id);
+        const selectedStage = stageById(data.stageId || existing?.stageId || initialStage(data.pipelineId)?.id);
         if (!selectedStage?.active) { showToast('Selecione uma etapa ativa do funil.'); return; }
-        data.pipelineId = dealPipeline.id;
+        data.pipelineId = pipelineOfStage(selectedStage.id)?.id || dealPipeline.id;
         data.stageId = selectedStage.id;
         data.stage = selectedStage.name;
       }
@@ -4651,10 +4755,24 @@
 
     let undoSnapshot = null;
 
-    function convertLead(id) {
+    function choosePipeline(lead) {
+      return new Promise(resolve => {
+        const dialog = document.getElementById('pipelineChoiceDialog');
+        document.getElementById('pipelineChoice').innerHTML = knownPipelines().map(pipeline => `<option value="${escapeHTML(pipeline.id)}" ${pipeline.id === dealPipeline?.id ? 'selected' : ''}>${escapeHTML(pipeline.name)}</option>`).join('');
+        document.getElementById('pipelineChoiceLead').textContent = lead.name;
+        dialog.returnValue = '';
+        dialog.addEventListener('close', () => resolve(dialog.returnValue === 'ok' ? document.getElementById('pipelineChoice').value : null), { once: true });
+        dialog.showModal();
+      });
+    }
+    async function convertLead(id, pipelineId = null) {
       const lead = state.leads.find(item => item.id === id);
       if (!lead || lead.stage !== 'Em contato' || !requireDealPipeline()) return;
-      const destination = initialStage();
+      if (!pipelineId && hasSeveralPipelines()) {
+        pipelineId = await choosePipeline(lead);
+        if (!pipelineId) { render(); return; }
+      }
+      const destination = initialStage(pipelineId || mainPipeline()?.id);
       if (!destination) return;
       if (!String(lead.company || '').trim() || !String(lead.name || '').trim()) {
         showToast('Preencha o nome e a empresa do Lead antes de converter.');
@@ -4690,7 +4808,7 @@
       lead.updatedAt = now;
       const deal = {
         id: nextId('N', state.deals), title: `Oportunidade ${company.name}`, company: company.name, companyId: company.id,
-        contact: contact.name, contactId: contact.id, amount: 0, additionalAmount: 0, additionalReason: '', pipelineId: dealPipeline.id, stageId: destination.id, stage: destination.name, responsibleId: lead.responsibleId,
+        contact: contact.name, contactId: contact.id, amount: 0, additionalAmount: 0, additionalReason: '', pipelineId: pipelineOfStage(destination.id)?.id || dealPipeline.id, stageId: destination.id, stage: destination.name, responsibleId: lead.responsibleId,
         team: lead.team || state.users.find(user => user.id === lead.responsibleId)?.team,
         assistants: [...(lead.assistants || [])], createdAt: now, updatedAt: now,
         stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [], quotes: []
@@ -4712,7 +4830,7 @@
       const now = new Date().toISOString();
       record.stage = targetStage;
       if (entity === 'deal') {
-        record.pipelineId = dealPipeline.id;
+        record.pipelineId = pipelineOfStage(target.id)?.id || dealPipeline.id;
         record.stageId = target.id;
       }
       record.updatedAt = now;
@@ -4747,7 +4865,7 @@
       }
       if (entity === 'lead' && targetStage === 'Lead convertido') {
         if (!requireDealPipeline()) { render(); return; }
-        if (!confirm(`Converter ${record.name} e criar um Negócio em ${initialStage().name}?`)) { render(); return; }
+        if (!hasSeveralPipelines() && !confirm(`Converter ${record.name} e criar um Negócio em ${initialStage(mainPipeline()?.id).name}?`)) { render(); return; }
         convertLead(id);
         return;
       }
@@ -4915,7 +5033,8 @@
         if (!requireDealPipeline()) throw new Error('Funil de Negócios indisponível para importação.');
         const responsibleId = responsibleIdFromBitrix(bitrixFieldValue(fields, 'Responsável', 'Pessoa responsável'), existing?.responsibleId);
         const exportedStage = bitrixFieldValue(fields, 'Fase', 'Etapa');
-        const importedStage = activeDealStages().find(stage => stage.name === exportedStage) || initialStage();
+        const importPipeline = mainPipeline();
+        const importedStage = activeDealStages(importPipeline?.id).find(stage => stage.name === exportedStage) || initialStage(importPipeline?.id);
         return Object.assign(base, {
           title: bitrixFieldValue(fields, 'Nome do negócio', 'Título', 'Nome') || `Negócio Bitrix ${bitrixId}`,
           company: bitrixFieldValue(fields, 'Empresa'),
@@ -4924,7 +5043,7 @@
           additionalAmount: parseBitrixMoney(bitrixFieldValue(fields, 'Total', 'Valor', 'Montante')),
           additionalReason: 'Valor importado do Bitrix',
           currency: bitrixCurrency(bitrixFieldValue(fields, 'Moeda', 'Currency')),
-          pipelineId: dealPipeline.id,
+          pipelineId: importPipeline.id,
           stageId: importedStage.id,
           stage: importedStage.name,
           responsibleId,
@@ -5384,6 +5503,10 @@
       if (action === 'pipeline-history-newer') loadNewerPipelineHistory();
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'export') void exportModule(button.dataset.scope);
+      if (action === 'new-pipeline') createPipeline();
+      if (action === 'rename-pipeline') renamePipeline();
+      if (action === 'default-pipeline') makePipelineMain();
+      if (action === 'archive-pipeline') archivePipeline();
       if (action === 'edit-quote') openQuote(button.dataset.id, button.dataset.quote);
       if (action === 'stage-step' && button.dataset.target) requestStageChange(button.dataset.entity, button.dataset.id, button.dataset.target);
       if (action === 'delete-quote') deleteQuote(button.dataset.id, button.dataset.quote);
@@ -5490,6 +5613,15 @@
     document.addEventListener('change', event => {
       if (event.target.dataset.bitrixEntity) syncBitrixImportButton();
       if (event.target.dataset.permissionModule) updatePermissionCell(event.target);
+      if (event.target.matches?.('[data-pipeline-select]')) selectPipeline(event.target.value);
+      if (event.target.matches?.('[data-deal-pipeline]')) {
+        // The stage list follows the chosen pipeline, starting at its initial stage.
+        const stageSelect = event.target.form?.querySelector('[data-deal-stage]');
+        if (stageSelect) {
+          const initial = initialStage(event.target.value);
+          stageSelect.innerHTML = activeDealStages(event.target.value).map(stage => `<option value="${escapeHTML(stage.id)}" ${stage.id === initial?.id ? 'selected' : ''}>${escapeHTML(stage.name)}</option>`).join('');
+        }
+      }
       if (event.target.id === 'deletedModule') loadDeletedRecords();
       if (event.target.id === 'customFieldType') document.getElementById('customFieldOptionsWrap').hidden = !['select', 'multiselect'].includes(event.target.value);
       if (event.target.dataset.stageFilter) { const scope = event.target.dataset.stageFilter; const filter = getFilterState(scope); filter.criteria.stage ||= defaultCriterion('multiselect'); filter.criteria.stage.value = event.target.value === 'Todos' ? [] : [event.target.value]; saveState(); render(); }

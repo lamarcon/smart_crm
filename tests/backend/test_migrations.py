@@ -458,6 +458,8 @@ def test_multiple_pipelines_keep_stage_ids_and_scope_legacy_names(isolated_migra
 
     # Ids sent by the application are kept even when another pipeline has the same stage name.
     assert insert("N-other", "Ganho", other, stage_won) == (other, stage_won)
+    # ...and even when the stage text is stale: the ids win over the name.
+    assert insert("N-stale", "Ganho", other, stage_open) == (other, stage_open)
     # A legacy row with only a name lands in the default pipeline...
     assert insert("N-legacy", "Ganho") == (default, won_default)
     # ...or in its own pipeline when it names one.
