@@ -3930,6 +3930,27 @@ async function storageEntries(page) {
     await assertCanonicalRehydration(page);
   });
 
+  await run('KANBAN-07 setas movem o Negócio para a etapa anterior ou a próxima', async page => {
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Kanban' }).click();
+    const card = page.locator('#page-deals .kanban-card').filter({ hasText: 'Implantação Arkos Estética' });
+    const before = (await stateFrom(page)).deals.find(item => item.id === 'N-16312');
+    const stages = await page.evaluate(() => activeDealStages().map(stage => stage.id));
+    const index = stages.indexOf(before.stageId);
+    assert.ok(index > 0 && index < stages.length - 1, 'o Negócio de teste precisa ter etapa anterior e próxima');
+    assert.equal(await card.getByRole('button', { name: /^Próxima etapa/ }).isEnabled(), true);
+    await card.getByRole('button', { name: /^Próxima etapa/ }).click();
+    await waitForMockState(page, current => current.deals.find(item => item.id === 'N-16312').stageId === stages[index + 1]);
+    const moved = page.locator('#page-deals .kanban-card').filter({ hasText: 'Implantação Arkos Estética' });
+    await moved.getByRole('button', { name: /^Etapa anterior/ }).click();
+    await waitForMockState(page, current => current.deals.find(item => item.id === 'N-16312').stageId === stages[index]);
+    // The first stage has no previous one.
+    const first = await page.evaluate(() => activeDealStages()[0].name);
+    const firstColumn = page.locator('#page-deals .kanban-column').filter({ hasText: first }).first();
+    const firstCard = firstColumn.locator('.kanban-card').first();
+    if (await firstCard.count()) assert.equal(await firstCard.getByRole('button', { name: /^Etapa anterior/ }).isDisabled(), true);
+  });
+
   await run('QUOTE-05 edita e exclui orçamentos do Negócio', async page => {
     await goTo(page, 'Negócios');
     await page.getByRole('button', { name: 'Implantação Arkos Estética' }).click();
@@ -3982,7 +4003,8 @@ async function storageEntries(page) {
     await goTo(page, 'Negócios');
     assert.equal(await page.locator('#page-deals tbody [data-action="quote"]').count(), 6);
     await page.getByRole('button', { name: 'Kanban' }).click();
-    assert.equal(await page.locator('#page-deals .kanban-card [data-action="quote"]').count(), 6);
+    assert.equal(await page.locator('#page-deals .kanban-card [data-action="quote"]').count(), 0);
+    assert.equal(await page.locator('#page-deals .kanban-card [data-action="stage-step"]').count(), 12);
     await page.getByRole('button', { name: 'Lista' }).click();
 
     await page.getByRole('button', { name: 'Implantação Arkos Estética' }).click();

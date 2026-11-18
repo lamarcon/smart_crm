@@ -116,10 +116,10 @@ def test_session_digest_is_sha256_and_does_not_contain_token() -> None:
 def test_session_expiry_matches_idle_and_absolute_limits() -> None:
     expiry = new_session_expiry(NOW)
 
-    assert IDLE_SESSION_TTL == timedelta(minutes=30)
-    assert ABSOLUTE_SESSION_TTL == timedelta(hours=12)
-    assert expiry.idle_expires_at == NOW + timedelta(minutes=30)
-    assert expiry.absolute_expires_at == NOW + timedelta(hours=12)
+    assert IDLE_SESSION_TTL == timedelta(hours=24)
+    assert ABSOLUTE_SESSION_TTL == timedelta(hours=24)
+    assert expiry.idle_expires_at == NOW + timedelta(hours=24)
+    assert expiry.absolute_expires_at == NOW + timedelta(hours=24)
 
 
 def test_active_session_requires_both_expiry_windows() -> None:

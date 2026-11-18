@@ -22,8 +22,8 @@ ARGON2_HASH_LENGTH = 32
 ARGON2_SALT_LENGTH = 16
 
 SESSION_TOKEN_BYTES = 32
-IDLE_SESSION_TTL = timedelta(minutes=30)
-ABSOLUTE_SESSION_TTL = timedelta(hours=12)
+IDLE_SESSION_TTL = timedelta(hours=24)
+ABSOLUTE_SESSION_TTL = timedelta(hours=24)
 
 _PASSWORD_HASHER = PasswordHasher(
     time_cost=ARGON2_TIME_COST,

@@ -312,6 +312,8 @@
     .drawer-quote-head h4 { margin: 0; font-size: 15px; }
     .drawer-quote-list { display: grid; gap: 10px; }
     .drawer-quote { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; padding: 13px 14px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
+    .stage-steps { display: flex; gap: 8px; }
+    .stage-steps .stage-step { flex: 1; font-size: 15px; }
     .drawer-quote h5 { margin: 0 0 5px; color: var(--navy-800); font-size: 13px; }
     .drawer-quote p { margin: 0; color: var(--slate-500); font-size: 11px; }
     .drawer-quote strong { color: var(--navy-900); font-size: 13px; }
@@ -2577,7 +2579,12 @@
           const title = isLead ? record.name : record.title;
           const subtitle = isLead ? `${record.id} · ${record.company}` : `${record.id} · ${dealMoneyText(record)}`;
           const options = stages.map(option => `<option value="${escapeHTML(option.id)}" ${(isLead ? option.id === record.stage : option.id === record.stageId) ? 'selected' : ''}>${escapeHTML(option.name)}</option>`).join('');
-          return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small>${!isLead ? dealRelationshipsHTML(record) : ''}<div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}" ${canRecord(isLead ? 'leads' : 'deals', 'update', record) ? '' : 'disabled'}>${options}</select>${!isLead ? `<div class="kanban-actions"><button class="button small" data-action="quote" data-id="${record.id}">Orçamento</button></div>` : ''}</article>`;
+          const editable = canRecord(isLead ? 'leads' : 'deals', 'update', record);
+          const position = stages.findIndex(option => option.id === (isLead ? record.stage : record.stageId));
+          const previous = position > 0 ? stages[position - 1] : null;
+          const next = position >= 0 && position < stages.length - 1 ? stages[position + 1] : null;
+          const step = (target, symbol, label) => `<button type="button" class="button small stage-step" data-action="stage-step" data-entity="${entity}" data-id="${escapeHTML(record.id)}" data-target="${escapeHTML(target?.id || '')}" aria-label="${escapeHTML(target ? `${label}: ${target.name}` : label)}" title="${escapeHTML(target ? target.name : label)}" ${target && editable ? '' : 'disabled'}>${symbol}</button>`;
+          return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small>${!isLead ? dealRelationshipsHTML(record) : ''}<div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}" ${canRecord(isLead ? 'leads' : 'deals', 'update', record) ? '' : 'disabled'}>${options}</select><div class="kanban-actions stage-steps">${step(previous, '←', 'Etapa anterior')}${step(next, '→', 'Próxima etapa')}</div></article>`;
         }).join('');
         return `<section class="kanban-column" data-kanban-stage="${escapeHTML(stage.id)}"><div class="kanban-column-head"><span>${escapeHTML(stage.name)}</span><span class="kanban-count">${stageRecords.length}</span></div><div class="kanban-cards">${cards || '<p class="hint">Nenhum registro nesta etapa.</p>'}</div></section>`;
       }).join('')}</div>`;
@@ -5280,7 +5287,7 @@
       'new', 'add-custom-field', 'hide-custom-field', 'manage-fields', 'save-field-visibility',
       'create-custom-field', 'new-user', 'edit-user', 'resend-invite', 'cancel-invite', 'reactivate-user', 'user-status',
       'open-bitrix-import', 'open-deleted', 'restore-deleted', 'save-filter', 'delete-saved-filter', 'set-view-mode',
-      'request-stage', 'undo-stage', 'delete', 'convert', 'discard', 'quote', 'edit-quote', 'delete-quote',
+      'request-stage', 'undo-stage', 'delete', 'convert', 'discard', 'quote', 'edit-quote', 'delete-quote', 'stage-step',
       'read', 'read-all', 'reset'
     ]);
     function requireWritableWorkspace() {
@@ -5331,6 +5338,7 @@
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'export') void exportModule(button.dataset.scope);
       if (action === 'edit-quote') openQuote(button.dataset.id, button.dataset.quote);
+      if (action === 'stage-step' && button.dataset.target) requestStageChange(button.dataset.entity, button.dataset.id, button.dataset.target);
       if (action === 'delete-quote') deleteQuote(button.dataset.id, button.dataset.quote);
       if (action === 'permissions-role') { permissionsState.role = button.dataset.role; rerenderPermissions(); }
       if (action === 'save-permissions') void savePermissions();

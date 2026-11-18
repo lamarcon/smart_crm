@@ -748,5 +748,7 @@ window.SMART_CRM_I18N['en'] = {
   "Anexo atual: {p0}. Escolha outro arquivo para substituir.": "Current attachment: {p0}. Choose another file to replace it.",
   "Orçamento {p0} atualizado.": "Quote {p0} updated.",
   "Excluir o orçamento \"{p0}\"?": "Delete the quote \"{p0}\"?",
-  "Orçamento {p0} excluído.": "Quote {p0} deleted."
+  "Orçamento {p0} excluído.": "Quote {p0} deleted.",
+  "Etapa anterior": "Previous stage",
+  "Próxima etapa": "Next stage"
 };

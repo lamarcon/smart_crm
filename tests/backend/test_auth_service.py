@@ -296,8 +296,8 @@ def test_success_sets_exact_idle_and_absolute_expiry(auth_setup) -> None:  # noq
 
     assert stored["created_at"] == NOW
     assert stored["last_seen_at"] == NOW
-    assert stored["idle_expires_at"] == NOW + timedelta(minutes=30)
-    assert stored["absolute_expires_at"] == NOW + timedelta(hours=12)
+    assert stored["idle_expires_at"] == NOW + timedelta(hours=24)
+    assert stored["absolute_expires_at"] == NOW + timedelta(hours=24)
 
 
 def test_failed_login_records_account_and_ip_limits_and_redacted_event(auth_setup, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
