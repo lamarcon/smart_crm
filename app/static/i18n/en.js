@@ -805,5 +805,14 @@ window.SMART_CRM_I18N['en'] = {
   "Funil arquivado.": "Pipeline archived.",
   "{p14} registro(s) visível(is)": "{p14} visible record(s)",
   "{p15} · Dados do workspace": "{p15} · Workspace data",
-  "Versão {p1} · nomes e cores são editáveis; tipo semântico e automação interna são imutáveis.": "Version {p1} · names and colors are editable; semantic type and internal automation are immutable."
+  "Versão {p1} · nomes e cores são editáveis; tipo semântico e automação interna são imutáveis.": "Version {p1} · names and colors are editable; semantic type and internal automation are immutable.",
+  "Novo funil": "New pipeline",
+  "Nome do funil": "Pipeline name",
+  "Criar funil": "Create pipeline",
+  "Renomear funil": "Rename pipeline",
+  "Salvar": "Save",
+  "Salvar filtro": "Save filter",
+  "Nome do filtro": "Filter name",
+  "Descartar Lead": "Discard Lead",
+  "Motivo do descarte": "Reason for discarding"
 };

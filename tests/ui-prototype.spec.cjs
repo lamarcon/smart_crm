@@ -898,6 +898,19 @@ async function untranslatedTexts(page) {
   }, { source: PORTUGUESE_TEXT.source });
 }
 
+// Answers the CRM's own text dialog; an empty answer cancels it.
+async function answerText(page, value) {
+  const dialog = page.locator('#textPromptDialog');
+  await dialog.waitFor({ state: 'visible' });
+  if (value) {
+    await dialog.locator('#textPromptInput').fill(value);
+    await dialog.locator('#textPromptOk').click();
+  } else {
+    await dialog.getByRole('button', { name: 'Cancelar' }).click();
+  }
+  await dialog.waitFor({ state: 'hidden' });
+}
+
 async function goTo(page, name) {
   await page.locator('.nav').getByRole('button', { name: new RegExp(name) }).click();
 }
@@ -2500,9 +2513,9 @@ async function storageEntries(page) {
     await goTo(page, 'Leads');
     await page.getByRole('button', { name: /Filtros/ }).click();
     const panel = page.locator('#filterDialog');
-    page.once('dialog', dialog => dialog.accept(''));
     await panel.getByRole('button', { name: 'Salvar filtro' }).click();
-    assert.equal(await page.getByText('Informe um nome para salvar o filtro.').isVisible(), true);
+    await answerText(page, '');
+    await page.getByText('Informe um nome para salvar o filtro.').waitFor();
     assert.equal((await stateFrom(page)).ui.savedFilters.length, 0);
 
     const date = panel.locator('[data-filter-field="createdAt"]');
@@ -2515,11 +2528,14 @@ async function storageEntries(page) {
 
     await panel.getByRole('button', { name: 'Redefinir' }).click();
     await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption(['Lead convertido']);
-    page.once('dialog', dialog => dialog.accept('Meu filtro'));
     await panel.getByRole('button', { name: 'Salvar filtro' }).click();
+    await answerText(page, 'Meu filtro');
+    await page.locator('#toastRegion').getByText('Filtro salvo.', { exact: true }).waitFor();
+    await stateFrom(page);
     await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption(['Em contato']);
-    page.once('dialog', dialog => dialog.accept('Meu filtro'));
     await panel.getByRole('button', { name: 'Salvar filtro' }).click();
+    await answerText(page, 'Meu filtro');
+    await page.locator('#toastRegion').getByText('Filtro salvo atualizado.').waitFor();
     const saved = (await stateFrom(page)).ui.savedFilters;
     assert.equal(saved.length, 1);
     assert.deepEqual(saved[0].filter.criteria.stage.value, ['Em contato']);
@@ -2531,8 +2547,9 @@ async function storageEntries(page) {
     await page.getByRole('button', { name: /Filtros/ }).click();
     const panel = page.locator('#filterDialog');
     await panel.locator('[data-filter-field="stage"] select[name="filter-value"]').selectOption(['Lead convertido']);
-    page.once('dialog', dialog => dialog.accept('Leads convertidos'));
     await panel.getByRole('button', { name: 'Salvar filtro' }).click();
+    await answerText(page, 'Leads convertidos');
+    await page.locator('#toastRegion').getByText('Filtro salvo.', { exact: true }).waitFor();
     let state = await stateFrom(page);
     assert.equal(state.ui.savedFilters.length, 1);
     assert.equal(state.ui.savedFilters[0].name, 'Leads convertidos');
@@ -2717,13 +2734,14 @@ async function storageEntries(page) {
     const board = page.locator('#page-leads .kanban-board');
     assert.ok((await board.evaluate(element => element.scrollWidth)) > (await board.evaluate(element => element.clientWidth)));
     const larissa = page.getByLabel('Mover Larissa Spinola');
-    page.once('dialog', dialog => dialog.accept(''));
     await larissa.selectOption('Lead descartado');
+    await answerText(page, '');
     let state = await stateFrom(page);
     assert.equal(state.leads.find(lead => lead.id === 'L-1048').stage, 'Em contato');
     assert.equal(state.leads.find(lead => lead.id === 'L-1048').discardReason, undefined);
-    page.once('dialog', dialog => dialog.accept('Sem aderência'));
     await larissa.selectOption('Lead descartado');
+    await answerText(page, 'Sem aderência');
+    await page.waitForFunction(() => state.leads.find(lead => lead.id === 'L-1048').discardReason === 'Sem aderência');
     state = await stateFrom(page);
     assert.equal(state.leads.find(lead => lead.id === 'L-1048').discardReason, 'Sem aderência');
 
@@ -3932,15 +3950,24 @@ async function storageEntries(page) {
     const api = apiByPage.get(page);
     await goTo(page, 'Funil de negócios');
     const manager = page.locator('.pipeline-manager');
-    page.once('dialog', dialog => dialog.accept('Implantação'));
     await manager.getByRole('button', { name: '＋ Novo funil' }).click();
+    const ask = page.locator('#textPromptDialog');
+    assert.equal(await ask.locator('#textPromptTitle').innerText(), 'Novo funil');
+    // Cancelling creates nothing.
+    await ask.getByRole('button', { name: 'Cancelar' }).click();
+    assert.equal(api.pipelineRequests.length, 0);
+    await manager.getByRole('button', { name: '＋ Novo funil' }).click();
+    await ask.getByLabel('Nome do funil').fill('  Implantação  ');
+    await ask.getByRole('button', { name: 'Criar funil' }).click();
     await page.locator('#toastRegion').getByText('Funil criado com as etapas Em andamento, Ganho e Perdido.').waitFor();
     assert.deepEqual(api.pipelineRequests.at(-1), { method: 'POST', path: '/api/deal-pipelines', body: { name: 'Implantação' } });
     assert.equal(await manager.locator('#pipelineManagerSelect').inputValue(), api.extraPipelines[0].id);
     assert.equal(await page.locator('[data-pipeline-editor-stage]').count(), 3);
 
-    page.once('dialog', dialog => dialog.accept('Implantação 2026'));
     await manager.getByRole('button', { name: 'Renomear' }).click();
+    assert.equal(await ask.getByLabel('Nome do funil').inputValue(), 'Implantação');
+    await ask.getByLabel('Nome do funil').fill('Implantação 2026');
+    await ask.getByRole('button', { name: 'Salvar' }).click();
     await page.locator('#toastRegion').getByText('Funil renomeado.').waitFor();
     assert.equal(api.pipelineRequests.at(-1).body.name, 'Implantação 2026');
 

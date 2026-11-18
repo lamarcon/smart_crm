@@ -745,6 +745,14 @@
     </form>
   </aside>
 
+  <dialog id="textPromptDialog">
+    <form method="dialog" id="textPromptForm">
+      <div class="modal-head"><h3 id="textPromptTitle"></h3><button type="submit" class="close-button" value="cancel" formnovalidate aria-label="Fechar">×</button></div>
+      <div class="modal-body"><div class="field"><label for="textPromptInput" id="textPromptLabel"></label><input id="textPromptInput" maxlength="80" required autocomplete="off"></div></div>
+      <div class="modal-foot"><button type="submit" class="button" value="cancel" formnovalidate>Cancelar</button><button type="submit" class="button primary" value="ok" id="textPromptOk">Salvar</button></div>
+    </form>
+  </dialog>
+
   <dialog id="pipelineChoiceDialog">
     <form method="dialog">
       <div class="modal-head"><h3>Em qual funil?</h3><button type="submit" class="close-button" value="cancel" aria-label="Fechar">×</button></div>
@@ -2415,9 +2423,9 @@
       renderFilterPanel();
     }
 
-    function saveNamedFilter() {
+    async function saveNamedFilter() {
       syncFilterDraftFromPanel();
-      const name = prompt('Nome do filtro:')?.trim();
+      const name = await askText({ title: 'Salvar filtro', label: 'Nome do filtro', maxLength: 120 });
       if (!name) { toast('Informe um nome para salvar o filtro.'); return; }
       const existing = state.ui.savedFilters.find(item => item.userId === state.currentUserId && item.scope === filterPanelScope && item.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR'));
       const updatedAt = new Date().toISOString();
@@ -2848,15 +2856,32 @@
         showToast(failure?.payload?.error?.message || 'Não foi possível alterar o funil.');
       }
     }
-    function createPipeline() {
-      const name = prompt('Nome do novo funil:');
-      if (!name?.trim()) return;
-      void changePipelines({ url: '/api/deal-pipelines', method: 'POST', body: { name: name.trim() } }, 'Funil criado com as etapas Em andamento, Ganho e Perdido.');
+    // Asks one line of text in a CRM dialog (the browser's own prompt is blocked in some windows).
+    function askText({ title, label, value = '', ok = 'Salvar', maxLength = 80 }) {
+      return new Promise(resolve => {
+        const dialog = document.getElementById('textPromptDialog');
+        const input = document.getElementById('textPromptInput');
+        input.maxLength = maxLength;
+        document.getElementById('textPromptTitle').textContent = title;
+        document.getElementById('textPromptLabel').textContent = label;
+        document.getElementById('textPromptOk').textContent = ok;
+        input.value = value;
+        dialog.returnValue = '';
+        dialog.addEventListener('close', () => resolve(dialog.returnValue === 'ok' ? input.value.trim() : null), { once: true });
+        dialog.showModal();
+        input.focus();
+        input.select();
+      });
     }
-    function renamePipeline() {
-      const name = prompt('Novo nome do funil:', dealPipeline.name);
-      if (!name?.trim() || name.trim() === dealPipeline.name) return;
-      void changePipelines({ url: `/api/deal-pipelines/${encodeURIComponent(dealPipeline.id)}`, method: 'PATCH', body: { pipelineVersion: dealPipeline.pipelineVersion, name: name.trim() } }, 'Funil renomeado.');
+    async function createPipeline() {
+      const name = await askText({ title: 'Novo funil', label: 'Nome do funil', ok: 'Criar funil' });
+      if (!name) return;
+      void changePipelines({ url: '/api/deal-pipelines', method: 'POST', body: { name } }, 'Funil criado com as etapas Em andamento, Ganho e Perdido.');
+    }
+    async function renamePipeline() {
+      const name = await askText({ title: 'Renomear funil', label: 'Nome do funil', value: dealPipeline.name });
+      if (!name || name === dealPipeline.name) return;
+      void changePipelines({ url: `/api/deal-pipelines/${encodeURIComponent(dealPipeline.id)}`, method: 'PATCH', body: { pipelineVersion: dealPipeline.pipelineVersion, name } }, 'Funil renomeado.');
     }
     function makePipelineMain() {
       if (!confirm(`Tornar "${dealPipeline.name}" o funil principal?`)) return;
@@ -4850,13 +4875,13 @@
       saveState(); render(); toast(message, { label: 'Desfazer', action: 'undo-stage' });
     }
 
-    function requestStageChange(entity, id, targetStage) {
+    async function requestStageChange(entity, id, targetStage) {
       const collection = entity === 'lead' ? state.leads : state.deals;
       const record = collection.find(item => item.id === id);
       if (!record || (entity === 'lead' ? record.stage === targetStage : record.stageId === targetStage)) { render(); return; }
       if (entity === 'deal' && !requireDealPipeline()) { render(); return; }
       if (entity === 'lead' && targetStage === 'Lead descartado') {
-        const reason = prompt('Informe o motivo do descarte:');
+        const reason = await askText({ title: 'Descartar Lead', label: 'Motivo do descarte', ok: 'Descartar', maxLength: 500 });
         if (!reason?.trim()) { toast('O descarte exige um motivo.'); render(); return; }
         commitStageChange(entity, record, targetStage);
         record.discardReason = reason.trim();
@@ -5503,8 +5528,8 @@
       if (action === 'pipeline-history-newer') loadNewerPipelineHistory();
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'export') void exportModule(button.dataset.scope);
-      if (action === 'new-pipeline') createPipeline();
-      if (action === 'rename-pipeline') renamePipeline();
+      if (action === 'new-pipeline') void createPipeline();
+      if (action === 'rename-pipeline') void renamePipeline();
       if (action === 'default-pipeline') makePipelineMain();
       if (action === 'archive-pipeline') archivePipeline();
       if (action === 'edit-quote') openQuote(button.dataset.id, button.dataset.quote);

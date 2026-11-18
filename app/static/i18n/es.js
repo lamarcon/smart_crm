@@ -805,5 +805,14 @@ window.SMART_CRM_I18N['es'] = {
   "Funil arquivado.": "Embudo archivado.",
   "{p14} registro(s) visível(is)": "{p14} registro(s) visible(s)",
   "{p15} · Dados do workspace": "{p15} · Datos del workspace",
-  "Versão {p1} · nomes e cores são editáveis; tipo semântico e automação interna são imutáveis.": "Versión {p1} · nombres y colores son editables; el tipo semántico y la automatización interna son inmutables."
+  "Versão {p1} · nomes e cores são editáveis; tipo semântico e automação interna são imutáveis.": "Versión {p1} · nombres y colores son editables; el tipo semántico y la automatización interna son inmutables.",
+  "Novo funil": "Nuevo embudo",
+  "Nome do funil": "Nombre del embudo",
+  "Criar funil": "Crear embudo",
+  "Renomear funil": "Renombrar embudo",
+  "Salvar": "Guardar",
+  "Salvar filtro": "Guardar filtro",
+  "Nome do filtro": "Nombre del filtro",
+  "Descartar Lead": "Descartar Lead",
+  "Motivo do descarte": "Motivo del descarte"
 };
