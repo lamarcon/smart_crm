@@ -735,9 +735,10 @@
 
   <dialog id="quoteDialog">
     <form id="quoteForm">
-      <div class="modal-head"><h3>Novo orçamento</h3><button type="button" class="close-button" data-close="quoteDialog" aria-label="Fechar">×</button></div>
+      <div class="modal-head"><h3 id="quoteDialogTitle">Novo orçamento</h3><button type="button" class="close-button" data-close="quoteDialog" aria-label="Fechar">×</button></div>
       <div class="modal-body">
         <input type="hidden" name="dealId" id="quoteDealId">
+        <input type="hidden" name="quoteId" id="quoteId">
         <input type="hidden" name="productId" id="quoteProductId">
         <div class="form-grid">
           <div class="field full suggest-field"><label for="quoteDescription">Item / serviço *</label><div class="suggest-anchor"><input id="quoteDescription" name="description" required type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="quoteDescription-options" aria-describedby="quoteProductHint" autocomplete="off" data-suggest="product" placeholder="Busque no catálogo pelo nome ou código, ou escreva um item"><ul id="quoteDescription-options" class="suggest-list" role="listbox" aria-label="Produtos do catálogo" hidden></ul></div><small class="field-hint" id="quoteProductHint">Escolha um produto do catálogo para preencher o preço, ou escreva um item livre.</small></div>
@@ -745,11 +746,11 @@
           <div class="field"><label for="quoteUnit">Valor unitário (R$) *</label><input id="quoteUnit" name="unitPrice" type="number" min="0" step="0.01" value="0" required></div>
           <div class="field"><label for="quoteDiscount">Desconto (R$)</label><input id="quoteDiscount" name="discount" type="number" min="0" step="0.01" value="0"></div>
           <div class="field"><label for="quoteValidity">Validade</label><input id="quoteValidity" name="validity" type="date"></div>
-          <div class="field full"><label for="quotePdf">Anexar PDF (opcional)</label><input id="quotePdf" name="pdf" type="file" accept="application/pdf"><div class="hint">Neste protótipo apenas o nome do arquivo será guardado localmente.</div></div>
+          <div class="field full"><label for="quotePdf">Anexar PDF (opcional)</label><input id="quotePdf" name="pdf" type="file" accept="application/pdf"><div class="hint" id="quotePdfHint">Neste protótipo apenas o nome do arquivo será guardado localmente.</div></div>
         </div>
         <div class="quote-total"><span>Total estimado</span><strong id="quoteTotal">R$ 0,00</strong></div>
       </div>
-      <div class="modal-foot"><button type="button" class="button" data-close="quoteDialog">Cancelar</button><button type="submit" class="button primary">Adicionar orçamento</button></div>
+      <div class="modal-foot"><button type="button" class="button" data-close="quoteDialog">Cancelar</button><button type="submit" class="button primary" id="quoteSubmit">Adicionar orçamento</button></div>
     </form>
   </dialog>
 
@@ -4262,7 +4263,9 @@
     }
     function renderDrawerQuotes(deal) {
       const quotes = Array.isArray(deal?.quotes) ? deal.quotes : [];
-      document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div><button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button></div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${quote.productSku ? `SKU ${escapeHTML(quote.productSku)} · ` : ''}${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${escapeHTML(money(quote.total, dealCurrency(deal)))}</strong><span></span><span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
+      const editable = canRecord('deals', 'update', deal);
+      const actions = quote => editable ? `<span class="row-actions"><button type="button" class="button small" data-action="edit-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(quote.id)}" aria-label="${escapeHTML(`Editar orçamento ${quote.description}`)}">Editar</button><button type="button" class="row-action" data-action="delete-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(quote.id)}" title="Excluir" aria-label="${escapeHTML(`Excluir orçamento ${quote.description}`)}">⌫</button></span>` : '<span></span>';
+      document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div>${editable ? `<button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button>` : ''}</div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${quote.productSku ? `SKU ${escapeHTML(quote.productSku)} · ` : ''}${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${escapeHTML(money(quote.total, dealCurrency(deal)))}</strong>${actions(quote)}<span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
     }
 
     function customFieldHTML(field) {
@@ -5061,19 +5064,31 @@
       toast('Importação concluída.');
     }
 
-    function openQuote(id) {
+    function openQuote(id, quoteId = '') {
       const deal = state.deals.find(item => item.id === id);
       if (!deal) return;
+      const existing = quoteId ? (deal.quotes || []).find(item => item.id === quoteId) : null;
+      if (quoteId && !existing) return;
       document.getElementById('quoteForm').reset();
       document.getElementById('quoteDealId').value = id;
-      document.getElementById('quoteProductId').value = '';
+      document.getElementById('quoteId').value = existing ? existing.id : '';
+      document.getElementById('quoteProductId').value = existing?.productId || '';
+      document.getElementById('quoteDialogTitle').textContent = existing ? 'Editar orçamento' : 'Novo orçamento';
+      document.getElementById('quoteSubmit').textContent = existing ? 'Salvar orçamento' : 'Adicionar orçamento';
+      document.getElementById('quotePdfHint').textContent = existing?.pdf ? `Anexo atual: ${existing.pdf}. Escolha outro arquivo para substituir.` : 'Neste protótipo apenas o nome do arquivo será guardado localmente.';
       const productHint = document.getElementById('quoteProductHint');
       productHint.textContent = QUOTE_PRODUCT_HINT;
       delete productHint.dataset.quoteProductHint;
       const symbol = CURRENCY_SYMBOLS[dealCurrency(deal)];
       document.querySelector('label[for="quoteUnit"]').textContent = `Valor unitário (${symbol}) *`;
       document.querySelector('label[for="quoteDiscount"]').textContent = `Desconto (${symbol})`;
-      document.getElementById('quoteQuantity').value = 1;
+      document.getElementById('quoteQuantity').value = existing ? existing.quantity : 1;
+      if (existing) {
+        document.getElementById('quoteDescription').value = existing.description || '';
+        document.getElementById('quoteUnit').value = existing.unitPrice ?? 0;
+        document.getElementById('quoteDiscount').value = existing.discount ?? 0;
+        document.getElementById('quoteValidity').value = existing.validity || '';
+      }
       updateQuoteTotal();
       document.getElementById('quoteDialog').showModal();
     }
@@ -5144,10 +5159,22 @@
       const discount = Number(data.get('discount') || 0);
       const total = Math.max(0, quantity * unitPrice - discount);
       const product = (state.products || []).find(item => item.id === data.get('productId'));
-      const productLink = product ? { productId: product.id, productSku: product.sku || '' } : {};
-      deal.quotes.push({ id: nextId('ORC', deal.quotes), ...productLink, description: data.get('description'), quantity, unitPrice, discount, total, validity: data.get('validity'), state: 'Rascunho', pdf: file?.name || '' });
-      deal.amount = total; deal.updatedAt = new Date().toISOString();
-      notify('Orçamento adicionado ao Negócio.', `${deal.id} · ${money(total, dealCurrency(deal))}`, deal.responsibleId);
+      const existing = data.get('quoteId') ? deal.quotes.find(item => item.id === data.get('quoteId')) : null;
+      if (data.get('quoteId') && !existing) return;
+      if (!canRecord('deals', 'update', deal)) { showToast('Seu perfil não tem permissão para esta ação.'); return; }
+      const fields = { description: data.get('description'), quantity, unitPrice, discount, total, validity: data.get('validity') };
+      if (existing) {
+        // A quote edited away from the catalog item keeps no product link.
+        delete existing.productId; delete existing.productSku;
+        Object.assign(existing, product ? { productId: product.id, productSku: product.sku || '' } : {}, fields, file ? { pdf: file.name } : {});
+        if (deal.quotes[deal.quotes.length - 1] === existing) deal.amount = total;
+      } else {
+        const productLink = product ? { productId: product.id, productSku: product.sku || '' } : {};
+        deal.quotes.push({ id: nextId('ORC', deal.quotes), ...productLink, ...fields, state: 'Rascunho', pdf: file?.name || '' });
+        deal.amount = total;
+        notify('Orçamento adicionado ao Negócio.', `${deal.id} · ${money(total, dealCurrency(deal))}`, deal.responsibleId);
+      }
+      deal.updatedAt = new Date().toISOString();
       saveState(); document.getElementById('quoteDialog').close(); render();
       const drawer = document.getElementById('entityDrawer');
       const drawerForm = document.getElementById('drawerForm');
@@ -5155,7 +5182,32 @@
         renderDrawerQuotes(deal);
         setDrawerTab(drawerActiveTab);
       }
-      toast(`Orçamento de ${money(total, dealCurrency(deal))} adicionado${file ? ` com ${file.name}` : ' sem anexo'}.`);
+      if (existing) toast(`Orçamento ${existing.id} atualizado.`);
+      else toast(`Orçamento de ${money(total, dealCurrency(deal))} adicionado${file ? ` com ${file.name}` : ' sem anexo'}.`);
+    }
+
+    function refreshDealDrawerQuotes(deal) {
+      const drawer = document.getElementById('entityDrawer');
+      const drawerForm = document.getElementById('drawerForm');
+      if (drawer.classList.contains('open') && drawerForm.dataset.entity === 'deal' && drawerForm.dataset.id === deal.id) {
+        renderDrawerQuotes(deal);
+        setDrawerTab(drawerActiveTab);
+      }
+    }
+    function deleteQuote(dealId, quoteId) {
+      const deal = state.deals.find(item => item.id === dealId);
+      const quote = deal?.quotes.find(item => item.id === quoteId);
+      if (!quote) return;
+      if (!canRecord('deals', 'update', deal)) { showToast('Seu perfil não tem permissão para esta ação.'); return; }
+      if (!confirm(`Excluir o orçamento "${quote.description}"?`)) return;
+      const wasLatest = deal.quotes[deal.quotes.length - 1] === quote;
+      deal.quotes = deal.quotes.filter(item => item !== quote);
+      // The deal value follows its latest quote; with no quote left it stays as it was.
+      if (wasLatest && deal.quotes.length) deal.amount = deal.quotes[deal.quotes.length - 1].total;
+      deal.updatedAt = new Date().toISOString();
+      saveState(); render();
+      refreshDealDrawerQuotes(deal);
+      toast(`Orçamento ${quote.id} excluído.`);
     }
 
     function markRead(id) { const item = state.notifications.find(note => note.id === id); if (item) item.read = true; saveState(); render(); }
@@ -5228,7 +5280,7 @@
       'new', 'add-custom-field', 'hide-custom-field', 'manage-fields', 'save-field-visibility',
       'create-custom-field', 'new-user', 'edit-user', 'resend-invite', 'cancel-invite', 'reactivate-user', 'user-status',
       'open-bitrix-import', 'open-deleted', 'restore-deleted', 'save-filter', 'delete-saved-filter', 'set-view-mode',
-      'request-stage', 'undo-stage', 'delete', 'convert', 'discard', 'quote',
+      'request-stage', 'undo-stage', 'delete', 'convert', 'discard', 'quote', 'edit-quote', 'delete-quote',
       'read', 'read-all', 'reset'
     ]);
     function requireWritableWorkspace() {
@@ -5278,6 +5330,8 @@
       if (action === 'pipeline-history-newer') loadNewerPipelineHistory();
       if (action === 'new') openEntityDialog(button.dataset.entity);
       if (action === 'export') void exportModule(button.dataset.scope);
+      if (action === 'edit-quote') openQuote(button.dataset.id, button.dataset.quote);
+      if (action === 'delete-quote') deleteQuote(button.dataset.id, button.dataset.quote);
       if (action === 'permissions-role') { permissionsState.role = button.dataset.role; rerenderPermissions(); }
       if (action === 'save-permissions') void savePermissions();
       if (action === 'reset-permissions') resetRolePermissions();

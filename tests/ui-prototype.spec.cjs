@@ -3930,6 +3930,54 @@ async function storageEntries(page) {
     await assertCanonicalRehydration(page);
   });
 
+  await run('QUOTE-05 edita e exclui orçamentos do Negócio', async page => {
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Implantação Arkos Estética' }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Orçamentos' }).click();
+    const first = drawer.locator('[data-drawer-quote]').first();
+    await first.getByRole('button', { name: /^Editar orçamento/ }).click();
+    const dialog = page.locator('#quoteDialog');
+    assert.equal(await dialog.locator('#quoteDialogTitle').innerText(), 'Editar orçamento');
+    assert.equal(await dialog.getByLabel('Item / serviço *').inputValue(), 'Implantação completa');
+    assert.match(await dialog.locator('#quotePdfHint').innerText(), /proposta-arkos\.pdf/);
+    await dialog.getByLabel('Item / serviço *').fill('Implantação revisada');
+    await dialog.getByLabel('Quantidade *').fill('1');
+    await dialog.getByLabel('Valor unitário (R$) *').fill('40000');
+    await dialog.getByLabel('Desconto (R$)').fill('0');
+    await dialog.getByRole('button', { name: 'Salvar orçamento' }).click();
+    await page.locator('#toastRegion').getByText(/Orçamento .* atualizado\./).waitFor();
+    assert.equal(await drawer.locator('[data-drawer-quote]').count(), 1);
+    assert.match(await first.innerText(), /Implantação revisada/);
+    assert.match(await first.innerText(), /R\$\s*40\.000,00/);
+    assert.match(await first.innerText(), /proposta-arkos\.pdf/);
+    let deal = (await stateFrom(page)).deals.find(item => item.id === 'N-16312');
+    assert.equal(deal.quotes.length, 1);
+    assert.equal(deal.quotes[0].total, 40000);
+    assert.equal(deal.amount, 40000);
+
+    // A second quote becomes the latest; deleting it brings the value back to the first one.
+    await drawer.getByRole('button', { name: 'Novo orçamento' }).click();
+    assert.equal(await dialog.locator('#quoteDialogTitle').innerText(), 'Novo orçamento');
+    assert.equal(await dialog.getByLabel('Item / serviço *').inputValue(), '');
+    await dialog.getByLabel('Item / serviço *').fill('Extra');
+    await dialog.getByLabel('Valor unitário (R$) *').fill('900');
+    await dialog.getByRole('button', { name: 'Adicionar orçamento' }).click();
+    assert.equal(await drawer.locator('[data-drawer-quote]').count(), 2);
+    page.once('dialog', confirmation => confirmation.accept());
+    await drawer.locator('[data-drawer-quote]').last().getByRole('button', { name: /^Excluir orçamento/ }).click();
+    await page.locator('#toastRegion').getByText(/Orçamento .* excluído\./).waitFor();
+    assert.equal(await drawer.locator('[data-drawer-quote]').count(), 1);
+    deal = (await stateFrom(page)).deals.find(item => item.id === 'N-16312');
+    assert.deepEqual(deal.quotes.map(quote => quote.description), ['Implantação revisada']);
+    assert.equal(deal.amount, 40000);
+
+    // Cancelling the confirmation keeps the quote.
+    page.once('dialog', confirmation => confirmation.dismiss());
+    await drawer.locator('[data-drawer-quote]').first().getByRole('button', { name: /^Excluir orçamento/ }).click();
+    assert.equal(await drawer.locator('[data-drawer-quote]').count(), 1);
+  });
+
   await run('QUOTE-01 gerencia orçamentos dentro do painel lateral do Negócio', async page => {
     await goTo(page, 'Negócios');
     assert.equal(await page.locator('#page-deals tbody [data-action="quote"]').count(), 6);

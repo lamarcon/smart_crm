@@ -740,5 +740,13 @@ window.SMART_CRM_I18N['es'] = {
   "{p6} registro(s) visível(is)": "{p6} registro(s) visible(s)",
   "Mensagem no convite (opcional)": "Mensaje en la invitación (opcional)",
   "Bem-vinda ao time! Seus Leads já estão no funil.": "¡Bienvenida al equipo! Tus Leads ya están en el embudo.",
-  "Aparece no e-mail, logo abaixo da saudação.": "Aparece en el correo, justo debajo del saludo."
+  "Aparece no e-mail, logo abaixo da saudação.": "Aparece en el correo, justo debajo del saludo.",
+  "Editar orçamento {p0}": "Editar presupuesto {p0}",
+  "Excluir orçamento {p0}": "Eliminar presupuesto {p0}",
+  "Editar orçamento": "Editar presupuesto",
+  "Salvar orçamento": "Guardar presupuesto",
+  "Anexo atual: {p0}. Escolha outro arquivo para substituir.": "Adjunto actual: {p0}. Elige otro archivo para reemplazarlo.",
+  "Orçamento {p0} atualizado.": "Presupuesto {p0} actualizado.",
+  "Excluir o orçamento \"{p0}\"?": "¿Eliminar el presupuesto \"{p0}\"?",
+  "Orçamento {p0} excluído.": "Presupuesto {p0} eliminado."
 };

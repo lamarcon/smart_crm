@@ -185,5 +185,10 @@ window.SMART_CRM_I18N['pt-PT'] = {
   "Não foi possível salvar as permissões.": "Não foi possível guardar as permissões.",
   "Seu perfil não tem permissão para esta ação.": "O seu perfil não tem permissão para esta ação.",
   "Arquivo exportado.": "Ficheiro exportado.",
-  "{p6} registro(s) visível(is)": "{p6} registo(s) visível(eis)"
+  "{p6} registro(s) visível(is)": "{p6} registo(s) visível(eis)",
+  "Excluir orçamento {p0}": "Eliminar orçamento {p0}",
+  "Salvar orçamento": "Guardar orçamento",
+  "Anexo atual: {p0}. Escolha outro arquivo para substituir.": "Anexo atual: {p0}. Escolha outro ficheiro para substituir.",
+  "Excluir o orçamento \"{p0}\"?": "Eliminar o orçamento \"{p0}\"?",
+  "Orçamento {p0} excluído.": "Orçamento {p0} eliminado."
 };

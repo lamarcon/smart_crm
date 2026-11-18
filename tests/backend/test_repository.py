@@ -630,3 +630,22 @@ def test_the_frozen_rate_columns_are_the_source_of_truth_on_read(repository) -> 
     session.execute(text("UPDATE deals SET fx_rate = NULL, fx_rate_date = NULL WHERE id = 'N-1'"))
     deal = repo.read_active().deals[0]
     assert "fxRate" not in deal and "fxRateDate" not in deal
+
+
+def test_edited_quote_is_updated_and_removed_quote_is_soft_deleted(repository) -> None:
+    from app.models import Quote
+
+    repo, session = repository
+    state = sample_state()
+    state["deals"][0]["quotes"].append(
+        {"id": "Q-2", "description": "Extra", "quantity": 2, "unitPrice": 5, "discount": 0, "total": 10, "state": "Rascunho", "pdf": ""}
+    )
+    persist(repo, state)
+
+    state["deals"][0]["quotes"][0].update(description="Item revisado", quantity=3, total=30.75)
+    state["deals"][0]["quotes"] = state["deals"][0]["quotes"][:1]
+    persist(repo, state)
+
+    quotes = repo.read_active().deals[0]["quotes"]
+    assert [(quote["id"], quote["description"], quote["quantity"]) for quote in quotes] == [("Q-1", "Item revisado", 3)]
+    assert session.get(Quote, "Q-2").deleted_at is not None
