@@ -165,6 +165,21 @@ DeletedModule = Literal[
 ]
 
 
+def _revalidated(response):  # noqa: ANN001, ANN202
+    """The browser keeps its copy but asks the server (ETag) before each use, so a
+    deploy reaches every open screen on the next load without a forced refresh."""
+
+    response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
+class RevalidatedStaticFiles(StaticFiles):
+    """Static files (screen, translations) that are always revalidated."""
+
+    def file_response(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+        return _revalidated(super().file_response(*args, **kwargs))
+
+
 def _error(
     status_code: int,
     code: str,
@@ -1500,7 +1515,7 @@ def create_app(
 
     @app.get("/")
     def root_shell() -> FileResponse:
-        return FileResponse(static_dir / "index.html")
+        return _revalidated(FileResponse(static_dir / "index.html"))
 
     def public_action_shell(tenant_slug: str):  # noqa: ANN202
         # The token stays in the URL fragment, which browsers never send here.
@@ -1551,9 +1566,9 @@ def create_app(
                         "message": "Empresa da sess\u00e3o n\u00e3o corresponde \u00e0 rota.",
                     },
                 )
-        return FileResponse(static_dir / "index.html")
+        return _revalidated(FileResponse(static_dir / "index.html"))
 
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    app.mount("/", RevalidatedStaticFiles(directory=static_dir, html=True), name="static")
     # Outermost: error messages follow the language the client asked for.
     app.add_middleware(ErrorMessageTranslationMiddleware)
     return app

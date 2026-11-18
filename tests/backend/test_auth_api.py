@@ -433,3 +433,20 @@ def test_unsafe_auth_routes_require_expected_origin(secure_client_factory, path:
     assert gateway.security_events[-1]["tenant_id"] is None
     assert gateway.security_events[-1]["user_id"] is None
     assert "correct horse battery staple" not in repr(gateway.security_events[-1])
+
+
+def test_screen_and_static_files_are_revalidated_on_every_load(secure_client_factory, tmp_path) -> None:  # noqa: ANN001
+    client, _gateway, _router, _workspace = secure_client_factory()
+    (tmp_path / "i18n").mkdir(exist_ok=True)
+    (tmp_path / "i18n" / "en.js").write_text("window.x = 1;", encoding="utf-8")
+
+    for path in ("/", "/cliente-a", "/i18n/en.js"):
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.headers["cache-control"] == "no-cache", path
+        assert response.headers.get("etag") or response.headers.get("last-modified"), path
+
+    cached = client.get("/i18n/en.js")
+    again = client.get("/i18n/en.js", headers={"if-none-match": cached.headers["etag"]})
+    assert again.status_code == 304
+    assert again.headers["cache-control"] == "no-cache"
