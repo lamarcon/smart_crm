@@ -20,7 +20,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 ACTIVITY_HEAD = "e1c4a7b9d2f6"
-TENANT_HEAD = "e1a7c3f9b2d4"
+TENANT_HEAD = "f5b2d8e4a6c3"
 
 
 def alembic_config(connection=None) -> Config:  # noqa: ANN001
@@ -416,3 +416,62 @@ def test_role_permissions_table_has_checks_tenant_rls_and_round_trips(isolated_m
     assert "role_permissions" not in set(inspect(connection).get_table_names(schema=schema))
     command.upgrade(config, "head")
     assert "role_permissions" in set(inspect(connection).get_table_names(schema=schema))
+
+
+def test_multiple_pipelines_keep_stage_ids_and_scope_legacy_names(isolated_migration) -> None:
+    connection, schema, config = isolated_migration
+    command.upgrade(config, "head")
+    columns = {item["name"] for item in inspect(connection).get_columns("deal_pipelines", schema=schema)}
+    assert {"position", "archived_at"} <= columns
+    connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+    default = connection.execute(text("SELECT id FROM deal_pipelines WHERE is_default")).scalar()
+    won_default = connection.execute(
+        text("SELECT id FROM deal_pipeline_stages WHERE pipeline_id = :p AND name = 'Ganho'"), {"p": default}
+    ).scalar()
+    other, stage_open, stage_won = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    connection.execute(
+        text(
+            "INSERT INTO deal_pipelines (id, workspace_id, name, version, is_default, position, default_stage_id) "
+            "VALUES (:id, 'default', 'Pós-venda', 1, false, 1, :initial)"
+        ),
+        {"id": other, "initial": stage_open},
+    )
+    for stage_id, name, semantic, position in ((stage_open, "Em andamento", "open", 0), (stage_won, "Ganho", "won", 1)):
+        connection.execute(
+            text(
+                "INSERT INTO deal_pipeline_stages (id, workspace_id, pipeline_id, name, semantic_type, color, position) "
+                "VALUES (:id, 'default', :p, :name, :semantic, '#123456', :position)"
+            ),
+            {"id": stage_id, "p": other, "name": name, "semantic": semantic, "position": position},
+        )
+    connection.execute(text("INSERT INTO workspaces (id, version) VALUES ('default', 1) ON CONFLICT DO NOTHING"))
+
+    def insert(deal_id: str, stage: str, pipeline=None, stage_id=None) -> tuple:  # noqa: ANN001
+        connection.execute(
+            text(
+                "INSERT INTO deals (id, workspace_id, title, company_text, contact_text, amount, stage, pipeline_id, stage_id, payload, created_at, updated_at) "
+                "VALUES (:id, 'default', :id, '', '', 0, :stage, :pipeline, :stage_id, '{}'::jsonb, now(), now())"
+            ),
+            {"id": deal_id, "stage": stage, "pipeline": pipeline, "stage_id": stage_id},
+        )
+        return tuple(connection.execute(text("SELECT pipeline_id, stage_id FROM deals WHERE id = :id"), {"id": deal_id}).one())
+
+    # Ids sent by the application are kept even when another pipeline has the same stage name.
+    assert insert("N-other", "Ganho", other, stage_won) == (other, stage_won)
+    # A legacy row with only a name lands in the default pipeline...
+    assert insert("N-legacy", "Ganho") == (default, won_default)
+    # ...or in its own pipeline when it names one.
+    assert insert("N-scoped", "Ganho", other) == (other, stage_won)
+
+    with pytest.raises(Exception):
+        connection.execute(text("UPDATE deal_pipelines SET archived_at = now() WHERE is_default"))
+    connection.rollback()
+
+
+def test_multiple_pipelines_downgrade_refuses_deals_outside_the_default(isolated_migration) -> None:
+    connection, schema, config = isolated_migration
+    command.upgrade(config, "head")
+    command.downgrade(config, "e1a7c3f9b2d4")
+    columns = {item["name"] for item in inspect(connection).get_columns("deal_pipelines", schema=schema)}
+    assert "archived_at" not in columns
+    command.upgrade(config, "head")

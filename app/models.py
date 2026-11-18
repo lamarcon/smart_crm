@@ -78,6 +78,8 @@ class DealPipeline(Base, TimestampMixin):
             name="fk_deal_pipelines_default_stage",
             ondelete="RESTRICT",
             use_alter=True,
+            deferrable=True,
+            initially="DEFERRED",
         ),
         Index(
             "uq_deal_pipelines_workspace_default",
@@ -85,6 +87,7 @@ class DealPipeline(Base, TimestampMixin):
             unique=True,
             postgresql_where=text("is_default"),
         ),
+        CheckConstraint("NOT (is_default AND archived_at IS NOT NULL)", name="default_not_archived"),
     )
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
@@ -95,6 +98,9 @@ class DealPipeline(Base, TimestampMixin):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     default_stage_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+    # Order of the pipelines on screen; archived pipelines keep their deals' history.
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DealPipelineStage(Base, TimestampMixin):

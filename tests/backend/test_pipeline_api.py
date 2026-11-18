@@ -36,7 +36,7 @@ DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
-TENANT_HEAD = "e1a7c3f9b2d4"
+TENANT_HEAD = "f5b2d8e4a6c3"
 ORIGIN = "https://sc2030.brbots.com"
 WORKSPACE_ID = "default"
 ACTOR_ID = "pipeline-api-admin"
