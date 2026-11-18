@@ -891,7 +891,7 @@ function defaultRolePermissions(role) {
   const open = { read: 'all', create: 'all', update: 'all', delete: 'all', import: 'none', export: 'none' };
   const readOnly = { read: 'all', create: 'none', update: 'none', delete: 'none', import: 'none', export: 'none' };
   const scope = role === 'Gestor' ? 'team' : 'own';
-  return { leads: scoped(scope), contacts: clone(open), companies: clone(open), deals: scoped(scope), products: role === 'Gestor' ? clone(open) : readOnly };
+  return { leads: scoped(scope), contacts: clone(open), companies: clone(open), deals: { ...scoped(scope), price: role === 'Gestor' ? 'all' : 'none' }, products: role === 'Gestor' ? clone(open) : readOnly };
 }
 function permissionsAnswer(roles) {
   const names = ['Gestor', 'Vendedor', 'Assistente', 'Faturamento'];
@@ -900,6 +900,7 @@ function permissionsAnswer(roles) {
   const options = Object.fromEntries(['leads', 'contacts', 'companies', 'deals', 'products'].map(module => [module, Object.fromEntries(
     ['read', 'create', 'update', 'delete', 'import', 'export'].map(action => [action,
       ['create', 'import', 'export'].includes(action) || !owned.includes(module) ? ['none', 'all'] : ['none', 'own', 'team', 'all']])
+      .concat(module === 'deals' ? [['price', ['none', 'all']]] : [])
   )]));
   return { roles: clone(roles || defaults), defaults, options, administrator: {} };
 }
@@ -1966,7 +1967,7 @@ async function storageEntries(page) {
     const dealDataBox = await dealData.boundingBox();
     const dealActivityBox = await dealActivity.boundingBox();
     assert.ok(dealDataBox.x < dealActivityBox.x);
-    assert.equal(await drawer.getByRole('tab', { name: 'Orçamentos' }).isVisible(), true);
+    assert.equal(await drawer.getByRole('tab', { name: 'Orçamento', exact: true }).isVisible(), true);
     await page.keyboard.press('Escape');
     assert.equal(await dealTrigger.evaluate(element => document.activeElement === element), true);
 
@@ -2227,7 +2228,8 @@ async function storageEntries(page) {
     await drawer.locator('[data-company-deal="N-16312"]').getByRole('button', { name: 'Implantação Arkos Estética' }).click();
     assert.equal(await drawer.getAttribute('data-entity'), 'deal');
     assert.equal(await drawer.getByRole('button', { name: 'Voltar à empresa' }).isVisible(), true);
-    await drawer.getByLabel('Valor *', { exact: true }).fill('50000');
+    // The deal has a R$ 48.500 item: R$ 1.500 of additional value makes R$ 50.000.
+    await drawer.getByLabel('Valor adicional', { exact: true }).fill('1500');
     await drawer.getByRole('button', { name: 'Salvar registro' }).click();
     await drawer.getByRole('tabpanel', { name: 'Negócios' }).waitFor();
     assert.equal(await drawer.getAttribute('data-entity'), 'company');
@@ -2870,7 +2872,7 @@ async function storageEntries(page) {
     assert.ok(Math.abs(listBox.x - fieldBox.x) <= 2);
 
     await dialog.getByLabel('Título do Negócio *').fill('Negócio com referência');
-    await dialog.getByLabel('Valor *', { exact: true }).fill('250');
+    await dialog.getByLabel('Valor adicional', { exact: true }).fill('250');
     await company.fill('Empresa Inexistente');
     await dialog.getByRole('button', { name: 'Salvar registro' }).click();
     await page.locator('#toastRegion').getByText('Selecione uma empresa cadastrada na lista.', { exact: true }).waitFor();
@@ -2960,7 +2962,7 @@ async function storageEntries(page) {
     await page.getByRole('button', { name: 'Novo Negócio' }).click();
     const dialog = page.locator('#entityDialog');
     await dialog.getByLabel('Título do Negócio *').fill('Negócio troca de empresa');
-    await dialog.getByLabel('Valor *', { exact: true }).fill('300');
+    await dialog.getByLabel('Valor adicional', { exact: true }).fill('300');
     await dialog.getByLabel('Empresa *').fill('Arkos Estética');
     await dialog.getByLabel('Contato').fill('Ana Berclay');
     await dialog.getByRole('button', { name: 'Salvar registro' }).click();
@@ -3223,7 +3225,7 @@ async function storageEntries(page) {
     const dialog = page.locator('#entityDialog');
     await dialog.getByLabel('Título do Negócio *').fill('Exportação em dólar');
     await dialog.getByLabel('Empresa *').fill('ALS Pharma');
-    await dialog.getByLabel('Valor *', { exact: true }).fill('1000');
+    await dialog.getByLabel('Valor adicional', { exact: true }).fill('1000');
     assert.deepEqual(await dialog.getByLabel('Moeda *').locator('option').allTextContents(), ['R$ · Real', 'US$ · Dólar', '€ · Euro']);
     assert.equal(await dialog.getByLabel('Moeda *').inputValue(), 'BRL');
     await dialog.getByLabel('Moeda *').selectOption('USD');
@@ -3430,7 +3432,7 @@ async function storageEntries(page) {
     await picker.fill('Suporte intern');
     assert.equal(await quote.locator('#quoteProductId').inputValue(), '');
     await picker.fill('Licença Smart CRM');
-    await quote.getByRole('button', { name: 'Adicionar orçamento' }).click();
+    await quote.getByRole('button', { name: 'Adicionar item' }).click();
     await waitForMockState(page, state => state.deals.find(item => item.id === 'N-16312').quotes.some(item => item.productId === 'P-1'));
     const saved = (await stateFrom(page)).deals.find(item => item.id === 'N-16312').quotes.find(item => item.productId === 'P-1');
     assert.deepEqual({ productSku: saved.productSku, description: saved.description, quantity: saved.quantity, unitPrice: saved.unitPrice, total: saved.total },
@@ -3901,32 +3903,26 @@ async function storageEntries(page) {
     await assertCanonicalRehydration(page);
   });
 
-  await run('DEMO-13 calcula orçamento e aceita PDF opcional', async page => {
+  await run('DEMO-13 itens do orçamento somam ao valor adicional do Negócio', async page => {
     await goTo(page, 'Negócios');
-    let row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
+    let deal = (await stateFrom(page)).deals.find(item => item.company === 'Open Analítica');
+    // Typed before items existed, with no quote: the whole value is additional.
+    assert.deepEqual([deal.quotes.length, deal.additionalAmount, deal.amount], [0, 21600, 21600]);
+    const row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
     await row.getByRole('button', { name: 'Orçamento', exact: true }).click();
-    await page.getByLabel('Item / serviço *').fill('Serviço sem PDF');
+    assert.equal(await page.locator('#quoteDialogTitle').innerText(), 'Novo item');
+    assert.equal(await page.getByLabel('Anexar PDF (opcional)').count(), 0);
+    await page.getByLabel('Item / serviço *').fill('Serviço avulso');
     await page.getByLabel('Quantidade *').fill('2');
     await page.getByLabel('Valor unitário (R$) *').fill('1500');
     await page.getByLabel('Desconto (R$)').fill('250');
-    assert.equal(await page.locator('#quoteTotal').innerText(), 'R$ 2.750,00');
-    await page.getByRole('button', { name: 'Adicionar orçamento' }).click();
-    let state = await stateFrom(page);
-    let deal = state.deals.find(item => item.company === 'Open Analítica');
+    assert.match(await page.locator('#quoteTotal').innerText(), /R\$\s*2\.750,00/);
+    await page.getByRole('button', { name: 'Adicionar item' }).click();
+    deal = (await stateFrom(page)).deals.find(item => item.company === 'Open Analítica');
     assert.equal(deal.quotes.at(-1).total, 2750);
-    assert.equal(deal.quotes.at(-1).pdf, '');
-
-    row = page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' });
-    await row.getByRole('button', { name: 'Orçamento', exact: true }).click();
-    await page.getByLabel('Item / serviço *').fill('Serviço com PDF');
-    await page.getByLabel('Quantidade *').fill('1');
-    await page.getByLabel('Valor unitário (R$) *').fill('100');
-    await page.getByLabel('Anexar PDF (opcional)').setInputFiles({ name: 'proposta-teste.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n') });
-    await page.getByRole('button', { name: 'Adicionar orçamento' }).click();
-    state = await stateFrom(page);
-    deal = state.deals.find(item => item.company === 'Open Analítica');
-    assert.equal(deal.quotes.at(-1).total, 100);
-    assert.equal(deal.quotes.at(-1).pdf, 'proposta-teste.pdf');
+    assert.equal(deal.additionalAmount, 21600);
+    assert.equal(deal.amount, 24350);
+    assert.match(await page.locator('#page-deals tbody tr').filter({ hasText: 'Open Analítica' }).innerText(), /R\$\s*24\.350,00/);
     await assertCanonicalRehydration(page);
   });
 
@@ -3951,52 +3947,73 @@ async function storageEntries(page) {
     if (await firstCard.count()) assert.equal(await firstCard.getByRole('button', { name: /^Etapa anterior/ }).isDisabled(), true);
   });
 
-  await run('QUOTE-05 edita e exclui orçamentos do Negócio', async page => {
+  await run('QUOTE-05 edita e exclui itens do orçamento e recalcula o Negócio', async page => {
     await goTo(page, 'Negócios');
     await page.getByRole('button', { name: 'Implantação Arkos Estética' }).click();
     const drawer = page.locator('#entityDrawer');
-    await drawer.getByRole('tab', { name: 'Orçamentos' }).click();
+    await drawer.getByRole('tab', { name: 'Orçamento', exact: true }).click();
     const first = drawer.locator('[data-drawer-quote]').first();
-    await first.getByRole('button', { name: /^Editar orçamento/ }).click();
+    await first.getByRole('button', { name: /^Editar item/ }).click();
     const dialog = page.locator('#quoteDialog');
-    assert.equal(await dialog.locator('#quoteDialogTitle').innerText(), 'Editar orçamento');
+    assert.equal(await dialog.locator('#quoteDialogTitle').innerText(), 'Editar item');
     assert.equal(await dialog.getByLabel('Item / serviço *').inputValue(), 'Implantação completa');
-    assert.match(await dialog.locator('#quotePdfHint').innerText(), /proposta-arkos\.pdf/);
     await dialog.getByLabel('Item / serviço *').fill('Implantação revisada');
     await dialog.getByLabel('Quantidade *').fill('1');
     await dialog.getByLabel('Valor unitário (R$) *').fill('40000');
     await dialog.getByLabel('Desconto (R$)').fill('0');
-    await dialog.getByRole('button', { name: 'Salvar orçamento' }).click();
-    await page.locator('#toastRegion').getByText(/Orçamento .* atualizado\./).waitFor();
+    await dialog.getByRole('button', { name: 'Salvar item' }).click();
+    await page.locator('#toastRegion').getByText('Item Implantação revisada atualizado.').waitFor();
     assert.equal(await drawer.locator('[data-drawer-quote]').count(), 1);
     assert.match(await first.innerText(), /Implantação revisada/);
     assert.match(await first.innerText(), /R\$\s*40\.000,00/);
-    assert.match(await first.innerText(), /proposta-arkos\.pdf/);
     let deal = (await stateFrom(page)).deals.find(item => item.id === 'N-16312');
-    assert.equal(deal.quotes.length, 1);
-    assert.equal(deal.quotes[0].total, 40000);
-    assert.equal(deal.amount, 40000);
+    assert.deepEqual([deal.quotes.length, deal.quotes[0].total, deal.amount], [1, 40000, 40000]);
 
-    // A second quote becomes the latest; deleting it brings the value back to the first one.
-    await drawer.getByRole('button', { name: 'Novo orçamento' }).click();
-    assert.equal(await dialog.locator('#quoteDialogTitle').innerText(), 'Novo orçamento');
+    await drawer.getByRole('button', { name: 'Novo item' }).click();
+    assert.equal(await dialog.locator('#quoteDialogTitle').innerText(), 'Novo item');
     assert.equal(await dialog.getByLabel('Item / serviço *').inputValue(), '');
     await dialog.getByLabel('Item / serviço *').fill('Extra');
     await dialog.getByLabel('Valor unitário (R$) *').fill('900');
-    await dialog.getByRole('button', { name: 'Adicionar orçamento' }).click();
+    await dialog.getByRole('button', { name: 'Adicionar item' }).click();
     assert.equal(await drawer.locator('[data-drawer-quote]').count(), 2);
+    assert.equal((await stateFrom(page)).deals.find(item => item.id === 'N-16312').amount, 40900);
     page.once('dialog', confirmation => confirmation.accept());
-    await drawer.locator('[data-drawer-quote]').last().getByRole('button', { name: /^Excluir orçamento/ }).click();
-    await page.locator('#toastRegion').getByText(/Orçamento .* excluído\./).waitFor();
+    await drawer.locator('[data-drawer-quote]').last().getByRole('button', { name: /^Excluir item/ }).click();
+    await page.locator('#toastRegion').getByText('Item Extra excluído.').waitFor();
     assert.equal(await drawer.locator('[data-drawer-quote]').count(), 1);
     deal = (await stateFrom(page)).deals.find(item => item.id === 'N-16312');
     assert.deepEqual(deal.quotes.map(quote => quote.description), ['Implantação revisada']);
     assert.equal(deal.amount, 40000);
 
-    // Cancelling the confirmation keeps the quote.
     page.once('dialog', confirmation => confirmation.dismiss());
-    await drawer.locator('[data-drawer-quote]').first().getByRole('button', { name: /^Excluir orçamento/ }).click();
+    await drawer.locator('[data-drawer-quote]').first().getByRole('button', { name: /^Excluir item/ }).click();
     assert.equal(await drawer.locator('[data-drawer-quote]').count(), 1);
+  });
+
+  await run('QUOTE-06 Vendedor sem permissão de preço não altera o preço do catálogo nem dá desconto', async page => {
+    await goTo(page, 'Negócios');
+    await page.getByRole('button', { name: 'Negócio na etapa ocupada' }).click();
+    const drawer = page.locator('#entityDrawer');
+    await drawer.getByRole('tab', { name: 'Orçamento', exact: true }).click();
+    await drawer.getByRole('button', { name: 'Novo item' }).click();
+    const dialog = page.locator('#quoteDialog');
+    assert.equal(await dialog.locator('#quotePriceNote').isVisible(), true);
+    assert.equal(await dialog.getByLabel('Desconto (R$)').evaluate(input => input.readOnly), true);
+    assert.equal(await dialog.getByLabel('Valor unitário (R$) *').evaluate(input => input.readOnly), false);
+    await dialog.getByLabel('Item / serviço *').fill('lic');
+    await dialog.locator('#quoteDescription-options [role="option"]').first().click();
+    assert.equal(await dialog.getByLabel('Valor unitário (R$) *').evaluate(input => input.readOnly), true);
+  }, {
+    session: {
+      user_id: 'u-paula-seller', user_name: 'Paula Vendas', role: 'Vendedor',
+      permissions: { ...defaultRolePermissions('Vendedor'), deals: { read: 'all', create: 'all', update: 'all', delete: 'all', import: 'none', export: 'none', price: 'none' } }
+    },
+    preloadState: (() => {
+      const workspace = workspaceWithDeal();
+      workspace.users.push({ id: 'u-paula-seller', name: 'Paula Vendas', role: 'Vendedor', team: 'Vendas CMS', status: 'Ativo' });
+      workspace.products = [{ id: 'P-1', name: 'Licença Smart CRM', sku: 'LIC-ANUAL', category: '', unit: 'un', price: 1200, currency: 'BRL', active: true, description: '', metadata: [] }];
+      return workspace;
+    })()
   });
 
   await run('QUOTE-01 gerencia orçamentos dentro do painel lateral do Negócio', async page => {
@@ -4011,37 +4028,36 @@ async function storageEntries(page) {
     const drawer = page.locator('#entityDrawer');
     await drawer.waitFor({ state: 'visible' });
     assert.equal(await drawer.getByRole('tab', { name: 'Informações' }).getAttribute('aria-selected'), 'true');
-    assert.equal(await drawer.getByRole('tab', { name: 'Orçamentos' }).isVisible(), true);
-    await drawer.getByRole('tab', { name: 'Orçamentos' }).click();
-    assert.equal(await drawer.getByRole('tab', { name: 'Orçamentos' }).getAttribute('aria-selected'), 'true');
+    assert.equal(await drawer.getByRole('tab', { name: 'Orçamento', exact: true }).isVisible(), true);
+    await drawer.getByRole('tab', { name: 'Orçamento', exact: true }).click();
+    assert.equal(await drawer.getByRole('tab', { name: 'Orçamento', exact: true }).getAttribute('aria-selected'), 'true');
     assert.equal(await drawer.locator('[data-drawer-quote]').count(), 1);
     const existing = drawer.locator('[data-drawer-quote]').first();
     assert.match(await existing.innerText(), /Implantação completa/);
     assert.match(await existing.innerText(), /R\$\s*48\.500,00/);
-    assert.match(await existing.innerText(), /Enviado/);
-    assert.match(await existing.innerText(), /proposta-arkos\.pdf/);
+    assert.match(await drawer.locator('[data-quote-deal-total]').innerText(), /R\$\s*48\.500,00/);
 
-    await drawer.getByRole('button', { name: 'Novo orçamento' }).click();
+    await drawer.getByRole('button', { name: 'Novo item' }).click();
     const quoteDialog = page.locator('#quoteDialog');
     assert.equal(await quoteDialog.locator('#quoteDealId').inputValue(), 'N-16312');
     await quoteDialog.getByLabel('Item / serviço *').fill('Orçamento pelo painel');
     await quoteDialog.getByLabel('Quantidade *').fill('2');
     await quoteDialog.getByLabel('Valor unitário (R$) *').fill('500');
-    await quoteDialog.getByRole('button', { name: 'Adicionar orçamento' }).click();
+    await quoteDialog.getByRole('button', { name: 'Adicionar item' }).click();
     assert.match(await drawer.getAttribute('class'), /open/);
-    assert.equal(await drawer.getByRole('tab', { name: 'Orçamentos' }).getAttribute('aria-selected'), 'true');
+    assert.equal(await drawer.getByRole('tab', { name: 'Orçamento', exact: true }).getAttribute('aria-selected'), 'true');
     assert.equal(await drawer.locator('[data-drawer-quote]').count(), 2);
     const added = drawer.locator('[data-drawer-quote]').last();
     assert.match(await added.innerText(), /Orçamento pelo painel/);
     assert.match(await added.innerText(), /R\$\s*1\.000,00/);
-    assert.match(await added.innerText(), /Rascunho/);
-    assert.match(await added.innerText(), /Sem anexo/);
+    assert.match(await drawer.locator('[data-quote-items-total]').innerText(), /R\$\s*49\.500,00/);
+    assert.match(await drawer.locator('[data-quote-deal-total]').innerText(), /R\$\s*49\.500,00/);
 
     await drawer.getByRole('button', { name: 'Fechar painel' }).click();
     await page.getByRole('button', { name: 'Renovação ALS Pharma' }).click();
-    await drawer.getByRole('tab', { name: 'Orçamentos' }).click();
-    assert.match(await drawer.innerText(), /Nenhum orçamento cadastrado/);
-    assert.equal(await drawer.getByRole('button', { name: 'Novo orçamento' }).isVisible(), true);
+    await drawer.getByRole('tab', { name: 'Orçamento', exact: true }).click();
+    assert.match(await drawer.innerText(), /Nenhum item no orçamento/);
+    assert.equal(await drawer.getByRole('button', { name: 'Novo item' }).isVisible(), true);
   });
 
   await run('BITRIX-01 importa uma amostra e preserva todos os campos por posição', async page => {
@@ -4156,7 +4172,7 @@ async function storageEntries(page) {
     const drawer = page.locator('#entityDrawer');
     await drawer.waitFor({ state: 'visible' });
     assert.doesNotMatch(await drawer.innerText(), /Campos do Bitrix/);
-    assert.deepEqual(await drawer.getByRole('tab').allTextContents(), ['Informações', 'Campos adicionais', 'Orçamentos']);
+    assert.deepEqual(await drawer.getByRole('tab').allTextContents(), ['Informações', 'Campos adicionais', 'Orçamento']);
     await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
     assert.equal(await drawer.locator('[data-custom-field]').count(), 5);
     assert.equal(await drawer.getByLabel('Observação').inputValue(), 'valor; preservado\ncom quebra');
@@ -4339,7 +4355,7 @@ async function storageEntries(page) {
     await dialog.waitFor({ state: 'visible' });
     assert.equal(await dialog.getByText('Nenhum campo personalizado criado.').count(), 1);
     assert.deepEqual(await dialog.locator('[data-standard-field]').evaluateAll(inputs => inputs.map(input => [input.closest('label').textContent.trim(), input.checked])), [
-      ['Título do Negócio', true], ['Empresa', true], ['Contato', true], ['Valor', true], ['Moeda', true],
+      ['Título do Negócio', true], ['Empresa', true], ['Contato', true], ['Valor adicional', true], ['Motivo do valor adicional', true], ['Moeda', true],
       ['Etapa', true], ['Responsável', true], ['Assistente', true]
     ]);
 
@@ -4404,7 +4420,7 @@ async function storageEntries(page) {
     const newDialog = page.locator('#entityDialog');
     await newDialog.getByLabel('Título do Negócio *').fill('Negócio com campo configurado');
     await newDialog.getByLabel('Empresa *').fill('ALS Pharma');
-    await newDialog.getByLabel('Valor *', { exact: true }).fill('100');
+    await newDialog.getByLabel('Valor adicional', { exact: true }).fill('100');
     await newDialog.getByLabel('Responsável *').selectOption('u-paula');
     await newDialog.getByRole('button', { name: 'Salvar registro' }).click();
     const created = (await stateFrom(page)).deals.find(deal => deal.title === 'Negócio com campo configurado');
@@ -5098,7 +5114,7 @@ async function storageEntries(page) {
     assert.equal(await dialog.getByLabel('Etapa *').inputValue(), DEAL_STAGE_IDS[0]);
     await dialog.getByLabel('Título do Negócio *').fill('Negócio no início configurado');
     await dialog.getByLabel('Empresa *').fill('ALS Pharma');
-    await dialog.getByLabel('Valor *', { exact: true }).fill('150');
+    await dialog.getByLabel('Valor adicional', { exact: true }).fill('150');
     await dialog.getByLabel('Responsável *').selectOption('u-paula');
     await dialog.getByRole('button', { name: 'Salvar registro' }).click();
     const created = (await stateFrom(page)).deals.find(candidate => candidate.title === 'Negócio no início configurado');

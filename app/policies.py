@@ -53,8 +53,11 @@ ADMIN_ACTIONS = frozenset(
 MODULES = ("leads", "contacts", "companies", "deals", "products")
 # Actions that reach records with a scope, and actions that are simply allowed or not.
 SCOPED_ACTIONS = ("read", "update", "delete")
-FLAG_ACTIONS = ("create", "import", "export")
+FLAG_ACTIONS = ("create", "import", "export", "price")
 MODULE_ACTIONS = ("read", "create", "update", "delete", "import", "export")
+# Actions only some modules have: "price" lets a role change the price of a deal's
+# quote items or give them a discount.
+EXTRA_ACTIONS: dict[str, tuple[str, ...]] = {"deals": ("price",)}
 SCOPE_NONE, SCOPE_OWN, SCOPE_TEAM, SCOPE_ALL = "none", "own", "team", "all"
 SCOPES = (SCOPE_NONE, SCOPE_OWN, SCOPE_TEAM, SCOPE_ALL)
 # Modules whose records have a responsible person and a team.
@@ -63,10 +66,14 @@ OWNED_MODULES = frozenset({"leads", "deals", "companies"})
 PermissionKey = tuple[str, str]  # (module, action)
 
 
+def module_actions(module: str) -> tuple[str, ...]:
+    return MODULE_ACTIONS + EXTRA_ACTIONS.get(module, ())
+
+
 def allowed_scopes(module: str, action: str) -> tuple[str, ...]:
     """Scopes an administrator may choose for one module and action."""
 
-    if module not in MODULES or action not in MODULE_ACTIONS:
+    if module not in MODULES or action not in module_actions(module):
         return ()
     if action in FLAG_ACTIONS or module not in OWNED_MODULES:
         return (SCOPE_NONE, SCOPE_ALL)
@@ -78,6 +85,7 @@ def _matrix(rows: Mapping[str, Mapping[str, str]]) -> dict[PermissionKey, str]:
 
 
 _ALL = {action: SCOPE_ALL for action in MODULE_ACTIONS}
+_ALL_DEALS = {**_ALL, "price": SCOPE_ALL}
 _OPEN_RECORDS = {"read": SCOPE_ALL, "create": SCOPE_ALL, "update": SCOPE_ALL, "delete": SCOPE_ALL, "import": SCOPE_NONE, "export": SCOPE_NONE}
 _PRODUCTS_READ_ONLY = {"read": SCOPE_ALL, "create": SCOPE_NONE, "update": SCOPE_NONE, "delete": SCOPE_NONE, "import": SCOPE_NONE, "export": SCOPE_NONE}
 
@@ -89,7 +97,7 @@ def _scoped(scope: str) -> dict[str, str]:
 _INDIVIDUAL = _matrix(
     {
         "leads": _scoped(SCOPE_OWN),
-        "deals": _scoped(SCOPE_OWN),
+        "deals": {**_scoped(SCOPE_OWN), "price": SCOPE_NONE},
         "contacts": _OPEN_RECORDS,
         "companies": _OPEN_RECORDS,
         "products": _PRODUCTS_READ_ONLY,
@@ -98,11 +106,11 @@ _INDIVIDUAL = _matrix(
 
 # The rules the CRM had before permissions became configurable.
 DEFAULT_PERMISSIONS: dict[str, dict[PermissionKey, str]] = {
-    "Administrador": _matrix({module: _ALL for module in MODULES}),
+    "Administrador": _matrix({module: _ALL_DEALS if module == "deals" else _ALL for module in MODULES}),
     "Gestor": _matrix(
         {
             "leads": _scoped(SCOPE_TEAM),
-            "deals": _scoped(SCOPE_TEAM),
+            "deals": {**_scoped(SCOPE_TEAM), "price": SCOPE_ALL},
             "contacts": _OPEN_RECORDS,
             "companies": _OPEN_RECORDS,
             "products": {**_OPEN_RECORDS},
@@ -120,7 +128,7 @@ def effective_permissions(
     """The role's matrix: the defaults overlaid with valid stored rows."""
 
     if role not in CURRENT_ROLES:
-        return {(module, action): SCOPE_NONE for module in MODULES for action in MODULE_ACTIONS}
+        return {(module, action): SCOPE_NONE for module in MODULES for action in module_actions(module)}
     matrix = dict(DEFAULT_PERMISSIONS[role])
     if role == ADMIN_ROLE:
         return matrix
@@ -134,7 +142,7 @@ def permissions_payload(matrix: Mapping[PermissionKey, str]) -> dict[str, dict[s
     """``{module: {action: scope}}`` for JSON answers."""
 
     return {
-        module: {action: matrix.get((module, action), SCOPE_NONE) for action in MODULE_ACTIONS}
+        module: {action: matrix.get((module, action), SCOPE_NONE) for action in module_actions(module)}
         for module in MODULES
     }
 
@@ -159,7 +167,7 @@ class RecordScope:
 
 
 def permission_scope(principal: PrincipalScope, module: str, action: str) -> str:
-    if principal.role not in CURRENT_ROLES or module not in MODULES or action not in MODULE_ACTIONS:
+    if principal.role not in CURRENT_ROLES or module not in MODULES or action not in module_actions(module):
         return SCOPE_NONE
     if principal.role == ADMIN_ROLE:
         return SCOPE_ALL

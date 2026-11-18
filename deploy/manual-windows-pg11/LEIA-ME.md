@@ -441,7 +441,7 @@ $expectedVersion = (& "$releaseRoot\.venv\Scripts\python.exe" `
 O inicializador executa, nesta ordem:
 
 1. `alembic-control.ini` ate `d5f0a8c3e7b2` e confirma exatamente esse head;
-2. executa a migracao tenant ate o head empacotado (`c4e8a2f6b9d1`) por uma tarefa temporaria sob `SmartCRMService`, usando `FleetService` e os segredos DPAPI;
+2. executa a migracao tenant ate o head empacotado (`e1a7c3f9b2d4`) por uma tarefa temporaria sob `SmartCRMService`, usando `FleetService` e os segredos DPAPI;
 3. exige evidencia de que o tenant e o perfil central chegaram ao mesmo head antes de alterar a tarefa web;
 4. exporta a tarefa anterior para a pasta de recuperacao, para a tarefa e confirma que a porta 8080 foi liberada;
 5. registra a tarefa `SmartCRM` na release imutavel usando `SmartCRMService`;
@@ -449,7 +449,7 @@ O inicializador executa, nesta ordem:
 
 A revisao corretiva `a8d4e6f2b1c9` repara de forma idempotente funil e payloads
 incompletos sob FORCE RLS, sem SQL manual. A linhagem tenant desta release termina em
-`c4e8a2f6b9d1`, que cria `role_permissions` (permissoes por perfil, modulo e acao configuradas na tela Permissoes, com RLS; sem linhas, cada perfil segue as regras padrao); antes dela, `f2b8d4a6c1e9` passa a aceitar portugues de Portugal (`pt-PT`) no idioma do usuario; antes dela, `e9a4c2b7d1f3` acrescenta o idioma de cada usuario (`crm_users.locale`: `pt-BR`, `en` ou `es`; os usuarios existentes ficam em `pt-BR`); antes dela, `d7e1b3c9a2f4` cria o catalogo de produtos (`products`, ligado aos orcamentos) e as chaves de captacao de Leads (`lead_intake_keys`), ambos com RLS; antes dela, `c3d9a1f4b7e2` acrescenta moeda (`BRL`/`USD`/`EUR`) e cotacao congelada aos Negocios; antes dela, `b4e2c9a7d6f1` cria `account_action_tokens` (convites e recuperacao de senha) com RLS. Nao execute
+`e1a7c3f9b2d4`, que transforma os orcamentos do Negocio em itens com "valor adicional" (Negocios sem orcamento guardam o valor atual como adicional; os com orcamento passam a valer a soma dos itens) e aceita a permissao "price"; antes dela, `c4e8a2f6b9d1` cria `role_permissions` (permissoes por perfil, modulo e acao configuradas na tela Permissoes, com RLS; sem linhas, cada perfil segue as regras padrao); antes dela, `f2b8d4a6c1e9` passa a aceitar portugues de Portugal (`pt-PT`) no idioma do usuario; antes dela, `e9a4c2b7d1f3` acrescenta o idioma de cada usuario (`crm_users.locale`: `pt-BR`, `en` ou `es`; os usuarios existentes ficam em `pt-BR`); antes dela, `d7e1b3c9a2f4` cria o catalogo de produtos (`products`, ligado aos orcamentos) e as chaves de captacao de Leads (`lead_intake_keys`), ambos com RLS; antes dela, `c3d9a1f4b7e2` acrescenta moeda (`BRL`/`USD`/`EUR`) e cotacao congelada aos Negocios; antes dela, `b4e2c9a7d6f1` cria `account_action_tokens` (convites e recuperacao de senha) com RLS. Nao execute
 `alembic.ini` diretamente e nao altere `expected_tenant_revision` manualmente.
 
 Qualquer falha antes da troca deixa a tarefa atual intacta. Se uma falha ocorrer
@@ -551,4 +551,4 @@ Nao use `git reset --hard`, nao execute downgrade Alembic improvisado e nao apag
 
 ## 10. Proximas empresas
 
-Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `c4e8a2f6b9d1` pelo fluxo de frota, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.
+Cada nova empresa recebe outro slug e outro PostgreSQL exclusivo. O operador cria database/role no servidor escolhido, migra ate `e1a7c3f9b2d4` pelo fluxo de frota, cadastra um `secret_ref` opaco via `register-tenant` e ativa o primeiro administrador via prompt. Bancos remotos usam TLS `verify-full` com CA. Nao existe descoberta automatica de bancos e o navegador nunca escolhe o DSN ou o tenant autenticado.

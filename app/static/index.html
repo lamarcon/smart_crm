@@ -313,6 +313,14 @@
     .drawer-quote-list { display: grid; gap: 10px; }
     .drawer-quote { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; padding: 13px 14px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
     .stage-steps { display: flex; gap: 8px; }
+    .quote-items { width: 100%; font-size: 12px; }
+    .quote-items .num { text-align: right; white-space: nowrap; }
+    .quote-items small { display: block; color: var(--slate-500); }
+    .quote-summary { margin: 14px 0 6px; padding: 12px 14px; border: 1px solid var(--slate-200); border-radius: 10px; background: var(--slate-50, #f8fafc); display: grid; gap: 6px; }
+    .quote-summary div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+    .quote-summary dt { color: var(--slate-500); }
+    .quote-summary dd { margin: 0; text-align: right; }
+    .quote-summary .quote-summary-total { border-top: 1px solid var(--slate-200); padding-top: 6px; font-weight: 700; }
     .stage-steps .stage-step { flex: 1; font-size: 15px; }
     .drawer-quote h5 { margin: 0 0 5px; color: var(--navy-800); font-size: 13px; }
     .drawer-quote p { margin: 0; color: var(--slate-500); font-size: 11px; }
@@ -674,7 +682,7 @@
       <div class="drawer-body">
         <div class="drawer-workspace" id="drawerWorkspace">
           <section class="drawer-primary" id="drawerPrimary" role="region" aria-label="Dados do cadastro">
-            <div class="drawer-tabs" id="drawerTabs" role="tablist" aria-label="Seções do cadastro" hidden><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="info" aria-selected="true">Informações</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="custom" aria-selected="false">Campos adicionais</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="quotes" aria-selected="false">Orçamentos</button></div>
+            <div class="drawer-tabs" id="drawerTabs" role="tablist" aria-label="Seções do cadastro" hidden><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="info" aria-selected="true">Informações</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="custom" aria-selected="false">Campos adicionais</button><button type="button" role="tab" data-action="drawer-tab" data-drawer-tab="quotes" aria-selected="false">Orçamento</button></div>
             <section id="drawerInfoPanel" role="tabpanel"><div class="form-grid" id="drawerFields"></div><section class="drawer-company-summary" id="drawerCompanySummary" aria-label="Empresa vinculada" hidden></section><section class="drawer-company-summary" id="drawerLeadTracking" aria-label="Origem e rastreio" hidden></section></section>
             <section id="drawerCustomPanel" role="tabpanel" hidden><div class="form-grid" id="drawerCustomFields"></div><div class="drawer-custom-add"><div class="field"><label for="drawerAddCustomField">Campo adicional para adicionar</label><select id="drawerAddCustomField"></select></div><button type="button" class="button small" data-action="add-custom-field">Adicionar campo</button></div></section>
             <section id="drawerQuotesPanel" role="tabpanel" hidden></section>
@@ -737,7 +745,7 @@
 
   <dialog id="quoteDialog">
     <form id="quoteForm">
-      <div class="modal-head"><h3 id="quoteDialogTitle">Novo orçamento</h3><button type="button" class="close-button" data-close="quoteDialog" aria-label="Fechar">×</button></div>
+      <div class="modal-head"><h3 id="quoteDialogTitle">Novo item</h3><button type="button" class="close-button" data-close="quoteDialog" aria-label="Fechar">×</button></div>
       <div class="modal-body">
         <input type="hidden" name="dealId" id="quoteDealId">
         <input type="hidden" name="quoteId" id="quoteId">
@@ -747,12 +755,11 @@
           <div class="field"><label for="quoteQuantity">Quantidade *</label><input id="quoteQuantity" name="quantity" type="number" min="1" step="1" value="1" required></div>
           <div class="field"><label for="quoteUnit">Valor unitário (R$) *</label><input id="quoteUnit" name="unitPrice" type="number" min="0" step="0.01" value="0" required></div>
           <div class="field"><label for="quoteDiscount">Desconto (R$)</label><input id="quoteDiscount" name="discount" type="number" min="0" step="0.01" value="0"></div>
-          <div class="field"><label for="quoteValidity">Validade</label><input id="quoteValidity" name="validity" type="date"></div>
-          <div class="field full"><label for="quotePdf">Anexar PDF (opcional)</label><input id="quotePdf" name="pdf" type="file" accept="application/pdf"><div class="hint" id="quotePdfHint">Neste protótipo apenas o nome do arquivo será guardado localmente.</div></div>
+          <div class="field full" id="quotePriceNote" hidden><span class="hint">Seu perfil não altera o preço de produtos do catálogo nem dá desconto.</span></div>
         </div>
-        <div class="quote-total"><span>Total estimado</span><strong id="quoteTotal">R$ 0,00</strong></div>
+        <div class="quote-total"><span>Total do item</span><strong id="quoteTotal">R$ 0,00</strong></div>
       </div>
-      <div class="modal-foot"><button type="button" class="button" data-close="quoteDialog">Cancelar</button><button type="submit" class="button primary" id="quoteSubmit">Adicionar orçamento</button></div>
+      <div class="modal-foot"><button type="button" class="button" data-close="quoteDialog">Cancelar</button><button type="submit" class="button primary" id="quoteSubmit">Adicionar item</button></div>
     </form>
   </dialog>
 
@@ -1148,7 +1155,7 @@
           { name: 'title', label: 'Nome', type: 'text', searchable: true, defaultFilter: true },
           { name: 'company', label: 'Empresa', type: 'text', searchable: true },
           { name: 'contact', label: 'Contato', type: 'text', searchable: true },
-          { name: 'amount', label: 'Valor', type: 'money', searchable: true },
+          { name: 'amount', label: 'Valor total', type: 'money', searchable: true },
           { name: 'stage', label: 'Etapa', type: 'multiselect', searchable: true, defaultFilter: true },
           { name: 'responsibleId', label: 'Responsável', type: 'multiselect', searchable: true, defaultFilter: true },
           { name: 'assistants', label: 'Assistentes', type: 'multiselect', searchable: true },
@@ -1278,6 +1285,14 @@
         });
       });
       (normalized.deals || []).forEach((deal, index) => {
+        deal.quotes = Array.isArray(deal.quotes) ? deal.quotes : [];
+        if (deal.additionalAmount === undefined) {
+          // Before items: a typed value without quotes is the additional value.
+          deal.additionalAmount = deal.quotes.length ? 0 : Math.max(0, Number(deal.amount || 0));
+          deal.additionalReason ||= '';
+        }
+        deal.additionalReason = String(deal.additionalReason || '');
+        recomputeDealAmount(deal);
         deal.createdAt = ensureIso(deal.createdAt, fallbackAt(index + 2));
         deal.updatedAt = ensureIso(deal.updatedAt, fallbackAt(index));
         deal.stageChangedAt = ensureIso(deal.stageChangedAt, deal.updatedAt);
@@ -1984,6 +1999,17 @@
       if (!text) return '';
       return LEAD_CHANNELS.includes(text) ? text : `Outro: ${text}`;
     }
+    // A deal is worth the sum of its quote items plus an additional value.
+    function itemTotal(item) {
+      const total = Number(item.quantity || 0) * Number(item.unitPrice || 0) - Number(item.discount || 0);
+      return Math.max(0, Math.round(total * 100) / 100);
+    }
+    function dealItemsTotal(deal) { return Math.round((deal.quotes || []).reduce((sum, item) => sum + itemTotal(item), 0) * 100) / 100; }
+    function recomputeDealAmount(deal) {
+      (deal.quotes || []).forEach(item => { item.total = itemTotal(item); });
+      deal.additionalAmount = Math.max(0, Number(deal.additionalAmount || 0));
+      deal.amount = Math.round((dealItemsTotal(deal) + deal.additionalAmount) * 100) / 100;
+    }
     function dealCurrency(deal) {
       const currency = String(deal?.currency || 'BRL').toUpperCase();
       return CURRENCY_SYMBOLS[currency] ? currency : 'BRL';
@@ -2044,7 +2070,7 @@
       const open = { read: 'all', create: 'all', update: 'all', delete: 'all', import: 'none', export: 'none' };
       const readOnly = { read: 'all', create: 'none', update: 'none', delete: 'none', import: 'none', export: 'none' };
       const scope = role === 'Gestor' ? 'team' : 'own';
-      return { leads: scoped(scope), deals: scoped(scope), contacts: open, companies: open, products: role === 'Gestor' ? open : readOnly };
+      return { leads: scoped(scope), deals: { ...scoped(scope), price: role === 'Gestor' ? 'all' : 'none' }, contacts: open, companies: open, products: role === 'Gestor' ? open : readOnly };
     }
     function permissionScope(module, action) {
       const user = currentUser();
@@ -2584,7 +2610,7 @@
           const previous = position > 0 ? stages[position - 1] : null;
           const next = position >= 0 && position < stages.length - 1 ? stages[position + 1] : null;
           const step = (target, symbol, label) => `<button type="button" class="button small stage-step" data-action="stage-step" data-entity="${entity}" data-id="${escapeHTML(record.id)}" data-target="${escapeHTML(target?.id || '')}" aria-label="${escapeHTML(target ? `${label}: ${target.name}` : label)}" title="${escapeHTML(target ? target.name : label)}" ${target && editable ? '' : 'disabled'}>${symbol}</button>`;
-          return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small>${!isLead ? dealRelationshipsHTML(record) : ''}<div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} orç.</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}" ${canRecord(isLead ? 'leads' : 'deals', 'update', record) ? '' : 'disabled'}>${options}</select><div class="kanban-actions stage-steps">${step(previous, '←', 'Etapa anterior')}${step(next, '→', 'Próxima etapa')}</div></article>`;
+          return `<article class="kanban-card" data-id="${record.id}"><button class="entity-link" data-action="open-record" data-entity="${entity}" data-id="${record.id}">${escapeHTML(title)}</button><small>${escapeHTML(subtitle)}</small>${!isLead ? dealRelationshipsHTML(record) : ''}<div class="kanban-card-meta"><span>${escapeHTML(userName(record.responsibleId))}</span>${!isLead ? `<b>${record.quotes.length} ${record.quotes.length === 1 ? 'item' : 'itens'}</b>` : ''}</div><select data-stage-control="${record.id}" data-entity="${entity}" aria-label="Mover ${escapeHTML(title)}" ${canRecord(isLead ? 'leads' : 'deals', 'update', record) ? '' : 'disabled'}>${options}</select><div class="kanban-actions stage-steps">${step(previous, '←', 'Etapa anterior')}${step(next, '→', 'Próxima etapa')}</div></article>`;
         }).join('');
         return `<section class="kanban-column" data-kanban-stage="${escapeHTML(stage.id)}"><div class="kanban-column-head"><span>${escapeHTML(stage.name)}</span><span class="kanban-count">${stageRecords.length}</span></div><div class="kanban-cards">${cards || '<p class="hint">Nenhum registro nesta etapa.</p>'}</div></section>`;
       }).join('')}</div>`;
@@ -2650,7 +2676,7 @@
       const records = applyRecordFilters('deals', visibleDeals());
       const stages = activeDealStages();
       if (getViewMode('deals') === 'kanban') return listShell('deals', 'Negócios', 'Funil configurado da empresa com acompanhamento por etapas.', renderKanban('deals', records), records.length, stages);
-      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td>${dealMoneyHTML(item)}<small>${item.quotes.length} orçamento(s)</small></td><td>${renderStageProgress(stages, item.stageId, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button>${canRecord('deals', 'delete', item) ? `<button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button>` : ''}</div></td></tr>`).join('');
+      const rows = records.map(item => `<tr><td><div class="entity"><span class="entity-avatar">${initials(item.company)}</span><div><button class="entity-link" data-action="open-record" data-entity="deal" data-id="${item.id}">${escapeHTML(item.title)}</button><small>${escapeHTML(item.id)}</small></div></div></td><td>${dealRelationshipsHTML(item)}</td><td>${dealMoneyHTML(item)}<small>${item.quotes.length} item(ns)</small></td><td>${renderStageProgress(stages, item.stageId, 'deal', item.id)}</td><td>${escapeHTML(userName(item.responsibleId))}</td><td>${escapeHTML(item.updatedAt)}</td><td><div class="row-actions"><button class="button small" data-action="quote" data-id="${item.id}">Orçamento</button>${canRecord('deals', 'delete', item) ? `<button class="row-action" data-action="delete" data-entity="deal" data-id="${item.id}" title="Excluir">⌫</button>` : ''}</div></td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Negócio</th><th>Empresa e Contato</th><th>Valor</th><th>Etapa</th><th>Responsável</th><th>Atualização</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Negócio encontrado');
       return listShell('deals', 'Negócios', 'Funil configurado da empresa com acompanhamento por etapas.', table, records.length, stages);
     }
@@ -3031,7 +3057,8 @@
     // Permissions screen (Administrador) --------------------------------------
     const PERMISSION_ROLES = ['Gestor', 'Vendedor', 'Assistente', 'Faturamento'];
     const PERMISSION_MODULE_LABELS = { leads: 'Leads', contacts: 'Contatos', companies: 'Empresas', deals: 'Negócios', products: 'Produtos' };
-    const PERMISSION_ACTION_LABELS = { read: 'Ver', create: 'Criar', update: 'Editar', delete: 'Excluir', import: 'Importar', export: 'Exportar' };
+    const PERMISSION_ACTION_LABELS = { read: 'Ver', create: 'Criar', update: 'Editar', delete: 'Excluir', import: 'Importar', export: 'Exportar', price: 'Alterar preço' };
+    const PERMISSION_SCREEN_ACTIONS = [...PERMISSION_ACTIONS, 'price'];
     const PERMISSION_SCOPE_LABELS = { none: 'Nenhum', own: 'Próprios', team: 'Equipe', all: 'Todos' };
     const PERMISSION_FLAG_LABELS = { none: 'Não', all: 'Sim' };
     let permissionsState = { loaded: false, loading: false, error: '', role: 'Gestor', roles: null, defaults: null, options: null, draft: null, dirty: false, saving: false };
@@ -3053,8 +3080,9 @@
     }
     function permissionCellHTML(module, action) {
       const choices = permissionsState.options?.[module]?.[action] || [];
+      if (!choices.length) return '<td class="hint">—</td>';
       const value = permissionsState.draft?.[permissionsState.role]?.[module]?.[action];
-      const labels = ['create', 'import', 'export'].includes(action) ? PERMISSION_FLAG_LABELS : PERMISSION_SCOPE_LABELS;
+      const labels = ['create', 'import', 'export', 'price'].includes(action) ? PERMISSION_FLAG_LABELS : PERMISSION_SCOPE_LABELS;
       const options = choices.map(choice => `<option value="${choice}" ${choice === value ? 'selected' : ''}>${labels[choice] || choice}</option>`).join('');
       return `<td><select data-permission-module="${module}" data-permission-action="${action}" aria-label="${escapeHTML(`${PERMISSION_ACTION_LABELS[action]} · ${PERMISSION_MODULE_LABELS[module]}`)}"${permissionsState.saving ? ' disabled' : ''}>${options}</select></td>`;
     }
@@ -3065,8 +3093,8 @@
       if (permissionsState.error) body = `<p class="field-manager-error" data-permissions-error>${escapeHTML(permissionsState.error)}</p>`;
       else if (!permissionsState.draft) body = '<p class="hint">Carregando permissões...</p>';
       else {
-        const head = `<tr><th>Módulo</th>${PERMISSION_ACTIONS.map(action => `<th>${PERMISSION_ACTION_LABELS[action]}</th>`).join('')}</tr>`;
-        const rows = PERMISSION_MODULES.map(module => `<tr data-permission-row="${module}"><th scope="row">${PERMISSION_MODULE_LABELS[module]}</th>${PERMISSION_ACTIONS.map(action => permissionCellHTML(module, action)).join('')}</tr>`).join('');
+        const head = `<tr><th>Módulo</th>${PERMISSION_SCREEN_ACTIONS.map(action => `<th>${PERMISSION_ACTION_LABELS[action]}</th>`).join('')}</tr>`;
+        const rows = PERMISSION_MODULES.map(module => `<tr data-permission-row="${module}"><th scope="row">${PERMISSION_MODULE_LABELS[module]}</th>${PERMISSION_SCREEN_ACTIONS.map(action => permissionCellHTML(module, action)).join('')}</tr>`).join('');
         body = `<div class="table-wrap"><table class="permissions-table">${head}${rows}</table></div>`;
       }
       const status = permissionsState.dirty ? '<span class="hint" data-permissions-status>Alterações ainda não salvas.</span>' : '';
@@ -3638,7 +3666,8 @@
       ],
       deal: [
         ['title', 'Título do Negócio', 'text', true], ['company', 'Empresa', 'companyRef', true],
-        ['contact', 'Contato', 'contactRef', false], ['amount', 'Valor', 'number', true], ['currency', 'Moeda', 'currency', true],
+        ['contact', 'Contato', 'contactRef', false], ['additionalAmount', 'Valor adicional', 'number', false],
+        ['additionalReason', 'Motivo do valor adicional', 'textarea', false], ['currency', 'Moeda', 'currency', true],
         ['stage', 'Etapa', 'stage', true], ['responsibleId', 'Responsável', 'user', true],
         ['assistants', 'Assistente', 'assistant', false]
       ]
@@ -4269,10 +4298,17 @@
       section.innerHTML = `<h4>Origem e rastreio</h4><div class="drawer-company-card"><strong data-tracking-channel>${escapeHTML(channel)}</strong><span>${how}</span>${details.length ? `<div class="drawer-company-meta">${details.join('')}</div>` : ''}</div>`;
     }
     function renderDrawerQuotes(deal) {
-      const quotes = Array.isArray(deal?.quotes) ? deal.quotes : [];
+      const items = Array.isArray(deal?.quotes) ? deal.quotes : [];
       const editable = canRecord('deals', 'update', deal);
-      const actions = quote => editable ? `<span class="row-actions"><button type="button" class="button small" data-action="edit-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(quote.id)}" aria-label="${escapeHTML(`Editar orçamento ${quote.description}`)}">Editar</button><button type="button" class="row-action" data-action="delete-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(quote.id)}" title="Excluir" aria-label="${escapeHTML(`Excluir orçamento ${quote.description}`)}">⌫</button></span>` : '<span></span>';
-      document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamentos</h4><span class="hint">${quotes.length} orçamento(s) neste Negócio</span></div>${editable ? `<button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo orçamento</button>` : ''}</div><div class="drawer-quote-list">${quotes.map(quote => `<article class="drawer-quote" data-drawer-quote="${escapeHTML(quote.id)}"><div><h5>${escapeHTML(quote.description)}</h5><p>${quote.productSku ? `SKU ${escapeHTML(quote.productSku)} · ` : ''}${escapeHTML(quote.pdf || 'Sem anexo')}</p></div><strong>${escapeHTML(money(quote.total, dealCurrency(deal)))}</strong>${actions(quote)}<span class="tag ${quote.state === 'Enviado' ? 'green' : ''}">${escapeHTML(quote.state || 'Rascunho')}</span></article>`).join('') || '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum orçamento cadastrado</b><p>Crie o primeiro orçamento deste Negócio.</p></div>'}</div>`;
+      const currency = dealCurrency(deal);
+      const actions = item => editable ? `<span class="row-actions"><button type="button" class="button small" data-action="edit-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(item.id)}" aria-label="${escapeHTML(`Editar item ${item.description}`)}">Editar</button><button type="button" class="row-action" data-action="delete-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(item.id)}" title="Excluir" aria-label="${escapeHTML(`Excluir item ${item.description}`)}">⌫</button></span>` : '';
+      const rows = items.map(item => `<tr data-drawer-quote="${escapeHTML(item.id)}"><td><b>${escapeHTML(item.description)}</b>${item.productSku ? `<small>SKU ${escapeHTML(item.productSku)}</small>` : ''}</td><td class="num">${escapeHTML(String(item.quantity ?? 1))}</td><td class="num">${escapeHTML(money(item.unitPrice, currency))}</td><td class="num">${Number(item.discount) ? `− ${escapeHTML(money(item.discount, currency))}` : '—'}</td><td class="num"><b>${escapeHTML(money(itemTotal(item), currency))}</b></td><td>${actions(item)}</td></tr>`).join('');
+      const table = rows
+        ? `<div class="table-wrap"><table class="quote-items"><thead><tr><th>Item</th><th class="num">Qtd.</th><th class="num">Preço</th><th class="num">Desconto</th><th class="num">Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : '<div class="empty"><div class="empty-icon">◇</div><b>Nenhum item no orçamento</b><p>Adicione produtos do catálogo ou itens avulsos.</p></div>';
+      const additional = Number(deal.additionalAmount || 0);
+      const summary = `<dl class="quote-summary"><div><dt>Itens</dt><dd data-quote-items-total>${escapeHTML(money(dealItemsTotal(deal), currency))}</dd></div><div><dt>Valor adicional</dt><dd data-quote-additional>${escapeHTML(money(additional, currency))}</dd></div>${additional && deal.additionalReason ? `<div class="quote-summary-reason"><dt>Motivo</dt><dd>${escapeHTML(deal.additionalReason)}</dd></div>` : ''}<div class="quote-summary-total"><dt>Valor do Negócio</dt><dd data-quote-deal-total>${escapeHTML(money(deal.amount, currency))}</dd></div></dl>`;
+      document.getElementById('drawerQuotesPanel').innerHTML = `<div class="drawer-quote-head"><div><h4>Orçamento</h4><span class="hint">${items.length} item(ns) neste Negócio</span></div>${editable ? `<button type="button" class="button primary" data-action="quote" data-id="${escapeHTML(deal.id)}">＋ Novo item</button>` : ''}</div>${table}${summary}<p class="hint">O valor adicional e o motivo ficam na aba Informações.</p>`;
     }
 
     function customFieldHTML(field) {
@@ -4561,12 +4597,15 @@
       }
       if (data.assistants !== undefined) data.assistants = data.assistants ? [data.assistants] : [];
       if (data.amount !== undefined) data.amount = Number(data.amount);
+      if (data.additionalAmount !== undefined) data.additionalAmount = Math.max(0, Number(data.additionalAmount || 0));
+      if (data.additionalReason !== undefined) data.additionalReason = String(data.additionalReason || '').trim();
       if (['lead', 'deal'].includes(entity)) data.team = state.users.find(user => user.id === data.responsibleId)?.team || currentUser().team;
       const dropEmptyReferences = record => ['companyId', 'contactId'].forEach(key => { if (record[key] === null) delete record[key]; });
       if (existing) {
         const previousName = existing.name;
         Object.assign(existing, data, { updatedAt: new Date().toISOString() });
         dropEmptyReferences(existing);
+        if (entity === 'deal') recomputeDealAmount(existing);
         if (entity === 'company' && previousName && existing.name !== previousName) propagateCompanyRename(existing, previousName);
         if (entity === 'contact' && previousName && existing.name !== previousName) propagateContactRename(existing, previousName);
         if (Array.isArray(existing.customFields) && form.id === 'drawerForm') {
@@ -4587,6 +4626,7 @@
         if (entity === 'deal') Object.assign(base, { quotes: [], stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [] });
         Object.assign(base, data);
         dropEmptyReferences(base);
+        if (entity === 'deal') recomputeDealAmount(base);
         ensureSchemaFields(state, collection, base);
         state[collection].unshift(base);
       }
@@ -4650,7 +4690,7 @@
       lead.updatedAt = now;
       const deal = {
         id: nextId('N', state.deals), title: `Oportunidade ${company.name}`, company: company.name, companyId: company.id,
-        contact: contact.name, contactId: contact.id, amount: 0, pipelineId: dealPipeline.id, stageId: destination.id, stage: destination.name, responsibleId: lead.responsibleId,
+        contact: contact.name, contactId: contact.id, amount: 0, additionalAmount: 0, additionalReason: '', pipelineId: dealPipeline.id, stageId: destination.id, stage: destination.name, responsibleId: lead.responsibleId,
         team: lead.team || state.users.find(user => user.id === lead.responsibleId)?.team,
         assistants: [...(lead.assistants || [])], createdAt: now, updatedAt: now,
         stageChangedAt: now, stageChangedById: state.currentUserId, stageHistory: [], quotes: []
@@ -4881,6 +4921,8 @@
           company: bitrixFieldValue(fields, 'Empresa'),
           contact: bitrixFieldValue(fields, 'Contato'),
           amount: parseBitrixMoney(bitrixFieldValue(fields, 'Total', 'Valor', 'Montante')),
+          additionalAmount: parseBitrixMoney(bitrixFieldValue(fields, 'Total', 'Valor', 'Montante')),
+          additionalReason: 'Valor importado do Bitrix',
           currency: bitrixCurrency(bitrixFieldValue(fields, 'Moeda', 'Currency')),
           pipelineId: dealPipeline.id,
           stageId: importedStage.id,
@@ -5080,9 +5122,8 @@
       document.getElementById('quoteDealId').value = id;
       document.getElementById('quoteId').value = existing ? existing.id : '';
       document.getElementById('quoteProductId').value = existing?.productId || '';
-      document.getElementById('quoteDialogTitle').textContent = existing ? 'Editar orçamento' : 'Novo orçamento';
-      document.getElementById('quoteSubmit').textContent = existing ? 'Salvar orçamento' : 'Adicionar orçamento';
-      document.getElementById('quotePdfHint').textContent = existing?.pdf ? `Anexo atual: ${existing.pdf}. Escolha outro arquivo para substituir.` : 'Neste protótipo apenas o nome do arquivo será guardado localmente.';
+      document.getElementById('quoteDialogTitle').textContent = existing ? 'Editar item' : 'Novo item';
+      document.getElementById('quoteSubmit').textContent = existing ? 'Salvar item' : 'Adicionar item';
       const productHint = document.getElementById('quoteProductHint');
       productHint.textContent = QUOTE_PRODUCT_HINT;
       delete productHint.dataset.quoteProductHint;
@@ -5094,8 +5135,8 @@
         document.getElementById('quoteDescription').value = existing.description || '';
         document.getElementById('quoteUnit').value = existing.unitPrice ?? 0;
         document.getElementById('quoteDiscount').value = existing.discount ?? 0;
-        document.getElementById('quoteValidity').value = existing.validity || '';
       }
+      syncQuotePriceLock();
       updateQuoteTotal();
       document.getElementById('quoteDialog').showModal();
     }
@@ -5111,6 +5152,17 @@
     }
 
     const QUOTE_PRODUCT_HINT = 'Escolha um produto do catálogo para preencher o preço, ou escreva um item livre.';
+    // Without the price permission, catalog items keep their price and nobody gets a discount.
+    function syncQuotePriceLock() {
+      const free = can('deals', 'price');
+      const catalogItem = Boolean(document.getElementById('quoteProductId').value);
+      const unit = document.getElementById('quoteUnit');
+      const discount = document.getElementById('quoteDiscount');
+      unit.readOnly = !free && catalogItem;
+      discount.readOnly = !free;
+      if (!free && Number(discount.value)) discount.value = discount.defaultValue = '0';
+      document.getElementById('quotePriceNote').hidden = free;
+    }
     // Converts between currencies through BRL with the current PTAX rates; null when unknown.
     function convertAmount(amount, from, to) {
       if (from === to) return Number(amount || 0);
@@ -5138,6 +5190,7 @@
         hint.textContent = `Convertido de ${original} pela PTAX de ${brDate(exchangeRates.rates[source === 'BRL' ? target : source].date)} (${rates.join('; ')}). Confira antes de salvar.`;
       }
       hint.dataset.quoteProductHint = source === target ? 'catalog' : converted === null ? 'unavailable' : 'converted';
+      syncQuotePriceLock();
       updateQuoteTotal();
     }
     function onQuoteProductInput(input) {
@@ -5152,6 +5205,7 @@
         const hint = document.getElementById('quoteProductHint');
         hint.textContent = QUOTE_PRODUCT_HINT;
         delete hint.dataset.quoteProductHint;
+        syncQuotePriceLock();
       }
     }
 
@@ -5159,8 +5213,6 @@
       const data = new FormData(form);
       const deal = state.deals.find(item => item.id === data.get('dealId'));
       if (!deal) return;
-      const file = document.getElementById('quotePdf').files[0];
-      if (file && file.type !== 'application/pdf') { toast('Selecione um arquivo PDF válido.'); return; }
       const quantity = Number(data.get('quantity'));
       const unitPrice = Number(data.get('unitPrice'));
       const discount = Number(data.get('discount') || 0);
@@ -5169,18 +5221,16 @@
       const existing = data.get('quoteId') ? deal.quotes.find(item => item.id === data.get('quoteId')) : null;
       if (data.get('quoteId') && !existing) return;
       if (!canRecord('deals', 'update', deal)) { showToast('Seu perfil não tem permissão para esta ação.'); return; }
-      const fields = { description: data.get('description'), quantity, unitPrice, discount, total, validity: data.get('validity') };
+      const fields = { description: data.get('description'), quantity, unitPrice, discount, total };
       if (existing) {
-        // A quote edited away from the catalog item keeps no product link.
+        // An item edited away from the catalog product keeps no product link.
         delete existing.productId; delete existing.productSku;
-        Object.assign(existing, product ? { productId: product.id, productSku: product.sku || '' } : {}, fields, file ? { pdf: file.name } : {});
-        if (deal.quotes[deal.quotes.length - 1] === existing) deal.amount = total;
+        Object.assign(existing, product ? { productId: product.id, productSku: product.sku || '' } : {}, fields);
       } else {
         const productLink = product ? { productId: product.id, productSku: product.sku || '' } : {};
-        deal.quotes.push({ id: nextId('ORC', deal.quotes), ...productLink, ...fields, state: 'Rascunho', pdf: file?.name || '' });
-        deal.amount = total;
-        notify('Orçamento adicionado ao Negócio.', `${deal.id} · ${money(total, dealCurrency(deal))}`, deal.responsibleId);
+        deal.quotes.push({ id: nextId('ORC', deal.quotes), ...productLink, ...fields, state: 'Rascunho', pdf: '' });
       }
+      recomputeDealAmount(deal);
       deal.updatedAt = new Date().toISOString();
       saveState(); document.getElementById('quoteDialog').close(); render();
       const drawer = document.getElementById('entityDrawer');
@@ -5189,8 +5239,7 @@
         renderDrawerQuotes(deal);
         setDrawerTab(drawerActiveTab);
       }
-      if (existing) toast(`Orçamento ${existing.id} atualizado.`);
-      else toast(`Orçamento de ${money(total, dealCurrency(deal))} adicionado${file ? ` com ${file.name}` : ' sem anexo'}.`);
+      toast(existing ? `Item ${existing.description} atualizado.` : `Item de ${money(total, dealCurrency(deal))} adicionado ao orçamento.`);
     }
 
     function refreshDealDrawerQuotes(deal) {
@@ -5206,15 +5255,13 @@
       const quote = deal?.quotes.find(item => item.id === quoteId);
       if (!quote) return;
       if (!canRecord('deals', 'update', deal)) { showToast('Seu perfil não tem permissão para esta ação.'); return; }
-      if (!confirm(`Excluir o orçamento "${quote.description}"?`)) return;
-      const wasLatest = deal.quotes[deal.quotes.length - 1] === quote;
+      if (!confirm(`Excluir o item "${quote.description}" do orçamento?`)) return;
       deal.quotes = deal.quotes.filter(item => item !== quote);
-      // The deal value follows its latest quote; with no quote left it stays as it was.
-      if (wasLatest && deal.quotes.length) deal.amount = deal.quotes[deal.quotes.length - 1].total;
+      recomputeDealAmount(deal);
       deal.updatedAt = new Date().toISOString();
       saveState(); render();
       refreshDealDrawerQuotes(deal);
-      toast(`Orçamento ${quote.id} excluído.`);
+      toast(`Item ${quote.description} excluído.`);
     }
 
     function markRead(id) { const item = state.notifications.find(note => note.id === id); if (item) item.read = true; saveState(); render(); }

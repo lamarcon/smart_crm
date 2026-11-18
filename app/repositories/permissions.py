@@ -13,7 +13,7 @@ from typing import Iterable, Mapping
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.policies import CONFIGURABLE_ROLES, MODULE_ACTIONS, MODULES, allowed_scopes
+from app.policies import CONFIGURABLE_ROLES, MODULES, allowed_scopes, module_actions
 
 
 def _table_exists(session: Session) -> bool:
@@ -65,9 +65,9 @@ def validate_matrix(matrix: Mapping[str, Mapping[str, Mapping[str, str]]]) -> li
             raise InvalidPermissionError(f"{role}: modules")
         for module in MODULES:
             actions = modules[module]
-            if not isinstance(actions, Mapping) or set(actions) != set(MODULE_ACTIONS):
+            if not isinstance(actions, Mapping) or set(actions) != set(module_actions(module)):
                 raise InvalidPermissionError(f"{role}.{module}: actions")
-            for action in MODULE_ACTIONS:
+            for action in module_actions(module):
                 scope = actions[action]
                 if scope not in allowed_scopes(module, action):
                     raise InvalidPermissionError(f"{role}.{module}.{action}")

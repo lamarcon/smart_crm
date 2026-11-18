@@ -32,6 +32,7 @@ def test_session_carries_the_default_permissions_of_the_role(live_stack: LiveSta
     session = live_stack.client.get("/api/auth/session", headers=seller).json()
     assert session["permissions"]["deals"] == {
         "read": "own", "create": "all", "update": "own", "delete": "own", "import": "none", "export": "none",
+        "price": "none",
     }
     assert session["permissions"]["products"]["update"] == "none"
     admin = _admin(live_stack)

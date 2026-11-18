@@ -157,5 +157,6 @@
   "Gestor": "Manager",
   "Vendedor": "Salesperson",
   "Assistente": "Assistant",
-  "Faturamento": "Billing"
+  "Faturamento": "Billing",
+  "Seu perfil não pode alterar o preço dos itens nem dar desconto.": "Your role cannot change item prices or give discounts."
 }

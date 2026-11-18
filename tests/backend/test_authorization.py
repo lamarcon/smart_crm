@@ -31,7 +31,7 @@ TEST_DATABASE_URL = os.getenv(
     "SMART_CRM_TEST_DATABASE_URL",
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
-TENANT_HEAD = "c4e8a2f6b9d1"
+TENANT_HEAD = "e1a7c3f9b2d4"
 
 
 def principal(role: str, *, user_id: str = "u-current", team_id: str = "team-a") -> PrincipalScope:

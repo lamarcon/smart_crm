@@ -42,9 +42,9 @@ def rates(source: RateSource, now: datetime = NOW) -> ExchangeRateService:
 def currency_state() -> dict:
     data = state_data()
     usd = deepcopy(data["deals"][0])
-    usd.update(id="N-2", title="Em dólar", currency="USD", amount=100, quotes=[])
+    usd.update(id="N-2", title="Em dólar", currency="USD", amount=100, additionalAmount=100, quotes=[])
     eur = deepcopy(data["deals"][0])
-    eur.update(id="N-3", title="Em euro", currency="eur", amount=200, quotes=[])
+    eur.update(id="N-3", title="Em euro", currency="eur", amount=200, additionalAmount=200, quotes=[])
     data["deals"] += [usd, eur]
     return data
 

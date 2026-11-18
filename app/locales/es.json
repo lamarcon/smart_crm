@@ -157,5 +157,6 @@
   "Faturamento": "Facturación",
   "Perfil": "Perfil",
   "Administrador": "Administrador",
-  "Vendedor": "Vendedor"
+  "Vendedor": "Vendedor",
+  "Seu perfil não pode alterar o preço dos itens nem dar desconto.": "Tu perfil no puede cambiar el precio de los ítems ni dar descuentos."
 }

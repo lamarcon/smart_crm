@@ -87,7 +87,7 @@ def state_data() -> dict:
         "leads": [{"id": "L-1", "name": "Lead", "company": "Empresa", "stage": "Em contato", "responsibleId": "u-1", "assistants": ["u-2"]}],
         "companies": [{"id": "E-1", "name": "Empresa", "city": "SP", "segment": "Lab", "phone": "", "ownerId": "u-1"}],
         "contacts": [{"id": "C-1", "name": "Contato", "company": "Empresa", "companyId": "E-1", "email": "", "phone": "", "role": "Comprador"}],
-        "deals": [{"id": "N-1", "title": "Negócio", "company": "Empresa", "companyId": "E-1", "contact": "Contato", "contactId": "C-1", "amount": 10, "stage": "Em Contato", "responsibleId": "u-1", "stageChangedById": "u-1", "assistants": ["u-2"], "quotes": [{"id": "Q-1", "description": "Item", "quantity": 1, "unitPrice": 10, "discount": 0, "total": 10, "state": "Enviado"}]}],
+        "deals": [{"id": "N-1", "title": "Negócio", "company": "Empresa", "companyId": "E-1", "contact": "Contato", "contactId": "C-1", "amount": 10, "additionalAmount": 0, "additionalReason": "", "stage": "Em Contato", "responsibleId": "u-1", "stageChangedById": "u-1", "assistants": ["u-2"], "quotes": [{"id": "Q-1", "description": "Item", "quantity": 1, "unitPrice": 10, "discount": 0, "total": 10, "state": "Enviado"}]}],
         "products": [],
         "notifications": [{"id": "NT-1", "userId": "u-2", "text": "Aviso", "detail": "", "time": "Agora", "read": False}],
         "customFieldSchemas": {"leads": [], "contacts": [], "companies": [], "deals": []},

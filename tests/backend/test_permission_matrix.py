@@ -11,6 +11,7 @@ from app.policies import (
     DEFAULT_PERMISSIONS,
     MODULE_ACTIONS,
     MODULES,
+    module_actions,
     PrincipalScope,
     RecordScope,
     allowed,
@@ -93,7 +94,7 @@ def test_default_product_and_flag_permissions_match_previous_behaviour(role: str
 
 def test_every_default_cell_is_a_valid_choice() -> None:
     for role, matrix in DEFAULT_PERMISSIONS.items():
-        assert set(matrix) == {(module, action) for module in MODULES for action in MODULE_ACTIONS}, role
+        assert set(matrix) == {(module, action) for module in MODULES for action in module_actions(module)}, role
         for (module, action), scope in matrix.items():
             assert scope in allowed_scopes(module, action), (role, module, action)
 
@@ -174,3 +175,17 @@ def test_deal_sql_filter_follows_the_read_scope_only() -> None:
     assert "team_id" in sql(team_read)
     no_read = principal("Vendedor", permissions=(("deals", "read", "none"), ("deals", "update", "all")))
     assert "false" in sql(no_read).lower()
+
+
+
+def test_price_permission_exists_only_for_deals_and_defaults_to_managers() -> None:
+    assert allowed_scopes("deals", "price") == ("none", "all")
+    assert allowed_scopes("leads", "price") == ()
+    assert allowed(principal("Gestor"), "deals", "price") is True
+    assert allowed(principal("Administrador"), "deals", "price") is True
+    for role in ("Vendedor", "Assistente", "Faturamento"):
+        assert allowed(principal(role), "deals", "price") is False
+    granted = principal("Vendedor", permissions=(("deals", "price", "all"),))
+    assert allowed(granted, "deals", "price") is True
+    assert permissions_payload(effective_permissions("Vendedor"))["deals"]["price"] == "none"
+    assert "price" not in permissions_payload(effective_permissions("Vendedor"))["leads"]

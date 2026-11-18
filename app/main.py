@@ -32,13 +32,13 @@ from app.services.export import export_csv
 from app.policies import (
     ADMIN_ROLE,
     CONFIGURABLE_ROLES,
-    MODULE_ACTIONS,
     MODULES,
     Action,
     allowed,
     allowed_scopes,
     can_perform_action,
     effective_permissions,
+    module_actions,
     permissions_payload,
 )
 from app.repositories.permissions import (
@@ -506,6 +506,12 @@ def create_app(
         _error_value: WorkspaceAuthorizationError,
     ) -> JSONResponse:
         audit_request_denial(request, "forbidden")
+        if str(_error_value).startswith("item price"):
+            return _error(
+                403,
+                "item_price_forbidden",
+                "Seu perfil não pode alterar o preço dos itens nem dar desconto.",
+            )
         return _error(403, "forbidden", "Acesso negado.")
 
     @app.exception_handler(DealPipelineAuthorizationError)
@@ -1148,7 +1154,7 @@ def create_app(
             },
             "administrator": permissions_payload(effective_permissions(ADMIN_ROLE)),
             "options": {
-                module: {action: list(allowed_scopes(module, action)) for action in MODULE_ACTIONS}
+                module: {action: list(allowed_scopes(module, action)) for action in module_actions(module)}
                 for module in MODULES
             },
         }

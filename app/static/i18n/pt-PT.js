@@ -190,5 +190,10 @@ window.SMART_CRM_I18N['pt-PT'] = {
   "Salvar orçamento": "Guardar orçamento",
   "Anexo atual: {p0}. Escolha outro arquivo para substituir.": "Anexo atual: {p0}. Escolha outro ficheiro para substituir.",
   "Excluir o orçamento \"{p0}\"?": "Eliminar o orçamento \"{p0}\"?",
-  "Orçamento {p0} excluído.": "Orçamento {p0} eliminado."
+  "Orçamento {p0} excluído.": "Orçamento {p0} eliminado.",
+  "Seu perfil não altera o preço de produtos do catálogo nem dá desconto.": "O seu perfil não altera o preço de produtos do catálogo nem dá desconto.",
+  "Excluir item {p0}": "Eliminar item {p0}",
+  "Salvar item": "Guardar item",
+  "Excluir o item \"{p0}\" do orçamento?": "Eliminar o item \"{p0}\" do orçamento?",
+  "Item {p0} excluído.": "Item {p0} eliminado."
 };

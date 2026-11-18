@@ -34,6 +34,7 @@ from app.services.activity import (
     movement_events_for_transitions,
 )
 from app.services.deal_automation import DealAutomationExecutor
+from app.services.deal_amounts import ItemPriceNotAllowed, enforce_item_prices, normalize_deal_amounts
 
 
 class WorkspaceServiceError(RuntimeError):
@@ -515,6 +516,7 @@ class WorkspaceService:
         workspace = self._locked_workspace(session, principal)
         if workspace.initialized_at is not None:
             raise WorkspaceAlreadyInitialized(workspace.version)
+        state = normalize_deal_amounts(state)
         state = self._canonicalize_deal_stages(
             state,
             None,
@@ -548,6 +550,11 @@ class WorkspaceService:
         state = _strip_untrusted_activity_metadata(state)
         merged = merge_authorized_state(canonical, state, principal)
         merged = propagate_renames(canonical, merged)
+        merged = normalize_deal_amounts(merged)
+        try:
+            enforce_item_prices(canonical, merged, principal)
+        except ItemPriceNotAllowed as error:
+            raise WorkspaceAuthorizationError(f"item price: {error}") from None
         enforce_crm_integrity(canonical, merged, principal)
         occurred_at = self.clock()
         merged = self._canonicalize_deal_stages(
@@ -611,6 +618,7 @@ class WorkspaceService:
         workspace = self._locked_initialized(session, principal)
         self._check_version(workspace, expected_version)
         canonical = repository.read_active()
+        state = normalize_deal_amounts(state)
         state = self._canonicalize_deal_stages(
             state,
             canonical,
