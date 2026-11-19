@@ -2736,6 +2736,8 @@ async function storageEntries(page) {
     const larissa = page.getByLabel('Mover Larissa Spinola');
     await larissa.selectOption('Lead descartado');
     await answerText(page, '');
+    await page.getByText('O descarte exige um motivo.').first().waitFor();
+    await page.waitForFunction(() => document.querySelector('[aria-label="Mover Larissa Spinola"]')?.value === 'Em contato');
     let state = await stateFrom(page);
     assert.equal(state.leads.find(lead => lead.id === 'L-1048').stage, 'Em contato');
     assert.equal(state.leads.find(lead => lead.id === 'L-1048').discardReason, undefined);

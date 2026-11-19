@@ -4422,7 +4422,7 @@
       const items = Array.isArray(deal?.quotes) ? deal.quotes : [];
       const editable = canRecord('deals', 'update', deal);
       const currency = dealCurrency(deal);
-      const actions = item => editable ? `<span class="row-actions"><button type="button" class="button small" data-action="edit-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(item.id)}" title="Editar" aria-label="${escapeHTML(`Editar item ${item.description}`)}">✎</button><button type="button" class="row-action" data-action="delete-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(item.id)}" title="Excluir" aria-label="${escapeHTML(`Excluir item ${item.description}`)}">⌫</button></span>` : '';
+      const actions = item => editable ? `<span class="row-actions"><button type="button" class="button small" data-action="edit-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(item.id)}" aria-label="${escapeHTML(`Editar item ${item.description}`)}">✎</button><button type="button" class="row-action" data-action="delete-quote" data-id="${escapeHTML(deal.id)}" data-quote="${escapeHTML(item.id)}" title="Excluir" aria-label="${escapeHTML(`Excluir item ${item.description}`)}">⌫</button></span>` : '';
       const rows = items.map(item => `<tr data-drawer-quote="${escapeHTML(item.id)}"><td><b>${escapeHTML(item.description)}</b>${item.productSku ? `<small>SKU ${escapeHTML(item.productSku)}</small>` : ''}</td><td class="num">${escapeHTML(String(item.quantity ?? 1))}</td><td class="num">${escapeHTML(money(item.unitPrice, currency))}</td><td class="num">${Number(item.discount) ? `− ${escapeHTML(money(item.discount, currency))}` : '—'}</td><td class="num"><b>${escapeHTML(money(itemTotal(item), currency))}</b></td><td>${actions(item)}</td></tr>`).join('');
       const table = rows
         ? `<div class="table-wrap"><table class="quote-items"><thead><tr><th>Item</th><th class="num">Qtd.</th><th class="num">Preço</th><th class="num">Desconto</th><th class="num">Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
@@ -4791,11 +4791,14 @@
       });
     }
     async function convertLead(id, pipelineId = null) {
-      const lead = state.leads.find(item => item.id === id);
+      let lead = state.leads.find(item => item.id === id);
       if (!lead || lead.stage !== 'Em contato' || !requireDealPipeline()) return;
       if (!pipelineId && hasSeveralPipelines()) {
         pipelineId = await choosePipeline(lead);
         if (!pipelineId) { render(); return; }
+        // The workspace may have been reloaded while the dialog was open.
+        lead = state.leads.find(item => item.id === id);
+        if (!lead || lead.stage !== 'Em contato') { render(); return; }
       }
       const destination = initialStage(pipelineId || mainPipeline()?.id);
       if (!destination) return;
@@ -4845,7 +4848,7 @@
       saveState(); render(); toast(`Lead convertido. O Negócio ${deal.id} foi criado em ${destination.name}.${createdText}`);
     }
 
-    function commitStageChange(entity, record, targetStageRef) {
+    function commitStageChange(entity, record, targetStageRef, applyExtra = null) {
       const before = clone(state);
       const previousStage = record.stage;
       const previousStageId = record.stageId || null;
@@ -4863,6 +4866,7 @@
       record.stageChangedById = state.currentUserId;
       record.stageHistory ||= [];
       record.stageHistory.push({ fromStageId: previousStageId, toStageId: target?.id || null, from: previousStage, to: targetStage, at: now, byId: state.currentUserId });
+      applyExtra?.(record);
       if (entity === 'deal' && target.semanticType === 'won') record.wonAt ||= now;
       if (entity === 'deal' && target.semanticType !== 'won') delete record.wonAt;
       let message = `${entity === 'deal' ? 'Negócio' : 'Lead'} movido para ${targetStage}.`;
@@ -4883,9 +4887,11 @@
       if (entity === 'lead' && targetStage === 'Lead descartado') {
         const reason = await askText({ title: 'Descartar Lead', label: 'Motivo do descarte', ok: 'Descartar', maxLength: 500 });
         if (!reason?.trim()) { toast('O descarte exige um motivo.'); render(); return; }
-        commitStageChange(entity, record, targetStage);
-        record.discardReason = reason.trim();
-        saveState();
+        // The workspace may have been reloaded while the dialog was open: use the current Lead.
+        const current = state.leads.find(item => item.id === id);
+        if (!current || current.stage === targetStage) { render(); return; }
+        // The reason goes in the same save as the stage, never in a second one.
+        commitStageChange(entity, current, targetStage, lead => { lead.discardReason = reason.trim(); });
         return;
       }
       if (entity === 'lead' && targetStage === 'Lead convertido') {
