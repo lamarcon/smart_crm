@@ -71,7 +71,7 @@
 
     .app { min-height: 100vh; display: grid; grid-template-columns: 256px minmax(0, 1fr); }
     .sidebar {
-      position: sticky; top: 0; height: 100vh; z-index: 30;
+      position: sticky; top: 0; height: 100vh; z-index: 30; overflow-y: auto; overscroll-behavior: contain;
       display: flex; flex-direction: column; padding: 24px 16px;
       color: #e7edf7; background: linear-gradient(180deg, var(--navy-950), #111a2e 70%, #18233a);
     }
@@ -329,6 +329,13 @@
     .team-create .field { flex: 1 1 260px; max-width: 420px; }
     .team-name-input { width: 100%; min-width: 160px; }
     .team-actions { display: flex; gap: 6px; justify-content: flex-end; }
+    .api-token-create { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+    .api-token-create .field { flex: 1 1 200px; }
+    .api-token-create .field.wide { flex: 2 1 260px; }
+    .api-reference { display: grid; gap: 10px; }
+    .api-reference pre { margin: 0; padding: 12px; border-radius: 10px; background: var(--navy-950, #0b1730); color: #e6edf7; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+    .api-reference ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+    .api-token-card { padding: 18px; display: grid; gap: 14px; margin-bottom: 16px; }
     .fields-admin-card { padding: 18px; border: 1px solid var(--slate-200); border-radius: 14px; background: white; }
     .quote-items { width: 100%; font-size: 12px; }
     .quote-items .num { text-align: right; white-space: nowrap; }
@@ -612,6 +619,8 @@
         <button data-view="deals"><span class="nav-icon">◇</span>Negócios <span class="nav-count" id="dealNavCount">0</span></button>
         <div id="pipelineNav"></div>
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
+        <div class="nav-label nav-module">Integrações</div>
+        <button data-view="api-tokens"><span class="nav-icon">⌘</span>API e tokens</button>
         <div class="nav-label nav-module" data-admin-nav hidden>Administração</div>
         <button data-view="pipeline-admin" data-admin-nav hidden><span class="nav-icon">⇄</span>Funil de negócios</button>
         <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
@@ -651,6 +660,7 @@
         <section class="page" id="page-admin"></section>
         <section class="page" id="page-permissions"></section>
         <section class="page" id="page-teams-admin"></section>
+        <section class="page" id="page-api-tokens"></section>
         <section class="page" id="page-fields-admin">
           <div class="page-toolbar"><div><h2>Campos personalizados</h2><p>Escolha o módulo ou o funil e configure os campos dele.</p></div></div>
           <div class="field-tabs" id="fieldManagerTabs" role="tablist" aria-label="Módulos"></div>
@@ -1181,6 +1191,7 @@
       admin: ['Usuários e permissões', 'Convites, cargos e perfis de acesso'],
       permissions: ['Permissões', 'O que cada perfil pode fazer em cada módulo'],
       'teams-admin': ['Equipes', 'Equipes da empresa e seus funcionários'],
+      'api-tokens': ['API e tokens', 'Tokens pessoais para integrar outros sistemas'],
       'fields-admin': ['Campos personalizados', 'Campos de cada módulo e de cada funil']
     };
     const entityConfigs = {
@@ -3457,6 +3468,128 @@
       }
     }
 
+    // Personal API tokens ---------------------------------------------------------
+    let apiTokens = { loaded: false, loading: false, error: '', tokens: [], all: false };
+    let apiTokenSecret = null;
+    let apiTokenInFlight = false;
+    const API_TOKEN_ACCESS_LABELS = { read: 'Só leitura', write: 'Leitura e escrita' };
+    function apiBaseUrl() {
+      const slug = sessionIdentity?.tenant_slug || tenantSlugFromPath() || 'sua-empresa';
+      return `${location.origin}/api/v1/${slug}`;
+    }
+    async function loadApiTokens() {
+      if (apiTokens.loading) return;
+      apiTokens = { ...apiTokens, loading: true };
+      const query = apiTokens.all && currentUser().role === 'Administrador' ? '?all=true' : '';
+      try {
+        const payload = await responseJson(await apiFetch(`/api/me/api-tokens${query}`, { headers: { Accept: 'application/json' } }));
+        apiTokens = { ...apiTokens, loaded: true, loading: false, error: '', tokens: Array.isArray(payload.tokens) ? payload.tokens : [] };
+      } catch (failure) {
+        apiTokens = { ...apiTokens, loaded: true, loading: false, error: failure?.payload?.error?.message || 'Não foi possível carregar os tokens.', tokens: [] };
+      }
+      if (activeView === 'api-tokens') render();
+    }
+    function apiTokenDate(value, empty) {
+      return value ? trackingDateTime(value) : empty;
+    }
+    function apiTokensHTML() {
+      const busy = apiTokenInFlight ? ' disabled' : '';
+      const admin = currentUser().role === 'Administrador';
+      const secret = apiTokenSecret ? `<div class="intake-secret" data-api-token-secret role="status"><b>Copie o token “${escapeHTML(apiTokenSecret.name)}” agora: ele não será mostrado de novo.</b><div class="intake-secret-value"><code data-api-token-secret-value>${escapeHTML(apiTokenSecret.secret)}</code><button type="button" class="button small" data-action="copy-api-token">Copiar</button><button type="button" class="button small" data-action="dismiss-api-token">Já copiei</button></div></div>` : '';
+      const rows = apiTokens.tokens.map(token => {
+        const status = token.active ? '<span class="tag green">Ativo</span>' : token.revokedAt ? '<span class="tag red">Revogado</span>' : '<span class="tag amber">Expirado</span>';
+        const revoke = token.active ? `<button type="button" class="button small" data-action="revoke-api-token" data-id="${escapeHTML(token.id)}" aria-label="Revogar token ${escapeHTML(token.name)}"${busy}>Revogar</button>` : '';
+        const owner = apiTokens.all ? `<td>${escapeHTML(token.userName || token.userId)}</td>` : '';
+        return `<tr data-api-token="${escapeHTML(token.id)}"><td><strong>${escapeHTML(token.name)}</strong><small class="hint"> …${escapeHTML(token.hint)}</small></td>${owner}<td>${escapeHTML(API_TOKEN_ACCESS_LABELS[token.access] || token.access)}</td><td>${escapeHTML(apiTokenDate(token.lastUsedAt, 'Nunca usado'))}</td><td>${escapeHTML(apiTokenDate(token.expiresAt, 'Sem validade'))}</td><td>${status}</td><td>${revoke}</td></tr>`;
+      }).join('');
+      const ownerHead = apiTokens.all ? '<th>Usuário</th>' : '';
+      const list = apiTokens.error
+        ? `<p class="field-manager-error" data-api-token-error>${escapeHTML(apiTokens.error)}</p>`
+        : !apiTokens.loaded ? '<p class="hint">Carregando tokens...</p>'
+        : rows ? `<div class="table-wrap"><table><thead><tr><th>Token</th>${ownerHead}<th>Acesso</th><th>Último uso</th><th>Validade</th><th>Situação</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : '<p class="hint" data-api-token-empty>Nenhum token criado.</p>';
+      const allToggle = admin ? `<label class="check-row"><input type="checkbox" data-api-token-all${apiTokens.all ? ' checked' : ''}> Mostrar os tokens de todos os usuários</label>` : '';
+      const base = apiBaseUrl();
+      return `<div class="page-toolbar"><div><h2>API e tokens</h2><p>Cada token age como você: vê e altera só o que o seu perfil permite. Um token só de leitura não grava nada.</p></div></div>
+        <section class="list-card api-token-card" aria-labelledby="apiTokenCreateTitle"><h3 id="apiTokenCreateTitle">Novo token</h3>
+          <form class="api-token-create" id="apiTokenForm">
+            <div class="field wide"><label for="apiTokenName">Nome do token</label><input id="apiTokenName" name="name" maxlength="120" placeholder="Ex.: Integração ERP" required></div>
+            <div class="field"><label for="apiTokenAccess">Acesso</label><select id="apiTokenAccess" name="access"><option value="read">Só leitura</option><option value="write">Leitura e escrita</option></select></div>
+            <div class="field"><label for="apiTokenExpires">Validade</label><select id="apiTokenExpires" name="expiresInDays"><option value="90">90 dias</option><option value="30">30 dias</option><option value="365">1 ano</option><option value="">Sem validade</option></select></div>
+            <button type="submit" class="button primary"${busy}>Criar token</button>
+          </form>
+          <p class="field-manager-error" id="apiTokenFormError" role="alert"></p>
+          ${secret}
+        </section>
+        <section class="list-card api-token-card" aria-labelledby="apiTokenListTitle"><div class="intake-head"><h3 id="apiTokenListTitle">${apiTokens.all ? 'Tokens da empresa' : 'Meus tokens'}</h3>${allToggle}</div>${list}</section>
+        <section class="list-card api-token-card api-reference" aria-labelledby="apiReferenceTitle"><h3 id="apiReferenceTitle">Como usar</h3>
+          <p class="hint">Envie o token no cabeçalho <code>Authorization: Bearer</code>. Endereço base: <code data-api-base>${escapeHTML(base)}</code></p>
+          <pre translate="no">curl -H "Authorization: Bearer $TOKEN" ${escapeHTML(base)}/leads?limit=50</pre>
+          <ul>
+            <li><code>GET /me</code> · usuário, acesso do token e permissões</li>
+            <li><code>GET /leads</code>, <code>/contacts</code>, <code>/companies</code>, <code>/deals</code>, <code>/products</code> · lista (<code>limit</code> até 200 e <code>offset</code>)</li>
+            <li><code>GET /{module}/{id}</code> · um registro</li>
+            <li><code>POST /{module}</code> · cria (o servidor define o id)</li>
+            <li><code>PATCH /{module}/{id}</code> · altera só os campos enviados (<code>null</code> apaga o campo)</li>
+            <li><code>DELETE /{module}/{id}</code> · exclui</li>
+            <li><code>GET /pipelines</code> · funis e etapas, para mover Negócios por <code>stageId</code></li>
+          </ul>
+        </section>`;
+    }
+    async function submitApiToken(form) {
+      if (apiTokenInFlight) return;
+      const data = new FormData(form);
+      const error = document.getElementById('apiTokenFormError');
+      const days = String(data.get('expiresInDays') || '');
+      apiTokenInFlight = true;
+      error.textContent = '';
+      try {
+        const payload = await postUserAction('/api/me/api-tokens', {
+          name: String(data.get('name') || '').trim(),
+          access: data.get('access'),
+          expiresInDays: days ? Number(days) : null
+        });
+        apiTokenSecret = { name: payload.token.name, secret: payload.secret };
+        apiTokens = { ...apiTokens, error: '', tokens: [payload.token, ...apiTokens.tokens.filter(token => token.id !== payload.token.id)] };
+        showToast('Token criado. Copie-o agora.');
+      } catch (failure) {
+        apiTokenInFlight = false;
+        render();
+        document.getElementById('apiTokenFormError').textContent = failure?.payload?.error?.message || 'Não foi possível criar o token.';
+        return;
+      }
+      apiTokenInFlight = false;
+      render();
+    }
+    async function revokeApiToken(id) {
+      const token = apiTokens.tokens.find(item => item.id === id);
+      if (!token || apiTokenInFlight) return;
+      if (!confirm(`Revogar o token “${token.name}”? Os sistemas que o usam deixarão de acessar a API.`)) return;
+      apiTokenInFlight = true;
+      render();
+      try {
+        const payload = await postUserAction(`/api/me/api-tokens/${encodeURIComponent(id)}/revoke`);
+        apiTokens = { ...apiTokens, tokens: apiTokens.tokens.map(item => item.id === id ? payload.token : item) };
+        showToast(`Token “${token.name}” revogado.`);
+      } catch (failure) {
+        showToast(failure?.payload?.error?.message || 'Não foi possível revogar o token.');
+      } finally {
+        apiTokenInFlight = false;
+        render();
+      }
+    }
+    async function copyApiToken() {
+      if (!apiTokenSecret) return;
+      try {
+        await navigator.clipboard.writeText(apiTokenSecret.secret);
+        showToast('Token copiado.');
+      } catch (_) {
+        const code = document.querySelector('[data-api-token-secret-value]');
+        if (code) window.getSelection()?.selectAllChildren(code);
+        showToast('Selecione e copie o token manualmente.');
+      }
+    }
+
     function usersAdminHTML() {
       if (currentUser().role !== 'Administrador') return '';
       const statusClass = status => status === 'Ativo' ? 'green' : status === 'Pendente' ? 'amber' : status === 'Cancelado' ? 'red' : '';
@@ -3762,6 +3895,7 @@
       document.getElementById('page-admin').innerHTML = usersAdminHTML();
       document.getElementById('page-permissions').innerHTML = permissionsAdminHTML();
       document.getElementById('page-teams-admin').innerHTML = teamsAdminHTML();
+      document.getElementById('page-api-tokens').innerHTML = apiTokensHTML();
       showView(activeView, false);
       syncBootstrapAccess();
     }
@@ -3783,6 +3917,7 @@
       if (view === 'pipeline-admin' && currentUser().role === 'Administrador' && pipelineHistoryState.items === null && !pipelineHistoryState.loading) void loadPipelineHistory();
       // Keys are refreshed on every visit so "last use" stays current.
       if (entering && view === 'admin' && currentUser().role === 'Administrador') void loadIntakeKeys();
+      if (entering && view === 'api-tokens') void loadApiTokens();
       if (entering && view === 'permissions' && currentUser().role === 'Administrador') void loadPermissions();
       if (entering && view === 'fields-admin' && currentUser().role === 'Administrador') renderFieldManager({ reset: true });
     }
@@ -5759,6 +5894,9 @@
       if (action === 'new-intake-key') openIntakeKeyDialog();
       if (action === 'revoke-intake-key') revokeIntakeKey(button.dataset.id);
       if (action === 'copy-intake-key') copyIntakeKey();
+      if (action === 'revoke-api-token') revokeApiToken(button.dataset.id);
+      if (action === 'copy-api-token') copyApiToken();
+      if (action === 'dismiss-api-token') { apiTokenSecret = null; render(); }
       if (action === 'dismiss-intake-key') { intakeSecret = null; render(); }
       if (action === 'edit-user') openUserDialog(button.dataset.id);
       if (action === 'open-deleted') openDeletedRecords();
@@ -5873,6 +6011,17 @@
     document.getElementById('bitrixImportForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) importBitrixSample(event.currentTarget); });
     document.getElementById('filterForm').addEventListener('submit', event => { event.preventDefault(); applyFilterPanel(); });
     document.getElementById('userForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveUser(event.currentTarget); });
+    document.getElementById('page-api-tokens').addEventListener('submit', event => {
+      if (event.target.id !== 'apiTokenForm') return;
+      event.preventDefault();
+      submitApiToken(event.target);
+    });
+    document.getElementById('page-api-tokens').addEventListener('change', event => {
+      if (!event.target.matches('[data-api-token-all]')) return;
+      apiTokens = { ...apiTokens, all: event.target.checked, loaded: false };
+      render();
+      void loadApiTokens();
+    });
     document.getElementById('page-teams-admin').addEventListener('submit', event => {
       if (event.target.id !== 'teamCreateForm') return;
       event.preventDefault();

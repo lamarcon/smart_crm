@@ -568,6 +568,31 @@ class LeadIntakeKey(Base, TimestampMixin):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ApiToken(Base, TimestampMixin):
+    """Personal REST API token (sha256 digest only); acts with its user's current profile."""
+
+    __tablename__ = "api_tokens"
+    __table_args__ = (
+        CheckConstraint("char_length(token_digest) = 64", name="digest_length"),
+        CheckConstraint("char_length(btrim(name)) > 0", name="name_present"),
+        CheckConstraint("access IN ('read', 'write')", name="valid_access"),
+        UniqueConstraint("token_digest"),
+        Index("ix_api_tokens_workspace_user", "workspace_id", "user_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("crm_users.id", ondelete="RESTRICT"), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    access: Mapped[str] = mapped_column(String(8), nullable=False)
+    token_digest: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    token_hint: Mapped[str] = mapped_column(String(8), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("crm_users.id", ondelete="SET NULL"))
+
+
 class Quote(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "quotes"
     __table_args__ = (Index("ix_quotes_deal_active", "deal_id", "deleted_at"),)

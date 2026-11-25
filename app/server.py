@@ -26,6 +26,7 @@ from app.security.secrets import (
     read_dpapi_secret_file,
 )
 from app.services.account_access import AccountAccessService
+from app.services.api_tokens import ApiTokenService
 from app.services.lead_intake import LeadIntakeService
 from app.services.auth import AuthService, SecurityAuditService
 from app.tenant_database import (
@@ -49,6 +50,7 @@ class CentralRuntime:
     auth_service: AuthService
     account_access_service: AccountAccessService | None = None
     lead_intake_service: LeadIntakeService | None = None
+    api_token_service: ApiTokenService | None = None
 
     def control_is_ready(self) -> bool:
         try:
@@ -163,6 +165,11 @@ def bootstrap_runtime(
                 router,
                 security_audit=security_audit,
             ),
+            api_token_service=ApiTokenService(
+                active_control,
+                router,
+                security_audit=security_audit,
+            ),
         )
     except Exception:
         if active_control is not None:
@@ -191,6 +198,7 @@ def create_app(
         health_check=active_runtime.control_is_ready,
         account_access_service=active_runtime.account_access_service,
         lead_intake_service=active_runtime.lead_intake_service,
+        api_token_service=active_runtime.api_token_service,
     )
     application.state.central_runtime = active_runtime
     application.add_event_handler("shutdown", active_runtime.dispose)

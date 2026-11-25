@@ -222,5 +222,12 @@ window.SMART_CRM_I18N['pt-PT'] = {
   "Equipe criada.": "Equipa criada.",
   "Equipe renomeada.": "Equipa com novo nome.",
   "Equipe excluída.": "Equipa eliminada.",
-  "Selecione a equipe": "Selecione a equipa"
+  "Selecione a equipe": "Selecione a equipa",
+  "Copie o token “{p0}” agora: ele não será mostrado de novo.": "Copie o token “{p0}” agora: não voltará a ser mostrado.",
+  "Usuário": "Utilizador",
+  "Mostrar os tokens de todos os usuários": "Mostrar os tokens de todos os utilizadores",
+  "Cada token age como você: vê e altera só o que o seu perfil permite. Um token só de leitura não grava nada.": "Cada token age em seu nome: vê e altera apenas o que o seu perfil permite. Um token só de leitura não grava nada.",
+  "· usuário, acesso do token e permissões": "· utilizador, acesso do token e permissões",
+  "· um registro": "· um registo",
+  "Revogar o token “{p0}”? Os sistemas que o usam deixarão de acessar a API.": "Revogar o token “{p0}”? Os sistemas que o usam deixarão de aceder à API."
 };

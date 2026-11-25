@@ -105,6 +105,14 @@ from app.services.account_access import (
     InvitationCommand,
 )
 from app.services.auth import AuthenticationError, AuthService, SessionContext
+from app.api_v1 import register_api_v1
+from app.services.api_tokens import (
+    ApiTokenAuthorizationError,
+    ApiTokenNotFoundError,
+    ApiTokenService,
+    ApiTokenValidationError,
+    token_view_payload,
+)
 from app.services.lead_intake import (
     MAX_BODY_BYTES as LEAD_INTAKE_MAX_BODY_BYTES,
     RETRY_AFTER_SECONDS as LEAD_INTAKE_RETRY_AFTER_SECONDS,
@@ -274,6 +282,7 @@ def create_app(
     account_access_service: AccountAccessService | None = None,
     exchange_rate_service: ExchangeRateService | None = None,
     lead_intake_service: LeadIntakeService | None = None,
+    api_token_service: ApiTokenService | None = None,
 ) -> FastAPI:
     del settings
     active_exchange_rates = exchange_rate_service or ExchangeRateService()
@@ -1456,6 +1465,88 @@ def create_app(
             principal.context.principal,
             company_id,
         )
+
+    # Personal API tokens and the REST API v1 ------------------------------------
+
+    async def resolve_account_user(request: Request) -> SessionContext:
+        if not isinstance(resolve_principal, CookiePrincipalResolver):
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "auth_unavailable", "message": "Autenticação temporariamente indisponível."},
+            )
+        return await resolve_principal.authenticate(request)
+
+    def run_api_tokens(request: Request, operation: Callable[[ApiTokenService], object]):  # noqa: ANN202
+        if api_token_service is None:
+            return _error(503, "api_unavailable", "API temporariamente indisponível.")
+        try:
+            return operation(api_token_service)
+        except ApiTokenAuthorizationError:
+            audit_request_denial(request, "forbidden")
+            return _error(403, "forbidden", "Acesso negado.")
+        except ApiTokenValidationError as error:
+            return _error(422, "validation_error", error.message, field=error.field)
+        except ApiTokenNotFoundError:
+            return _error(404, "not_found", "Token não encontrado.")
+        except TenantUnavailableError:
+            return _error(503, "tenant_unavailable", "Banco da empresa temporariamente indisponível.")
+
+    @app.get("/api/me/api-tokens")
+    def list_api_tokens(
+        request: Request,
+        all_users: bool = Query(default=False, alias="all"),
+        context: SessionContext = Depends(resolve_account_user),
+    ):
+        def operation(tokens: ApiTokenService) -> JSONResponse:
+            now = datetime.now(timezone.utc)
+            views = tokens.list_tokens(context.principal.tenant_id, context.principal, all_users=all_users)
+            return JSONResponse(content={"tokens": [token_view_payload(view, now) for view in views]})
+
+        return run_api_tokens(request, operation)
+
+    @app.post("/api/me/api-tokens", status_code=201)
+    def create_api_token(
+        payload: dict,
+        request: Request,
+        context: SessionContext = Depends(resolve_account_user),
+    ):
+        def operation(tokens: ApiTokenService) -> JSONResponse:
+            created = tokens.create_token(
+                context.principal.tenant_id,
+                context.principal,
+                name=payload.get("name"),
+                access=payload.get("access"),
+                expires_in_days=payload.get("expiresInDays"),
+            )
+            return JSONResponse(
+                status_code=201,
+                content={
+                    "token": token_view_payload(created.token, datetime.now(timezone.utc)),
+                    "secret": created.raw_token,
+                },
+            )
+
+        return run_api_tokens(request, operation)
+
+    @app.post("/api/me/api-tokens/{token_id}/revoke")
+    def revoke_api_token(
+        request: Request,
+        token_id: str = FastAPIPath(min_length=1, max_length=64),
+        context: SessionContext = Depends(resolve_account_user),
+    ):
+        def operation(tokens: ApiTokenService) -> JSONResponse:
+            view = tokens.revoke_token(context.principal.tenant_id, context.principal, token_id)
+            return JSONResponse(content={"token": token_view_payload(view, datetime.now(timezone.utc))})
+
+        return run_api_tokens(request, operation)
+
+    register_api_v1(
+        app,
+        token_service=api_token_service,
+        workspace_service=service,
+        pipeline_service=active_pipeline_service,
+        source_ip=source_ip,
+    )
 
     # Lead intake: admin-managed keys and the public endpoint -------------------
 

@@ -20,7 +20,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 ACTIVITY_HEAD = "e1c4a7b9d2f6"
-TENANT_HEAD = "b8d2f4a6c9e1"
+TENANT_HEAD = "c6e3a9f1d7b4"
 
 
 def alembic_config(connection=None) -> Config:  # noqa: ANN001
@@ -523,4 +523,43 @@ def test_pipeline_menu_tabs_and_scoped_fields(isolated_migration) -> None:
     connection.commit()
     command.downgrade(config, "f5b2d8e4a6c3")
     assert "menu_tab" not in {item["name"] for item in inspect(connection).get_columns("deal_pipelines", schema=schema)}
+    command.upgrade(config, "head")
+
+
+def test_api_tokens_table_has_rls_constraints_and_a_clean_downgrade(isolated_migration) -> None:
+    connection, schema, config = isolated_migration
+    command.upgrade(config, "head")
+    columns = {item["name"] for item in inspect(connection).get_columns("api_tokens", schema=schema)}
+    assert {"user_id", "access", "token_digest", "token_hint", "expires_at", "revoked_at"} <= columns
+    rls_flags = connection.execute(
+        text("SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'api_tokens'::regclass")
+    ).one()
+    assert tuple(rls_flags) == (True, True)
+    connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+    connection.execute(
+        text(
+            "INSERT INTO crm_users (id, workspace_id, name, email, job_title, role, status, payload) "
+            "VALUES ('u-api', 'default', 'API', 'api@test', '', 'Vendedor', 'Ativo', '{}'::jsonb)"
+        )
+    )
+
+    def insert(access: str, digest: str) -> None:
+        connection.execute(
+            text(
+                "INSERT INTO api_tokens (id, workspace_id, user_id, name, access, token_digest, token_hint) "
+                "VALUES (:id, 'default', 'u-api', 'ERP', :access, :digest, 'abcd')"
+            ),
+            {"id": uuid.uuid4(), "access": access, "digest": digest},
+        )
+
+    insert("read", "a" * 64)
+    for access, digest in (("admin", "b" * 64), ("read", "short"), ("write", "a" * 64)):
+        savepoint = connection.begin_nested()
+        with pytest.raises(Exception):
+            insert(access, digest)
+        savepoint.rollback()
+    connection.commit()
+
+    command.downgrade(config, "b8d2f4a6c9e1")
+    assert "api_tokens" not in inspect(connection).get_table_names(schema=schema)
     command.upgrade(config, "head")

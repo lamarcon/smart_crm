@@ -19,6 +19,7 @@ EXPECTED_TABLES = {
     "quotes",
     "products",
     "lead_intake_keys",
+    "api_tokens",
     "notifications",
     "custom_field_definitions",
     "custom_field_values",

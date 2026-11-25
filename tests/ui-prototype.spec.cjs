@@ -153,6 +153,7 @@ async function openFresh(options = {}) {
     disableBillingAutomation: Boolean(options.disableBillingAutomation),
     userRequests: [], inviteDeliveryStatus: 'sent', userActionFailure: null, userActionGate: null,
     intakeKeys: [], intakeRequests: [], intakeFailure: null,
+    apiTokens: [], apiTokenRequests: [],
     preferenceRequests: [], preferenceFailure: false,
     permissionRequests: [], permissionRoles: null, exportRequests: [],
     extraPipelines: clone(options.extraPipelines || []), pipelineRequests: [],
@@ -453,6 +454,39 @@ async function openFresh(options = {}) {
         ? { error: { code: 'database_unavailable', message: 'Funil indisponível.' } }
         : api.pipeline)
     });
+  });
+  await context.route('**/api/me/api-tokens**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    let body = null;
+    try { body = request.postDataJSON(); } catch (_) { body = null; }
+    api.apiTokenRequests.push({ method: request.method(), path: url.pathname, search: url.search, body });
+    const json = (status, payload) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(payload) });
+    const session = api.session;
+    if (request.method() === 'GET' && url.pathname === '/api/me/api-tokens') {
+      const all = url.searchParams.get('all') === 'true';
+      if (all && session.role !== 'Administrador') return json(403, { error: { code: 'forbidden', message: 'Acesso negado.' } });
+      return json(200, { tokens: all ? api.apiTokens : api.apiTokens.filter(token => token.userId === session.user_id) });
+    }
+    if (request.method() === 'POST' && url.pathname === '/api/me/api-tokens') {
+      if (!String(body?.name || '').trim()) return json(422, { error: { code: 'validation_error', message: 'Informe um nome de até 120 caracteres.', field: 'name' } });
+      const number = api.apiTokens.length + 1;
+      const secret = `sct_segredo-${number}-abcd`;
+      const token = {
+        id: `tok-${number}`, name: body.name, access: body.access, userId: session.user_id, userName: session.user_name, hint: secret.slice(-4),
+        createdAt: '2026-11-25T12:00:00Z', lastUsedAt: null, expiresAt: body.expiresInDays ? '2027-02-23T12:00:00Z' : null, revokedAt: null, active: true
+      };
+      api.apiTokens.unshift(token);
+      return json(201, { token, secret });
+    }
+    const revoke = url.pathname.match(/^\/api\/me\/api-tokens\/([^/]+)\/revoke$/);
+    if (request.method() === 'POST' && revoke) {
+      const token = api.apiTokens.find(item => item.id === decodeURIComponent(revoke[1]));
+      if (!token) return json(404, { error: { code: 'not_found', message: 'Token não encontrado.' } });
+      Object.assign(token, { revokedAt: '2026-11-25T13:00:00Z', active: false });
+      return json(200, { token });
+    }
+    return json(404, { error: { code: 'not_found', message: 'Rota inexistente.' } });
   });
   await context.route('**/api/lead-intake/**', async route => {
     const request = route.request();
@@ -1790,10 +1824,11 @@ async function storageEntries(page) {
       ['Visão geral', 'Visão geral'], ['Leads', 'Leads'], ['Contatos', 'Contatos'],
       ['Empresas', 'Empresas'], ['Produtos', 'Produtos'], ['Negócios', 'Negócios'], ['Notificações', 'Notificações'],
       ['Funil de negócios', 'Funil de negócios'],
+      ['API e tokens', 'API e tokens'],
       ['Usuários e permissões', 'Usuários e permissões'], ['Equipes', 'Equipes'], ['Permissões', 'Permissões'],
       ['Campos personalizados', 'Campos personalizados']
     ];
-    assert.equal(await page.locator('.nav button:visible').count(), 12);
+    assert.equal(await page.locator('.nav button:visible').count(), 13);
     for (const [button, heading] of destinations) {
       await goTo(page, button);
       assert.equal(await page.locator('#topTitle').innerText(), heading);
@@ -5753,6 +5788,56 @@ async function storageEntries(page) {
     assert.equal(api.pipelineHistoryRequests.length, 0);
   }, { session: SELLER_SESSION, preloadState: minimalWorkspace(), pipelineHistory: pipelineAuditHistory(1) });
 
+  await run('APITOKEN-01 cria token, mostra o segredo uma vez, lista e revoga', async page => {
+    const api = apiByPage.get(page);
+    api.apiTokens.push({ id: 'tok-outro', name: 'Planilha da Paula', access: 'read', userId: 'u-paula', userName: 'Paula', hint: 'zzzz', createdAt: '2026-11-20T12:00:00Z', lastUsedAt: null, expiresAt: null, revokedAt: null, active: true });
+    await goTo(page, 'API e tokens');
+    const tokensPage = page.locator('#page-api-tokens');
+    await tokensPage.locator('[data-api-token-empty]').waitFor();
+    assert.match(await tokensPage.locator('[data-api-base]').innerText(), /\/api\/v1\/cliente-a$/);
+
+    await tokensPage.getByLabel('Nome do token').fill('Integração ERP');
+    await tokensPage.getByLabel('Acesso').selectOption('write');
+    await tokensPage.getByLabel('Validade').selectOption('30');
+    await tokensPage.getByRole('button', { name: 'Criar token' }).click();
+    const secret = tokensPage.locator('[data-api-token-secret-value]');
+    await secret.waitFor();
+    assert.equal(await secret.innerText(), 'sct_segredo-2-abcd');
+    const sent = api.apiTokenRequests.find(item => item.method === 'POST');
+    assert.deepEqual(sent.body, { name: 'Integração ERP', access: 'write', expiresInDays: 30 });
+    const row = tokensPage.locator('tr[data-api-token="tok-2"]');
+    assert.match(await row.innerText(), /Integração ERP/);
+    assert.match(await row.innerText(), /Leitura e escrita/);
+    assert.match(await row.innerText(), /…abcd/);
+
+    await tokensPage.getByRole('button', { name: 'Já copiei' }).click();
+    assert.equal(await tokensPage.locator('[data-api-token-secret]').count(), 0);
+
+    page.once('dialog', dialog => dialog.accept());
+    await tokensPage.getByRole('button', { name: 'Revogar token Integração ERP' }).click();
+    await row.getByText('Revogado', { exact: true }).waitFor();
+    assert.equal(await tokensPage.getByRole('button', { name: 'Revogar token Integração ERP' }).count(), 0);
+
+    // The admin can show every user's tokens, with the owner.
+    assert.equal(await tokensPage.locator('tr[data-api-token="tok-outro"]').count(), 0);
+    await tokensPage.getByLabel('Mostrar os tokens de todos os usuários').check();
+    await tokensPage.locator('tr[data-api-token="tok-outro"]').waitFor();
+    assert.match(await tokensPage.locator('tr[data-api-token="tok-outro"]').innerText(), /Paula/);
+    assert.equal(api.apiTokenRequests.some(item => item.method === 'GET' && item.search === '?all=true'), true);
+
+    // An empty name shows the server message.
+    await tokensPage.getByLabel('Nome do token').fill(' ');
+    await page.evaluate(() => document.getElementById('apiTokenForm').requestSubmit());
+    await tokensPage.locator('#apiTokenFormError').getByText('Informe um nome de até 120 caracteres.').waitFor();
+
+    const sellerView = await openFresh({ session: SELLER_SESSION, preloadState: minimalWorkspace() });
+    await sellerView.page.locator('#sidebar .nav button[data-view="dashboard"]').waitFor();
+    await goTo(sellerView.page, 'API e tokens');
+    await sellerView.page.locator('#page-api-tokens [data-api-token-empty]').waitFor();
+    assert.equal(await sellerView.page.locator('[data-api-token-all]').count(), 0);
+    await sellerView.context.close();
+  });
+
   await run('TEAMS-01 cria, renomeia e exclui equipes e escolhe a equipe do funcionário numa lista', async page => {
     await goTo(page, 'Equipes');
     const teamsPage = page.locator('#page-teams-admin');
@@ -5803,7 +5888,7 @@ async function storageEntries(page) {
     const sidebar = page.locator('#sidebar');
     assert.equal(await sidebar.locator('.brand strong').innerText(), 'Smart Control');
     assert.equal(await sidebar.locator('.brand small').innerText(), 'Gestão empresarial');
-    assert.deepEqual(await sidebar.locator('.nav-module:visible').allInnerTexts(), ['CRM', 'ADMINISTRAÇÃO']);
+    assert.deepEqual(await sidebar.locator('.nav-module:visible').allInnerTexts(), ['CRM', 'INTEGRAÇÕES', 'ADMINISTRAÇÃO']);
     const order = await page.evaluate(() => [...document.querySelectorAll('#sidebar .nav > *')]
       .filter(node => !node.hidden && node.offsetParent !== null)
       .map(node => node.classList.contains('nav-module') ? '#' + node.textContent.trim() : node.dataset.view));
@@ -5813,7 +5898,7 @@ async function storageEntries(page) {
 
     const sellerView = await openFresh({ session: SELLER_SESSION, preloadState: minimalWorkspace() });
     await sellerView.page.locator('#sidebar .nav button[data-view="dashboard"]').waitFor();
-    assert.deepEqual(await sellerView.page.locator('#sidebar .nav-module:visible').allInnerTexts(), ['CRM']);
+    assert.deepEqual(await sellerView.page.locator('#sidebar .nav-module:visible').allInnerTexts(), ['CRM', 'INTEGRAÇÕES']);
     await sellerView.context.close();
   });
 
