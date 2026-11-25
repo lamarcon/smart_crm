@@ -102,6 +102,11 @@ def state() -> WorkspaceState:
 
 def without_pipeline_metadata(state_value: dict) -> dict:
     comparable = deepcopy(state_value)
+    # The team list is derived from the teams named by users, Leads and Deals here.
+    if "teams" in comparable:
+        named = {record["team"] for key in ("users", "leads", "deals") for record in comparable.get(key, []) if record.get("team")}
+        assert comparable["teams"] == sorted(named, key=lambda name: (name.casefold(), name))
+        comparable.pop("teams")
     # Products joined the modules with custom fields; an empty products entry is the default.
     if (comparable.get("customFieldSchemas") or {}).get("products") == []:
         comparable["customFieldSchemas"].pop("products")

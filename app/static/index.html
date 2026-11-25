@@ -325,6 +325,10 @@
     .field-tabs button { border: 1px solid var(--slate-200); border-radius: 999px; padding: 7px 14px; background: white; color: var(--navy-800); font-weight: 650; cursor: pointer; }
     .field-tabs button[aria-selected="true"] { border-color: var(--navy-800); background: var(--navy-800); color: white; }
     .field-tabs .field-tab-pipeline::before { content: "⇄ "; opacity: .7; }
+    .team-create { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-bottom: 16px; }
+    .team-create .field { flex: 1 1 260px; max-width: 420px; }
+    .team-name-input { width: 100%; min-width: 160px; }
+    .team-actions { display: flex; gap: 6px; justify-content: flex-end; }
     .fields-admin-card { padding: 18px; border: 1px solid var(--slate-200); border-radius: 14px; background: white; }
     .quote-items { width: 100%; font-size: 12px; }
     .quote-items .num { text-align: right; white-space: nowrap; }
@@ -611,6 +615,7 @@
         <div class="nav-label nav-module" data-admin-nav hidden>Administração</div>
         <button data-view="pipeline-admin" data-admin-nav hidden><span class="nav-icon">⇄</span>Funil de negócios</button>
         <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
+        <button data-view="teams-admin" data-admin-nav hidden><span class="nav-icon">☍</span>Equipes</button>
         <button data-view="permissions" data-admin-nav hidden><span class="nav-icon">⚿</span>Permissões</button>
         <button data-view="fields-admin" data-admin-nav hidden><span class="nav-icon">☷</span>Campos personalizados</button>
       </nav>
@@ -645,6 +650,7 @@
         <section class="page" id="page-pipeline-admin"></section>
         <section class="page" id="page-admin"></section>
         <section class="page" id="page-permissions"></section>
+        <section class="page" id="page-teams-admin"></section>
         <section class="page" id="page-fields-admin">
           <div class="page-toolbar"><div><h2>Campos personalizados</h2><p>Escolha o módulo ou o funil e configure os campos dele.</p></div></div>
           <div class="field-tabs" id="fieldManagerTabs" role="tablist" aria-label="Módulos"></div>
@@ -851,7 +857,7 @@
         <div class="field"><label for="userName">Nome completo</label><input id="userName" name="name" required></div>
         <div class="field"><label for="userEmail">E-mail</label><input id="userEmail" name="email" type="email" required></div>
         <div class="field"><label for="userJobTitle">Cargo profissional</label><input id="userJobTitle" name="jobTitle" required></div>
-        <div class="field"><label for="userTeam">Equipe</label><input id="userTeam" name="team" required></div>
+        <div class="field"><label for="userTeam">Equipe</label><select id="userTeam" name="team" required></select><small class="hint" id="userTeamHint" hidden>Crie as equipes em Administração › Equipes.</small></div>
         <div class="field full"><label for="userRole">Perfil de acesso</label><select id="userRole" name="role" required><option value="Administrador">Administrador</option><option value="Gestor">Gestor</option><option value="Vendedor" selected>Vendedor</option><option value="Assistente">Assistente</option><option value="Faturamento">Faturamento</option></select><span class="hint">O perfil define permissões; o cargo descreve a função profissional.</span></div>
         <div class="field full" id="userLocaleField"><label for="userLocale">Idioma do convite</label><select id="userLocale" name="locale" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select><span class="hint">O e-mail de convite e a tela começam neste idioma.</span></div>
         <div class="field full" id="userMessageField"><label for="userMessage">Mensagem no convite (opcional)</label><textarea id="userMessage" name="message" rows="3" maxlength="500" placeholder="Bem-vinda ao time! Seus Leads já estão no funil."></textarea><span class="hint">Aparece no e-mail, logo abaixo da saudação.</span></div>
@@ -1174,6 +1180,7 @@
       'pipeline-admin': ['Funil de negócios', 'Configure etapas, ordem e estado inicial'],
       admin: ['Usuários e permissões', 'Convites, cargos e perfis de acesso'],
       permissions: ['Permissões', 'O que cada perfil pode fazer em cada módulo'],
+      'teams-admin': ['Equipes', 'Equipes da empresa e seus funcionários'],
       'fields-admin': ['Campos personalizados', 'Campos de cada módulo e de cada funil']
     };
     const entityConfigs = {
@@ -1330,11 +1337,29 @@
       return Number.isNaN(parsed) ? fallback : new Date(parsed).toISOString();
     }
 
+    // Admin-managed team names, plus any team still named by a user, Lead or Deal.
+    function normalizeTeamList(source) {
+      const names = [];
+      const add = value => {
+        const name = typeof value === 'string' ? value.trim() : '';
+        if (name && !names.includes(name)) names.push(name);
+      };
+      (Array.isArray(source.teams) ? source.teams : []).forEach(add);
+      ['users', 'leads', 'deals'].forEach(collection => (source[collection] || []).forEach(record => add(record.team)));
+      return names;
+    }
+    function sortedTeams() {
+      return [...(state.teams || [])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    }
+    function sameTeamName(a, b) {
+      return a.localeCompare(b, 'pt-BR', { sensitivity: 'accent' }) === 0;
+    }
     function normalizeState(raw) {
       const normalized = raw;
       const base = Date.parse('2026-08-18T12:00:00.000Z');
       const fallbackAt = (index, hourOffset = 0) => new Date(base - index * 86400000 + hourOffset * 3600000).toISOString();
       const defaultJobs = { Administrador: 'Administradora do CRM', Gestor: 'Gestor comercial', Vendedor: 'Consultor comercial', Assistente: 'Assistente comercial', Faturamento: 'Analista de faturamento' };
+      normalized.teams = normalizeTeamList(normalized);
       (normalized.users || []).forEach(user => {
         user.email ||= `${String(user.id || 'usuario').replace(/^u-/, '')}@smartcrm.local`;
         user.jobTitle ||= defaultJobs[user.role] || 'Colaborador';
@@ -3450,6 +3475,75 @@
       return `<div class="page-toolbar"><div><h2>Usuários e permissões</h2><p>Gerencie cargos, equipes e acesso dos funcionários da empresa.</p></div><div class="toolbar-actions"><button class="button primary" data-action="new-user">＋ Convidar funcionário</button></div></div><div class="user-summary"><div><span class="hint">Ativos</span><b>${total('Ativo')}</b></div><div><span class="hint">Pendentes</span><b>${total('Pendente')}</b></div><div><span class="hint">Inativos</span><b>${total('Inativo')}</b></div><div><span class="hint">Cancelados</span><b>${total('Cancelado')}</b></div></div><div class="list-card"><div class="table-wrap"><table><thead><tr><th>Funcionário</th><th>Cargo profissional</th><th>Equipe</th><th>Perfil de acesso</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer"><span>${state.users.length} usuário(s)</span><span>Convites enviados por e-mail · links válidos por 48 horas</span></div></div>${intakeSectionHTML()}`;
     }
 
+    function teamsAdminHTML() {
+      if (currentUser().role !== 'Administrador') return '';
+      const rows = sortedTeams().map(name => {
+        const members = state.users.filter(user => user.team === name && user.status !== 'Cancelado');
+        const records = ['leads', 'deals'].reduce((total, collection) => total + (state[collection] || []).filter(record => record.team === name).length, 0);
+        const reason = members.length
+          ? `Mova os ${members.length} funcionário(s) para outra equipe antes de excluir.`
+          : records ? `${records} Lead(s) ou Negócio(s) ainda usam esta equipe.` : '';
+        const memberList = members.length
+          ? members.map(user => escapeHTML(user.name)).join(', ')
+          : '<span class="hint">Sem funcionários</span>';
+        return `<tr data-team="${escapeHTML(name)}"><td><input class="team-name-input" value="${escapeHTML(name)}" maxlength="255" aria-label="Nome da equipe ${escapeHTML(name)}"></td><td>${memberList}</td><td>${records}</td><td><div class="team-actions"><button type="button" class="button small" data-action="rename-team" data-team="${escapeHTML(name)}" aria-label="Renomear equipe ${escapeHTML(name)}">Renomear</button><button type="button" class="button small" data-action="delete-team" data-team="${escapeHTML(name)}" aria-label="Excluir equipe ${escapeHTML(name)}"${reason ? ` disabled title="${escapeHTML(reason)}"` : ''}>Excluir</button></div>${reason ? `<small class="hint">${escapeHTML(reason)}</small>` : ''}</td></tr>`;
+      }).join('');
+      const empty = '<tr><td colspan="4"><span class="hint">Nenhuma equipe cadastrada.</span></td></tr>';
+      return `<div class="page-toolbar"><div><h2>Equipes</h2><p>A equipe define o que cada funcionário vê quando o perfil dele tem o escopo "da equipe".</p></div></div><form class="team-create" id="teamCreateForm"><div class="field"><label for="newTeamName">Nova equipe</label><input id="newTeamName" name="name" maxlength="255" placeholder="Ex.: Pós-venda" required></div><button type="submit" class="button primary">Criar equipe</button></form><div class="list-card"><div class="table-wrap"><table><thead><tr><th>Equipe</th><th>Funcionários</th><th>Leads e Negócios</th><th></th></tr></thead><tbody>${rows || empty}</tbody></table></div><div class="table-footer"><span>${state.teams.length} equipe(s)</span></div></div>`;
+    }
+
+    function createTeam(form) {
+      if (currentUser().role !== 'Administrador') return false;
+      const name = form.elements.name.value.trim();
+      if (!name) return false;
+      const existing = state.teams.find(team => sameTeamName(team, name));
+      if (existing) {
+        toast(`A equipe ${existing} já existe.`);
+        return false;
+      }
+      state.teams.push(name);
+      saveState();
+      render();
+      toast('Equipe criada.');
+      return true;
+    }
+
+    function renameTeam(previous) {
+      if (currentUser().role !== 'Administrador' || !state.teams.includes(previous)) return false;
+      const row = [...document.querySelectorAll('#page-teams-admin tr[data-team]')].find(item => item.dataset.team === previous);
+      const name = row?.querySelector('.team-name-input')?.value.trim() || '';
+      if (!name) {
+        toast('Informe o nome da equipe.');
+        return false;
+      }
+      if (name === previous) return false;
+      const existing = state.teams.find(team => team !== previous && sameTeamName(team, name));
+      if (existing) {
+        toast(`A equipe ${existing} já existe.`);
+        return false;
+      }
+      state.teams = state.teams.map(team => team === previous ? name : team);
+      ['users', 'leads', 'deals'].forEach(collection => (state[collection] || []).forEach(record => {
+        if (record.team === previous) record.team = name;
+      }));
+      saveState();
+      render();
+      toast('Equipe renomeada.');
+      return true;
+    }
+
+    function deleteTeam(name) {
+      if (currentUser().role !== 'Administrador' || !state.teams.includes(name)) return false;
+      const used = state.users.some(user => user.team === name && user.status !== 'Cancelado')
+        || ['leads', 'deals'].some(collection => (state[collection] || []).some(record => record.team === name));
+      if (used) return false;
+      state.teams = state.teams.filter(team => team !== name);
+      saveState();
+      render();
+      toast('Equipe excluída.');
+      return true;
+    }
+
     function openUserDialog(id = '') {
       if (currentUser().role !== 'Administrador') return false;
       const user = id ? state.users.find(candidate => candidate.id === id) : null;
@@ -3461,7 +3555,12 @@
       document.getElementById('userEmail').value = user?.email || '';
       document.getElementById('userEmail').readOnly = Boolean(user);
       document.getElementById('userJobTitle').value = user?.jobTitle || '';
-      document.getElementById('userTeam').value = user?.team || '';
+      const teamSelect = document.getElementById('userTeam');
+      const teamNames = sortedTeams();
+      if (user?.team && !teamNames.includes(user.team)) teamNames.unshift(user.team);
+      teamSelect.innerHTML = `<option value="">Selecione a equipe</option>${teamNames.map(name => `<option value="${escapeHTML(name)}">${escapeHTML(name)}</option>`).join('')}`;
+      teamSelect.value = user?.team || '';
+      document.getElementById('userTeamHint').hidden = teamNames.length > 0;
       document.getElementById('userRole').value = user?.role || 'Vendedor';
       // The invitation language only applies to new invitations.
       document.getElementById('userLocale').value = currentLocale();
@@ -3662,12 +3761,13 @@
       document.getElementById('page-pipeline-admin').innerHTML = pipelineEditorHTML();
       document.getElementById('page-admin').innerHTML = usersAdminHTML();
       document.getElementById('page-permissions').innerHTML = permissionsAdminHTML();
+      document.getElementById('page-teams-admin').innerHTML = teamsAdminHTML();
       showView(activeView, false);
       syncBootstrapAccess();
     }
 
     function showView(view, closeMobile = true) {
-      if (['admin', 'pipeline-admin', 'permissions', 'fields-admin'].includes(view) && currentUser().role !== 'Administrador') view = 'dashboard';
+      if (['admin', 'pipeline-admin', 'permissions', 'fields-admin', 'teams-admin'].includes(view) && currentUser().role !== 'Administrador') view = 'dashboard';
       if (PERMISSION_MODULES.includes(view) && !can(view, 'read')) view = 'dashboard';
       if (!pageMeta[view]) view = 'dashboard';
       const entering = activeView !== view;
@@ -5654,6 +5754,8 @@
       if (action === 'save-field-visibility') saveFieldVisibility();
       if (action === 'create-custom-field') createCustomField();
       if (action === 'new-user') openUserDialog();
+      if (action === 'rename-team' && requireWritableWorkspace()) renameTeam(button.dataset.team);
+      if (action === 'delete-team' && requireWritableWorkspace()) deleteTeam(button.dataset.team);
       if (action === 'new-intake-key') openIntakeKeyDialog();
       if (action === 'revoke-intake-key') revokeIntakeKey(button.dataset.id);
       if (action === 'copy-intake-key') copyIntakeKey();
@@ -5771,6 +5873,11 @@
     document.getElementById('bitrixImportForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) importBitrixSample(event.currentTarget); });
     document.getElementById('filterForm').addEventListener('submit', event => { event.preventDefault(); applyFilterPanel(); });
     document.getElementById('userForm').addEventListener('submit', event => { event.preventDefault(); if (requireWritableWorkspace()) saveUser(event.currentTarget); });
+    document.getElementById('page-teams-admin').addEventListener('submit', event => {
+      if (event.target.id !== 'teamCreateForm') return;
+      event.preventDefault();
+      if (requireWritableWorkspace()) createTeam(event.target);
+    });
     document.getElementById('intakeKeyForm').addEventListener('submit', event => { event.preventDefault(); submitIntakeKey(event.currentTarget); });
     document.getElementById('pipelineArchiveForm').addEventListener('submit', event => { event.preventDefault(); submitPipelineStageArchive(document.getElementById('pipelineArchiveTarget').value); });
     document.getElementById('mobileMenu').addEventListener('click', () => toggleSidebar(true));

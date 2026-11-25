@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -197,6 +197,8 @@ class WorkspaceRepository:
         self.session.flush()
         self._reconcile_leads(data["leads"], teams)
         self._reconcile_deals(data["deals"], teams)
+        self.session.flush()
+        self._prune_teams(data, teams)
         self._reconcile_notifications(data["notifications"])
         definitions = self._reconcile_definitions(data.get("customFieldSchemas") or {})
         self.session.flush()
@@ -209,6 +211,10 @@ class WorkspaceRepository:
 
     def read_active(self) -> WorkspaceState:
         state: dict[str, Any] = {
+            "teams": sorted(
+                self.session.scalars(select(Team.name).where(Team.workspace_id == self.workspace_id)).all(),
+                key=lambda name: (name.casefold(), name),
+            ),
             "users": self._read_users(),
             "leads": self._read_payloads(Lead),
             "contacts": self._read_payloads(Contact),
@@ -483,6 +489,7 @@ class WorkspaceRepository:
             for record in data[collection]
             if record.get("team")
         }
+        names.update(data.get("teams") or [])
         result: dict[str, str] = {}
         for name in sorted(names):
             team_id = team_id_for_name(name)
@@ -494,6 +501,41 @@ class WorkspaceRepository:
                 team.name = name
             result[name] = team_id
         return result
+
+    def _prune_teams(self, data: dict[str, Any], teams: dict[str, str]) -> None:
+        """Removes the teams the admin left out of an explicit list.
+
+        Only a snapshot that carries ``teams`` removes anything; teams still named by
+        an active user, Lead or Deal are part of ``teams`` and always stay. Deleted
+        records keep the team name in their payload but lose the link, so the row
+        can go.
+        """
+
+        if "teams" not in data:
+            return
+        kept = set(teams.values())
+        stale = [
+            team
+            for team in self.session.scalars(select(Team).where(Team.workspace_id == self.workspace_id)).all()
+            if team.id not in kept
+        ]
+        if not stale:
+            return
+        stale_ids = [team.id for team in stale]
+        for model in (CrmUser, Lead, Deal):
+            self.session.execute(
+                update(model)
+                .where(
+                    model.workspace_id == self.workspace_id,
+                    model.team_id.in_(stale_ids),
+                    model.deleted_at.is_not(None),
+                )
+                .values(team_id=None)
+                .execution_options(synchronize_session="fetch")
+            )
+        for team in stale:
+            self.session.delete(team)
+        self.session.flush()
 
     def _reconcile_users(self, records: list[dict[str, Any]], teams: dict[str, str]) -> None:
         present = {record["id"] for record in records}

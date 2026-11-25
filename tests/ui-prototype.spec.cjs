@@ -1790,10 +1790,10 @@ async function storageEntries(page) {
       ['Visão geral', 'Visão geral'], ['Leads', 'Leads'], ['Contatos', 'Contatos'],
       ['Empresas', 'Empresas'], ['Produtos', 'Produtos'], ['Negócios', 'Negócios'], ['Notificações', 'Notificações'],
       ['Funil de negócios', 'Funil de negócios'],
-      ['Usuários e permissões', 'Usuários e permissões'], ['Permissões', 'Permissões'],
+      ['Usuários e permissões', 'Usuários e permissões'], ['Equipes', 'Equipes'], ['Permissões', 'Permissões'],
       ['Campos personalizados', 'Campos personalizados']
     ];
-    assert.equal(await page.locator('.nav button:visible').count(), 11);
+    assert.equal(await page.locator('.nav button:visible').count(), 12);
     for (const [button, heading] of destinations) {
       await goTo(page, button);
       assert.equal(await page.locator('#topTitle').innerText(), heading);
@@ -3777,7 +3777,8 @@ async function storageEntries(page) {
     await dialog.getByLabel('Full name').fill('Ann Smith');
     await dialog.getByLabel('Email').fill('ann@example.test');
     await dialog.getByLabel('Job title').fill('Account executive');
-    await dialog.getByLabel('Team').fill('Global');
+    assert.equal(await dialog.locator('#userTeam option').first().innerText(), 'Select the team');
+    await dialog.getByLabel('Team').selectOption({ index: 1 });
     await dialog.locator('#userRole').selectOption({ label: 'Manager' });
     await dialog.getByRole('button', { name: 'Send invitation' }).click();
     await page.waitForFunction(() => !document.getElementById('userDialog').open);
@@ -5009,7 +5010,7 @@ async function storageEntries(page) {
     await dialog.getByLabel('Nome completo').fill('Juliana Lima');
     await dialog.getByLabel('E-mail').fill('juliana@teste.invalid');
     await dialog.getByLabel('Cargo profissional').fill('Consultora comercial');
-    await dialog.getByLabel('Equipe').fill('Vendas CMS');
+    await dialog.getByLabel('Equipe').selectOption('Vendas CMS');
     await dialog.getByLabel('Perfil de acesso').selectOption('Vendedor');
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
     await page.locator('#toastRegion').getByText('Convite enviado para juliana@teste.invalid.', { exact: true }).waitFor();
@@ -5025,7 +5026,7 @@ async function storageEntries(page) {
     await dialog.getByLabel('Nome completo').fill('Juliana Duplicada');
     await dialog.getByLabel('E-mail').fill('JULIANA@TESTE.INVALID');
     await dialog.getByLabel('Cargo profissional').fill('Outro cargo');
-    await dialog.getByLabel('Equipe').fill('Outra equipe');
+    await dialog.getByLabel('Equipe').selectOption('Vendas CMS');
     await dialog.getByLabel('Perfil de acesso').selectOption('Gestor');
     // A pending invitee is re-invited by the server instead of duplicated (INV-01/INV-04).
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
@@ -5042,10 +5043,15 @@ async function storageEntries(page) {
     assert.notEqual(juliana.invitedAt, invitedAt);
     assert.equal(api.userRequests.at(-1).path, `/api/users/${juliana.id}/invitation/resend`);
 
+    await goTo(page, 'Equipes');
+    await page.getByLabel('Nova equipe').fill('Vendas Enterprise');
+    await page.getByRole('button', { name: 'Criar equipe' }).click();
+    await waitForMockState(page, current => (current.teams || []).includes('Vendas Enterprise'));
+    await goTo(page, 'Usuários e permissões');
     await page.getByRole('button', { name: 'Editar Juliana Duplicada' }).click();
     await dialog.getByLabel('Nome completo').fill('Juliana Lima');
     await dialog.getByLabel('Cargo profissional').fill('Executiva de contas');
-    await dialog.getByLabel('Equipe').fill('Vendas Enterprise');
+    await dialog.getByLabel('Equipe').selectOption('Vendas Enterprise');
     await dialog.getByLabel('Perfil de acesso').selectOption('Gestor');
     await dialog.getByRole('button', { name: 'Salvar funcionário' }).click();
     await waitForMockState(page, current => current.users.find(user => user.id === juliana.id)?.jobTitle === 'Executiva de contas');
@@ -5064,7 +5070,7 @@ async function storageEntries(page) {
     await dialog.getByLabel('Nome completo').fill('Rafael Teste');
     await dialog.getByLabel('E-mail').fill('rafael@teste.invalid');
     await dialog.getByLabel('Cargo profissional').fill('SDR');
-    await dialog.getByLabel('Equipe').fill('Vendas CMS');
+    await dialog.getByLabel('Equipe').selectOption('Vendas CMS');
     await dialog.getByLabel('Perfil de acesso').selectOption('Vendedor');
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
     await page.getByRole('button', { name: 'Cancelar convite de Rafael Teste' }).click();
@@ -5081,7 +5087,7 @@ async function storageEntries(page) {
     await dialog.getByLabel('Nome completo').fill('Rafael Reativado');
     await dialog.getByLabel('E-mail').fill('RAFAEL@TESTE.INVALID');
     await dialog.getByLabel('Cargo profissional').fill('Consultor');
-    await dialog.getByLabel('Equipe').fill('Vendas CMS');
+    await dialog.getByLabel('Equipe').selectOption('Vendas CMS');
     await dialog.getByLabel('Perfil de acesso').selectOption('Vendedor');
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
     await page.locator('#toastRegion').getByText('Convite enviado para rafael@teste.invalid.', { exact: true }).waitFor();
@@ -5106,7 +5112,7 @@ async function storageEntries(page) {
     await dialog.getByLabel('Nome completo').fill(values.name);
     await dialog.getByLabel('E-mail').fill(values.email);
     await dialog.getByLabel('Cargo profissional').fill(values.jobTitle || 'Consultora comercial');
-    await dialog.getByLabel('Equipe').fill(values.team || 'Vendas CMS');
+    await dialog.getByLabel('Equipe').selectOption(values.team || 'Vendas CMS');
     await dialog.getByLabel('Perfil de acesso').selectOption(values.role || 'Vendedor');
     if (values.message !== undefined) await dialog.getByLabel('Mensagem no convite (opcional)').fill(values.message);
     await dialog.getByRole('button', { name: 'Enviar convite' }).click();
@@ -5746,6 +5752,51 @@ async function storageEntries(page) {
     assert.equal(await page.locator('[data-pipeline-history-item]').count(), 0);
     assert.equal(api.pipelineHistoryRequests.length, 0);
   }, { session: SELLER_SESSION, preloadState: minimalWorkspace(), pipelineHistory: pipelineAuditHistory(1) });
+
+  await run('TEAMS-01 cria, renomeia e exclui equipes e escolhe a equipe do funcionário numa lista', async page => {
+    await goTo(page, 'Equipes');
+    const teamsPage = page.locator('#page-teams-admin');
+    const before = await stateFrom(page);
+    const used = before.users.find(user => user.team && user.status !== 'Cancelado').team;
+    const members = before.users.filter(user => user.team === used).map(user => user.id);
+    const records = ['leads', 'deals'].flatMap(collection => before[collection].filter(record => record.team === used).map(record => record.id));
+
+    await page.getByLabel('Nova equipe').fill('Pós-venda');
+    await page.getByRole('button', { name: 'Criar equipe' }).click();
+    await waitForMockState(page, current => (current.teams || []).includes('Pós-venda'));
+    await page.getByLabel('Nova equipe').fill('pós-venda');
+    await page.getByRole('button', { name: 'Criar equipe' }).click();
+    await page.locator('#toastRegion').getByText('A equipe Pós-venda já existe.', { exact: true }).waitFor();
+    assert.equal((await stateFrom(page)).teams.filter(name => name === 'Pós-venda').length, 1);
+
+    // A team still used by employees cannot be deleted; an empty one can.
+    assert.equal(await teamsPage.getByRole('button', { name: `Excluir equipe ${used}` }).isDisabled(), true);
+    await teamsPage.getByRole('button', { name: 'Excluir equipe Pós-venda' }).click();
+    await waitForMockState(page, current => !(current.teams || []).includes('Pós-venda'));
+
+    await teamsPage.getByLabel(`Nome da equipe ${used}`).fill('Time Renomeado');
+    await teamsPage.getByRole('button', { name: `Renomear equipe ${used}` }).click();
+    await waitForMockState(page, current => (current.teams || []).includes('Time Renomeado'));
+    const after = await stateFrom(page);
+    assert.equal(after.teams.includes(used), false);
+    assert.deepEqual(after.users.filter(user => user.team === 'Time Renomeado').map(user => user.id), members);
+    assert.deepEqual(['leads', 'deals'].flatMap(collection => after[collection].filter(record => record.team === 'Time Renomeado').map(record => record.id)), records);
+
+    await goTo(page, 'Usuários e permissões');
+    await page.getByRole('button', { name: 'Convidar funcionário' }).click();
+    const options = await page.locator('#userTeam option').allInnerTexts();
+    assert.equal(options[0], 'Selecione a equipe');
+    assert.equal(options.includes('Time Renomeado'), true);
+    assert.equal(options.includes(used), false);
+    await page.locator('#userDialog').getByRole('button', { name: 'Fechar', exact: true }).click();
+
+    const sellerView = await openFresh({ session: SELLER_SESSION, preloadState: minimalWorkspace() });
+    await sellerView.page.locator('#sidebar .nav button[data-view="dashboard"]').waitFor();
+    assert.equal(await sellerView.page.getByRole('button', { name: 'Equipes' }).count(), 0);
+    await sellerView.page.evaluate(() => showView('teams-admin'));
+    assert.equal(await sellerView.page.locator('#page-teams-admin').isVisible(), false);
+    await sellerView.context.close();
+  });
 
   await run('BRAND-01 mostra Smart Control e agrupa o menu por módulo', async page => {
     assert.equal(await page.title(), 'Smart Control');

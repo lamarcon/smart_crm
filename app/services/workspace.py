@@ -315,6 +315,8 @@ def merge_authorized_state(
     submitted_data = submitted.model_dump(by_alias=True, exclude_none=True)
     if principal.role == ADMIN_ROLE:
         merged_data = deepcopy(submitted_data)
+        if "teams" not in merged_data and "teams" in canonical_data:
+            merged_data["teams"] = deepcopy(canonical_data["teams"])
     else:
         projected_data = project_workspace_state(canonical, principal).model_dump(
             by_alias=True,

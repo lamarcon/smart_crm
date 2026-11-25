@@ -468,8 +468,14 @@ class CompanyDealSummaryResponse(PipelineContractModel):
     items: list[CompanyDealRow]
 
 
+MAX_TEAM_NAME_LENGTH = 255
+
+
 class WorkspaceState(ContractModel):
     current_user_id: str | None = Field(default=None, alias="currentUserId")
+    # Team names managed by the admin. None (older clients) keeps the stored list;
+    # teams still named by a user, Lead or Deal are kept even when left out.
+    teams: list[str] | None = None
     users: list[dict[str, Any]] = Field(default_factory=list)
     leads: list[dict[str, Any]] = Field(default_factory=list)
     contacts: list[dict[str, Any]] = Field(default_factory=list)
@@ -484,6 +490,24 @@ class WorkspaceState(ContractModel):
         default_factory=dict, alias="moduleFieldSettings"
     )
     ui: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("teams", mode="before")
+    @classmethod
+    def normalize_teams(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError("teams must be a list")
+        names: list[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                raise ValueError("team names must be text")
+            name = item.strip()
+            if not name or len(name) > MAX_TEAM_NAME_LENGTH:
+                raise ValueError("invalid team name")
+            if name not in names:
+                names.append(name)
+        return names
 
 
 class PersistedCounts(ContractModel):
