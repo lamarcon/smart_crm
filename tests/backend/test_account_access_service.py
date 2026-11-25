@@ -348,7 +348,7 @@ def test_invite_creates_one_pending_disabled_user_and_sends_after_commit(
         NOW + timedelta(hours=48),
     )
     assert tokens[0].token_digest != raw_token
-    assert mail.messages[0].subject == "BRBots convidou você para o Smart CRM"
+    assert mail.messages[0].subject == "BRBots convidou você para o Smart Control"
     assert mail.messages[0].action_link.startswith(
         "https://crm.example.test/brbots/accept-invite#token="
     )
@@ -696,7 +696,7 @@ def test_resent_invitation_email_carries_one_fresh_link_bound_to_the_live_token(
     second_token = second.action_link.split("#token=", 1)[1]
     tokens = _read_tokens(account_access_database_url, invited.user_id)
     live = [token for token in tokens if token.invalidated_at is None]
-    assert second.subject == "BRBots convidou você para o Smart CRM"
+    assert second.subject == "BRBots convidou você para o Smart Control"
     assert second.action_link.startswith(
         "https://crm.example.test/brbots/accept-invite#token="
     )

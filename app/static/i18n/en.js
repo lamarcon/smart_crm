@@ -23,6 +23,8 @@ window.SMART_CRM_I18N['en'] = {
   "Use de 8 a 128 caracteres.": "Use 8 to 128 characters.",
   "Confirmar senha": "Confirm password",
   "Salvar senha": "Save password",
+  "Gestão empresarial": "Business management",
+  "Administração": "Administration",
   "Operação comercial": "Sales operations",
   "Navegação principal": "Main navigation",
   "Visão geral": "Overview",

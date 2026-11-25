@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101828">
-  <title>Smart CRM</title>
+  <title>Smart Control</title>
   <style>
     :root {
       --navy-950: #0a1020;
@@ -79,6 +79,8 @@
     .brand-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; color: var(--navy-950); background: var(--lime-500); font-weight: 900; box-shadow: 0 0 0 5px rgba(163,230,53,.09); }
     .brand strong { display: block; color: white; font-size: 17px; letter-spacing: -.3px; }
     .brand small { color: #99a7be; font-size: 11px; }
+    .nav-module { padding-top: 14px; }
+    .nav-module:first-child { padding-top: 0; }
     .nav-label { padding: 0 12px 8px; color: #73839f; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
     .nav { display: grid; gap: 5px; }
     .nav button { width: 100%; border: 0; border-radius: 9px; padding: 11px 12px; display: flex; align-items: center; gap: 12px; color: #b7c2d4; background: transparent; text-align: left; transition: .18s ease; }
@@ -528,7 +530,7 @@
 <body>
   <section class="auth-screen" id="tenantLocator" hidden>
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart Control</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1>Acesse sua empresa</h1>
       <p>Informe o identificador ou a URL fornecida pela sua empresa.</p>
       <form class="auth-form" id="tenantLocatorForm">
@@ -541,7 +543,7 @@
 
   <section class="auth-screen" id="tenantLogin" hidden>
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart Control</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1>Entrar em <span id="tenantLoginName"></span></h1>
       <p>Use suas credenciais corporativas para continuar.</p>
       <form class="auth-form" id="tenantLoginForm">
@@ -557,7 +559,7 @@
 
   <section class="auth-screen" id="tenantForgot" hidden>
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart Control</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1>Recuperar senha</h1>
       <p>Informe o e-mail cadastrado em <span id="tenantForgotName"></span>. Se ele existir, enviaremos um link para criar uma nova senha.</p>
       <form class="auth-form" id="tenantForgotForm" novalidate>
@@ -572,7 +574,7 @@
 
   <section class="auth-screen" id="accountAction" hidden>
     <div class="auth-card" aria-busy="false" id="accountActionCard">
-      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart CRM</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
+      <div class="auth-brand"><div class="brand-mark">S</div><strong>Smart Control</strong><select class="locale-select" data-locale-select aria-label="Idioma" translate="no"><option value="pt-BR">Português (Brasil)</option><option value="pt-PT">Português (Portugal)</option><option value="en">English</option><option value="es">Español</option></select></div>
       <h1 id="accountActionTitle">Criar senha</h1>
       <p id="accountActionStatus" role="status" aria-live="polite"></p>
       <div id="accountActionInvalid" hidden>
@@ -594,10 +596,10 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <div class="brand-mark">S</div>
-        <div><strong>Smart CRM</strong><small>Operação comercial</small></div>
+        <div><strong>Smart Control</strong><small>Gestão empresarial</small></div>
       </div>
-      <div class="nav-label">Workspace</div>
       <nav class="nav" aria-label="Navegação principal">
+        <div class="nav-label nav-module" id="navModuleCrm">CRM</div>
         <button class="active" data-view="dashboard"><span class="nav-icon">⌂</span>Visão geral</button>
         <button data-view="leads"><span class="nav-icon">◎</span>Leads <span class="nav-count" id="leadNavCount">0</span></button>
         <button data-view="contacts"><span class="nav-icon">♙</span>Contatos</button>
@@ -606,6 +608,7 @@
         <button data-view="deals"><span class="nav-icon">◇</span>Negócios <span class="nav-count" id="dealNavCount">0</span></button>
         <div id="pipelineNav"></div>
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
+        <div class="nav-label nav-module" data-admin-nav hidden>Administração</div>
         <button data-view="pipeline-admin" data-admin-nav hidden><span class="nav-icon">⇄</span>Funil de negócios</button>
         <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
         <button data-view="permissions" data-admin-nav hidden><span class="nav-icon">⚿</span>Permissões</button>

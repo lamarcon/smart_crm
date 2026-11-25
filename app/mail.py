@@ -224,9 +224,9 @@ def render_invitation_email(
     inviter = _single_line(inviter_name)
     note = "\n".join(line.rstrip() for line in str(message or "").strip().splitlines())[:500] or None
     intro = (
-        translate("{inviter}, da {company}, convidou você para acessar o Smart CRM da empresa.", locale, inviter=inviter, company=company)
+        translate("{inviter}, da {company}, convidou você para acessar o Smart Control da empresa.", locale, inviter=inviter, company=company)
         if inviter
-        else translate("A {company} convidou você para acessar o Smart CRM da empresa.", locale, company=company)
+        else translate("A {company} convidou você para acessar o Smart Control da empresa.", locale, company=company)
     )
     details = [
         (translate("Empresa", locale), company),
@@ -236,8 +236,8 @@ def render_invitation_email(
         details.append((translate("Perfil", locale), translate(_single_line(role), locale)))
     details.append((translate("Seu login", locale), recipient))
     content = _EmailContent(
-        subject=translate("{company} convidou você para o Smart CRM", locale, company=company),
-        header_caption=translate("convite para o Smart CRM da empresa", locale),
+        subject=translate("{company} convidou você para o Smart Control", locale, company=company),
+        header_caption=translate("convite para o Smart Control da empresa", locale),
         greeting=_greeting(_single_line(recipient_name), locale),
         intro=intro,
         details=tuple(details),
@@ -247,7 +247,7 @@ def render_invitation_email(
         validity=translate("O link vale por 48 horas. Depois disso, peça um novo convite ao administrador.", locale),
         fallback=translate("Se o botão não funcionar, copie este endereço no navegador:", locale),
         footer=translate(
-            "Enviado pelo Smart CRM em nome da {company}. Se você não conhece a {company} ou não esperava este convite, ignore este e-mail.",
+            "Enviado pelo Smart Control em nome da {company}. Se você não conhece a {company} ou não esperava este convite, ignore este e-mail.",
             locale,
             company=company,
         ),
@@ -267,10 +267,10 @@ def render_password_reset_email(
     recipient = _validated_text(recipient, field_name="recipient")
     link = _validated_text(link, field_name="action_link")
     content = _EmailContent(
-        subject=translate("Redefina sua senha no Smart CRM da {company}", locale, company=company),
-        header_caption=translate("redefinição de senha do Smart CRM", locale),
+        subject=translate("Redefina sua senha no Smart Control da {company}", locale, company=company),
+        header_caption=translate("redefinição de senha do Smart Control", locale),
         greeting=_greeting(_single_line(recipient_name), locale),
-        intro=translate("Recebemos um pedido para redefinir a senha do seu acesso ao Smart CRM da {company}.", locale, company=company),
+        intro=translate("Recebemos um pedido para redefinir a senha do seu acesso ao Smart Control da {company}.", locale, company=company),
         details=(
             (translate("Empresa", locale), company),
             (translate("Endereço", locale), _access_url(link)),
@@ -282,7 +282,7 @@ def render_password_reset_email(
         validity=translate("O link vale por 48 horas e só pode ser usado uma vez.", locale),
         fallback=translate("Se o botão não funcionar, copie este endereço no navegador:", locale),
         footer=translate(
-            "Enviado pelo Smart CRM em nome da {company}. Se você não pediu a redefinição, ignore este e-mail: sua senha atual continua valendo.",
+            "Enviado pelo Smart Control em nome da {company}. Se você não pediu a redefinição, ignore este e-mail: sua senha atual continua valendo.",
             locale,
             company=company,
         ),
@@ -297,7 +297,7 @@ class SmtpMailSender:
     def _email_message(self, message: OutboundMessage) -> EmailMessage:
         email_message = EmailMessage()
         email_message["From"] = formataddr(
-            (f"{message.company} · Smart CRM", self._settings.from_address)
+            (f"{message.company} · Smart Control", self._settings.from_address)
         )
         email_message["To"] = message.recipient
         email_message["Subject"] = message.subject

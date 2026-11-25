@@ -30,13 +30,13 @@ RECIPIENT_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+\Z")
 
 def smoke_message(recipient: str) -> OutboundMessage:
     text = (
-        "Este e-mail confirma que o Smart CRM consegue enviar convites e links de "
+        "Este e-mail confirma que o Smart Control consegue enviar convites e links de "
         "recuperacao de senha por este servidor SMTP. Nenhuma acao e necessaria."
     )
     return OutboundMessage(
         company="Teste de SMTP",
         recipient=recipient,
-        subject="Smart CRM - teste de SMTP",
+        subject="Smart Control - teste de SMTP",
         text_body=text,
         html_body=f"<p>{text}</p>",
         action_link="",

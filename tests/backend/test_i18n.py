@@ -185,10 +185,10 @@ def test_portuguese_and_success_answers_are_untouched() -> None:
 @pytest.mark.parametrize(
     ("locale", "subject", "label"),
     [
-        ("pt-BR", "ACME convidou você para o Smart CRM", "Aceitar convite da ACME"),
-        ("en", "ACME invited you to Smart CRM", "Accept ACME&#x27;s invitation"),
-        ("es", "ACME te invitó a Smart CRM", "Aceptar la invitación de ACME"),
-        ("pt-PT", "A ACME enviou-lhe um convite para o Smart CRM", "A ligação é válida durante 48 horas."),
+        ("pt-BR", "ACME convidou você para o Smart Control", "Aceitar convite da ACME"),
+        ("en", "ACME invited you to Smart Control", "Accept ACME&#x27;s invitation"),
+        ("es", "ACME te invitó a Smart Control", "Aceptar la invitación de ACME"),
+        ("pt-PT", "A ACME enviou-lhe um convite para o Smart Control", "A ligação é válida durante 48 horas."),
     ],
 )
 def test_invitation_email_is_written_in_the_requested_language(locale, subject, label) -> None:  # noqa: ANN001
@@ -199,7 +199,7 @@ def test_invitation_email_is_written_in_the_requested_language(locale, subject, 
 
 def test_password_reset_email_is_written_in_the_requested_language() -> None:
     message = render_password_reset_email("ACME", "ana@example.test", "https://crm.test/acme/reset-password#token=x", "es")
-    assert message.subject == "Restablece tu contraseña en el Smart CRM de ACME"
+    assert message.subject == "Restablece tu contraseña en el Smart Control de ACME"
     assert "Crear nueva contraseña" in message.html_body
     assert "tu contraseña actual sigue siendo válida" in message.text_body
 
@@ -234,7 +234,7 @@ def test_user_language_is_saved_returned_by_the_session_and_used_for_invitations
         json={"name": "Ann", "email": email, "jobTitle": "Sales", "team": "Global", "role": "Vendedor", "locale": "en"},
     )
     assert created.status_code == 201, created.text
-    assert live_stack.mail.messages[-1].subject == "BRBots invited you to Smart CRM"
+    assert live_stack.mail.messages[-1].subject == "BRBots invited you to Smart Control"
     assert _stored_locale(live_stack.database_url, created.json()["user"]["id"]) == "en"
 
     default = live_stack.client.post(
@@ -243,7 +243,7 @@ def test_user_language_is_saved_returned_by_the_session_and_used_for_invitations
         json={"name": "Bia", "email": f"pt-{uuid.uuid4().hex[:8]}@example.test", "jobTitle": "Vendas", "team": "Global", "role": "Vendedor"},
     )
     assert default.status_code == 201, default.text
-    assert live_stack.mail.messages[-1].subject == "BRBots convidou você para o Smart CRM"
+    assert live_stack.mail.messages[-1].subject == "BRBots convidou você para o Smart Control"
 
 
 def _stored_locale(database_url: str, user_id: str) -> str:
@@ -268,7 +268,7 @@ def test_password_reset_uses_the_users_language(live_stack: LiveStack) -> None: 
     answer = live_stack.client.post("/api/auth/password/forgot", headers={"origin": ORIGIN}, json={"slug": "brbots", "email": admin_email})
     assert answer.status_code == 202
     assert len(live_stack.mail.messages) == before + 1
-    assert live_stack.mail.messages[-1].subject == "Reset your password for BRBots's Smart CRM"
+    assert live_stack.mail.messages[-1].subject == "Reset your password for BRBots's Smart Control"
 
 
 def test_errors_reach_the_client_in_its_language(live_stack: LiveStack) -> None:  # noqa: F811

@@ -5747,6 +5747,25 @@ async function storageEntries(page) {
     assert.equal(api.pipelineHistoryRequests.length, 0);
   }, { session: SELLER_SESSION, preloadState: minimalWorkspace(), pipelineHistory: pipelineAuditHistory(1) });
 
+  await run('BRAND-01 mostra Smart Control e agrupa o menu por módulo', async page => {
+    assert.equal(await page.title(), 'Smart Control');
+    const sidebar = page.locator('#sidebar');
+    assert.equal(await sidebar.locator('.brand strong').innerText(), 'Smart Control');
+    assert.equal(await sidebar.locator('.brand small').innerText(), 'Gestão empresarial');
+    assert.deepEqual(await sidebar.locator('.nav-module:visible').allInnerTexts(), ['CRM', 'ADMINISTRAÇÃO']);
+    const order = await page.evaluate(() => [...document.querySelectorAll('#sidebar .nav > *')]
+      .filter(node => !node.hidden && node.offsetParent !== null)
+      .map(node => node.classList.contains('nav-module') ? '#' + node.textContent.trim() : node.dataset.view));
+    assert.deepEqual(order.slice(0, 2), ['#CRM', 'dashboard']);
+    assert.equal(order.indexOf('notifications') < order.indexOf('#Administração'), true);
+    assert.equal(order.indexOf('#Administração') < order.indexOf('pipeline-admin'), true);
+
+    const sellerView = await openFresh({ session: SELLER_SESSION, preloadState: minimalWorkspace() });
+    await sellerView.page.locator('#sidebar .nav button[data-view="dashboard"]').waitFor();
+    assert.deepEqual(await sellerView.page.locator('#sidebar .nav-module:visible').allInnerTexts(), ['CRM']);
+    await sellerView.context.close();
+  });
+
   await run('PCCP-01 a PCCP-03 removem avisos de demonstração sem ocultar alertas operacionais', async page => {
     for (const destination of ['Visão geral', 'Leads', 'Contatos', 'Empresas', 'Negócios', 'Notificações']) {
       await goTo(page, destination);
@@ -5754,7 +5773,7 @@ async function storageEntries(page) {
       assert.equal(await page.getByText('Ambiente local', { exact: true }).count(), 0);
       assert.equal(await page.getByText(/demonstração|demonstrativos|dados fictícios|ambiente local/i).count(), 0);
     }
-    assert.equal(await page.title(), 'Smart CRM');
+    assert.equal(await page.title(), 'Smart Control');
 
     const unavailableView = await openFresh({ loadFailure: true });
     const unavailable = unavailableView.page;

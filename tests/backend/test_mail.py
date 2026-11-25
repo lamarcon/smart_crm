@@ -71,7 +71,7 @@ def smtp_settings(tls_mode: str = "starttls") -> SmtpSettings:
 @pytest.mark.parametrize(
     ("renderer", "subject_fragment", "path_fragment"),
     [
-        (render_invitation_email, "convidou você para o Smart CRM", "accept"),
+        (render_invitation_email, "convidou você para o Smart Control", "accept"),
         (render_password_reset_email, "Redefina sua senha", "reset"),
     ],
 )
@@ -93,7 +93,7 @@ def test_fixed_templates_include_identity_and_escape_html(
     assert message.html_body.count("&lt;") >= 2
     assert "<Comercial>" not in message.html_body
     assert 'next=<login>' not in message.html_body
-    assert "Smart CRM" in message.text_body
+    assert "Smart Control" in message.text_body
 
 
 def test_in_memory_sender_captures_messages_deterministically() -> None:
@@ -129,7 +129,7 @@ def test_smtp_sender_uses_starttls_before_authentication(monkeypatch) -> None:  
         "exit",
     ]
     assert client.message is not None
-    assert client.message["From"] == "BRBots · Smart CRM <smart-crm@example.com>"
+    assert client.message["From"] == "BRBots · Smart Control <smart-crm@example.com>"
     assert client.message["To"] == RECIPIENT
 
 
@@ -420,17 +420,17 @@ def test_invitation_names_the_company_people_role_and_optional_note() -> None:
         role="Vendedor",
         message="Bem-vinda!\n<b>Seus Leads</b> já estão no funil.",
     )
-    assert message.subject == "BRBots convidou você para o Smart CRM"
+    assert message.subject == "BRBots convidou você para o Smart Control"
     for text in (
         "Olá, Juliana!",
-        "Luiz Felipe, da BRBots, convidou você para acessar o Smart CRM da empresa.",
+        "Luiz Felipe, da BRBots, convidou você para acessar o Smart Control da empresa.",
         "Mensagem de Luiz Felipe:",
         "Empresa: BRBots",
         "Endereço: https://sc2030.brbots.com/brbots",
         "Perfil: Vendedor",
         "Seu login: juliana@brbots.com",
         "O link vale por 48 horas.",
-        "Enviado pelo Smart CRM em nome da BRBots.",
+        "Enviado pelo Smart Control em nome da BRBots.",
     ):
         assert text in message.text_body, text
     assert "Aceitar convite da BRBots" in message.html_body
