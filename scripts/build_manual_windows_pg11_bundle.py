@@ -42,6 +42,7 @@ REQUIRED_DEPLOYMENT_FILES = (
     Path("migrations/versions/c4e8a2f6b9d1_add_role_permissions.py"),
     Path("migrations/versions/e1a7c3f9b2d4_deal_items_and_price_permission.py"),
     Path("migrations/versions/f5b2d8e4a6c3_multiple_deal_pipelines.py"),
+    Path("migrations/versions/b8d2f4a6c9e1_pipeline_menu_tabs_and_scoped_fields.py"),
 )
 IGNORED_PARTS = {"__pycache__", ".pytest_cache"}
 SAFE_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")

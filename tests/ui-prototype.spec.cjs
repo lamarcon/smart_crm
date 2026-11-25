@@ -208,6 +208,8 @@ async function openFresh(options = {}) {
       target.archived = true;
     }
     if (body.name) target.name = body.name;
+    if (body.menuIcon) target.menuIcon = body.menuIcon;
+    if (body.menuTab !== undefined) target.menuTab = body.menuTab;
     if (body.isDefault) { api.pipeline.isDefault = false; api.extraPipelines.forEach(item => { item.isDefault = false; }); target.isDefault = true; }
     target.pipelineVersion += 1;
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(target) });
@@ -1729,7 +1731,7 @@ async function storageEntries(page) {
     assert.equal(normalized.leads[0].name, 'Lead legado preservado');
     assert.deepEqual(normalized.ui.viewModesByUser['u-admin'], { leads: 'list', deals: 'list' });
     assert.equal(normalized.ui.dashboardScopeByUser['u-admin'], 'all');
-    assert.deepEqual(Object.keys(normalized.customFieldSchemas), ['leads', 'contacts', 'companies', 'deals']);
+    assert.deepEqual(Object.keys(normalized.customFieldSchemas), ['leads', 'contacts', 'companies', 'deals', 'products']);
     assert.deepEqual(normalized.moduleFieldSettings.deals.hiddenStandardFields, []);
     assert.deepEqual(normalized.moduleFieldSettings.deals.hiddenCustomFieldKeys, []);
     assert.equal(normalized.users.every(user => user.email && user.jobTitle && user.status === 'Ativo'), true);
@@ -1788,9 +1790,10 @@ async function storageEntries(page) {
       ['Visão geral', 'Visão geral'], ['Leads', 'Leads'], ['Contatos', 'Contatos'],
       ['Empresas', 'Empresas'], ['Produtos', 'Produtos'], ['Negócios', 'Negócios'], ['Notificações', 'Notificações'],
       ['Funil de negócios', 'Funil de negócios'],
-      ['Usuários e permissões', 'Usuários e permissões'], ['Permissões', 'Permissões']
+      ['Usuários e permissões', 'Usuários e permissões'], ['Permissões', 'Permissões'],
+      ['Campos personalizados', 'Campos personalizados']
     ];
-    assert.equal(await page.locator('.nav button:visible').count(), 10);
+    assert.equal(await page.locator('.nav button:visible').count(), 11);
     for (const [button, heading] of destinations) {
       await goTo(page, button);
       assert.equal(await page.locator('#topTitle').innerText(), heading);
@@ -3948,6 +3951,136 @@ async function storageEntries(page) {
     return workspace;
   })() });
 
+  await run('PIPE-TAB-01 funil vira aba própria no menu com ícone e os demais ficam dentro de Negócios', async page => {
+    const api = apiByPage.get(page);
+    const nav = page.locator('.nav');
+    const navTexts = async () => (await page.locator('#pipelineNav button').allTextContents()).map(text => text.trim());
+    await goTo(page, 'Negócios');
+    // Several pipelines inside "Negócios" become sub-items.
+    assert.deepEqual(await navTexts(), ['›Vendas CMS', '›Pós-venda', '›Implantação']);
+
+    await goTo(page, 'Funil de negócios');
+    const manager = page.locator('.pipeline-manager');
+    assert.equal(await manager.getByText('O funil principal fica sempre em Negócios.').count(), 1);
+    assert.equal(await manager.locator('[data-pipeline-menu-tab]').count(), 0);
+    await manager.locator('#pipelineManagerSelect').selectOption({ label: 'Pós-venda' });
+    await manager.getByLabel('Mostrar como aba no menu').check();
+    await page.locator('#toastRegion').getByText('Funil exibido como aba no menu.').waitFor();
+    assert.deepEqual(api.pipelineRequests.at(-1), { method: 'PATCH', path: '/api/deal-pipelines/20000000-0000-4000-8000-000000000002', body: { pipelineVersion: 1, menuTab: true, menuIcon: '◇' } });
+    await page.locator('.pipeline-manager').getByLabel('Ícone').selectOption('★');
+    await page.locator('#toastRegion').getByText('Ícone do funil atualizado.').waitFor();
+    assert.deepEqual(api.pipelineRequests.at(-1).body, { pipelineVersion: 2, menuIcon: '★' });
+    assert.deepEqual(await navTexts(), ['›Vendas CMS', '›Implantação', '★Pós-venda']);
+    assert.equal(await page.locator('#pipelineNav button:not(.nav-sub)').count(), 1);
+
+    // The tab opens the pipeline with its own title and no picker.
+    await nav.getByRole('button', { name: 'Pós-venda' }).click();
+    assert.equal(await page.locator('#topTitle').innerText(), 'Pós-venda');
+    const deals = page.locator('#page-deals');
+    await deals.getByText('Suporte anual Arkos').waitFor();
+    assert.equal(await deals.locator('[data-pipeline-select]').count(), 0);
+    assert.equal(await nav.getByRole('button', { name: 'Pós-venda' }).getAttribute('class'), 'active');
+    assert.equal(await nav.locator('[data-view="deals"]:not([data-pipeline-nav])').getAttribute('class'), '');
+
+    // "Negócios" goes back to the pipelines inside it; the tab is not in its picker.
+    await nav.locator('[data-view="deals"]:not([data-pipeline-nav])').click();
+    assert.equal(await page.locator('#topTitle').innerText(), 'Negócios');
+    assert.deepEqual(await deals.locator('[data-pipeline-select] option').allTextContents(), ['Vendas CMS ★', 'Implantação']);
+    await deals.getByText('Implantação Arkos Estética').waitFor();
+    await nav.getByRole('button', { name: 'Implantação' }).click();
+    assert.equal(await deals.locator('[data-pipeline-select]').inputValue(), '20000000-0000-4000-8000-000000000003');
+
+    // Back inside "Negócios".
+    await goTo(page, 'Funil de negócios');
+    await page.locator('.pipeline-manager #pipelineManagerSelect').selectOption({ label: 'Pós-venda' });
+    await page.locator('.pipeline-manager').getByLabel('Mostrar como aba no menu').uncheck();
+    await page.locator('#toastRegion').getByText('Funil voltou para dentro de Negócios.').waitFor();
+    assert.deepEqual(await navTexts(), ['›Vendas CMS', '›Pós-venda', '›Implantação']);
+  }, { extraPipelines: [afterSalesPipeline(), basicPipeline('20000000-0000-4000-8000-000000000003', 'Implantação', ['40000003-0000-4000-8000-000000000001', '40000003-0000-4000-8000-000000000002', '40000003-0000-4000-8000-000000000003'])], preloadState: (() => {
+    const workspace = workspaceWithDeal();
+    workspace.deals[0].title = 'Implantação Arkos Estética';
+    workspace.deals.push({ id: 'N-PV1', title: 'Suporte anual Arkos', company: 'Arkos', contact: '', amount: 900, additionalAmount: 900, additionalReason: '', pipelineId: '20000000-0000-4000-8000-000000000002', stageId: AFTER_SALES_STAGE_IDS[0], stage: 'Em andamento', responsibleId: 'u-admin', assistants: [], updatedAt: '1 out, 10:00', quotes: [], stageHistory: [] });
+    return workspace;
+  })() });
+
+  await run('PIPE-TAB-02 com um funil só o menu não ganha subitens', async page => {
+    await goTo(page, 'Negócios');
+    assert.equal(await page.locator('#pipelineNav button').count(), 0);
+    await goTo(page, 'Funil de negócios');
+    assert.equal(await page.locator('[data-pipeline-menu-tab]').count(), 0);
+  });
+
+  await run('FIELDS-02 campos personalizados por aba: módulos, funil e Produtos', async page => {
+    const fields = page.locator('#page-fields-admin');
+    await goTo(page, 'Campos personalizados');
+    assert.deepEqual((await fields.getByRole('tab').allTextContents()).map(text => text.trim()), ['Leads', 'Contatos', 'Empresas', 'Negócios', 'Produtos', 'Vendas CMS', 'Pós-venda']);
+    assert.equal(await fields.getByRole('tab', { name: 'Leads' }).getAttribute('aria-selected'), 'true');
+
+    // A field of the Pós-venda pipeline only.
+    await fields.getByRole('tab', { name: 'Funil Pós-venda' }).click();
+    assert.equal(await page.locator('#fieldManagerStandardSection').isVisible(), false);
+    assert.match(await page.locator('#fieldManagerScopeHint').innerText(), /só dos Negócios do funil Pós-venda/);
+    await fields.getByLabel('Nome do campo').fill('Data de instalação');
+    await fields.getByLabel('Tipo do campo').selectOption('date');
+    await fields.getByRole('button', { name: 'Criar campo' }).click();
+    let state = await stateFrom(page);
+    const install = state.customFieldSchemas.deals.find(field => field.label === 'Data de instalação');
+    assert.equal(install.pipelineId, '20000000-0000-4000-8000-000000000002');
+    assert.equal(await fields.getByLabel('Data de instalação').isChecked(), true);
+
+    // The same name can exist in another pipeline; the Negócios tab lists only fields of every pipeline.
+    await fields.getByRole('tab', { name: 'Negócios' }).click();
+    assert.equal(await page.locator('#fieldManagerStandardSection').isVisible(), true);
+    assert.equal(await fields.getByText('Nenhum campo personalizado criado.').count(), 1);
+
+    const drawer = page.locator('#entityDrawer');
+    await page.evaluate(() => openEntityDrawer('deal', 'N-PV1'));
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Data de instalação').count(), 1);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+    const salesDeal = state.deals.find(deal => deal.id !== 'N-PV1');
+    await page.evaluate(id => openEntityDrawer('deal', id), salesDeal.id);
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    assert.equal(await drawer.getByLabel('Data de instalação').count(), 0);
+    assert.equal(await drawer.locator(`#drawerAddCustomField option[value="${install.key}"]`).count(), 0);
+    await drawer.getByRole('button', { name: 'Fechar painel' }).click();
+
+    // Hiding a pipeline field keeps the other tabs' choices.
+    await goTo(page, 'Campos personalizados');
+    await fields.getByRole('tab', { name: 'Funil Pós-venda' }).click();
+    await fields.getByLabel('Data de instalação').uncheck();
+    await fields.getByRole('button', { name: 'Salvar visualização' }).click();
+    state = await stateFrom(page);
+    assert.deepEqual(state.moduleFieldSettings.deals.hiddenCustomFieldKeys, [install.key]);
+    assert.deepEqual(state.moduleFieldSettings.deals.hiddenStandardFields, []);
+
+    // Products get custom fields too.
+    await fields.getByRole('tab', { name: 'Produtos' }).click();
+    assert.equal(await fields.getByLabel('Nome do produto').count(), 1);
+    await fields.getByLabel('Nome do campo').fill('Garantia');
+    await fields.getByRole('button', { name: 'Criar campo' }).click();
+    state = await stateFrom(page);
+    const warranty = state.customFieldSchemas.products.find(field => field.label === 'Garantia');
+    assert.ok(warranty);
+    assert.equal(state.products.every(product => product.customFields.some(field => field.key === warranty.key)), true);
+    await page.evaluate(() => openEntityDrawer('product', 'P-1'));
+    await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
+    await drawer.getByLabel('Garantia').fill('24 meses');
+    await drawer.getByRole('button', { name: 'Salvar registro' }).click();
+    state = await stateFrom(page);
+    assert.equal(state.products[0].customFields.find(field => field.key === warranty.key).value, '24 meses');
+
+    // The products page has the shortcut to its tab.
+    await goTo(page, 'Produtos');
+    await page.locator('#page-products').getByRole('button', { name: 'Gerenciar campos' }).click();
+    assert.equal(await fields.getByRole('tab', { name: 'Produtos' }).getAttribute('aria-selected'), 'true');
+  }, { extraPipelines: [afterSalesPipeline()], preloadState: (() => {
+    const workspace = workspaceWithDeal();
+    workspace.deals.push({ id: 'N-PV1', title: 'Suporte anual Arkos', company: 'Arkos', contact: '', amount: 900, additionalAmount: 900, additionalReason: '', pipelineId: '20000000-0000-4000-8000-000000000002', stageId: AFTER_SALES_STAGE_IDS[0], stage: 'Em andamento', responsibleId: 'u-admin', assistants: [], updatedAt: '1 out, 10:00', quotes: [], stageHistory: [] });
+    workspace.products = [{ id: 'P-1', name: 'Licença Anual', sku: 'LIC-01', category: 'Software', unit: 'un', price: 1200, currency: 'BRL', active: true, description: '', metadata: [] }];
+    return workspace;
+  })() });
+
   await run('PIPE-MULTI-02 Administrador cria, renomeia, torna principal e arquiva funis', async page => {
     const api = apiByPage.get(page);
     await goTo(page, 'Funil de negócios');
@@ -4515,8 +4648,10 @@ async function storageEntries(page) {
     }
     const manage = page.getByRole('button', { name: 'Gerenciar campos' });
     await manage.click();
-    const dialog = page.locator('#fieldManagerDialog');
+    // "Gerenciar campos" opens the custom fields page on the module's tab.
+    const dialog = page.locator('#page-fields-admin');
     await dialog.waitFor({ state: 'visible' });
+    assert.equal(await dialog.getByRole('tab', { name: 'Negócios' }).getAttribute('aria-selected'), 'true');
     assert.equal(await dialog.getByText('Nenhum campo personalizado criado.').count(), 1);
     assert.deepEqual(await dialog.locator('[data-standard-field]').evaluateAll(inputs => inputs.map(input => [input.closest('label').textContent.trim(), input.checked])), [
       ['Título do Negócio', true], ['Empresa', true], ['Contato', true], ['Valor adicional', true], ['Motivo do valor adicional', true], ['Moeda', true], ['Funil', true],
@@ -4532,6 +4667,7 @@ async function storageEntries(page) {
     const firstDeal = before.deals[0];
     await dialog.getByLabel('Contato').uncheck();
     await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
+    await goTo(page, 'Negócios');
     const drawer = page.locator('#entityDrawer');
     assert.deepEqual((await stateFrom(page)).deals.map(deal => [deal.id, deal.contact]), before.deals.map(deal => [deal.id, deal.contact]));
     for (const deal of before.deals) {
@@ -4544,6 +4680,7 @@ async function storageEntries(page) {
     await manage.click();
     await dialog.getByLabel('Contato').check();
     await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
+    await goTo(page, 'Negócios');
     await page.getByRole('button', { name: firstDeal.title }).click();
     assert.equal(await drawer.getByLabel('Contato', { exact: true }).inputValue(), firstDeal.contact);
     await drawer.getByRole('button', { name: 'Fechar painel' }).click();
@@ -4578,7 +4715,7 @@ async function storageEntries(page) {
     await dialog.getByLabel('Opções').fill('   ');
     await dialog.getByRole('button', { name: 'Criar campo' }).click();
     assert.equal(await dialog.locator('#fieldManagerError').innerText(), 'Informe ao menos uma opção.');
-    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await goTo(page, 'Negócios');
 
     await page.getByRole('button', { name: 'Novo Negócio' }).click();
     const newDialog = page.locator('#entityDialog');
@@ -4596,7 +4733,7 @@ async function storageEntries(page) {
     await goTo(page, 'Negócios');
     assert.equal(await page.getByRole('button', { name: 'Gerenciar campos' }).count(), 0);
     assert.equal(await page.evaluate(() => openFieldManager('deals')), false);
-    assert.equal(await page.locator('#fieldManagerDialog').getAttribute('open'), null);
+    assert.equal(await page.locator('#page-fields-admin').isVisible(), false);
     assert.equal(JSON.stringify((await stateFrom(page)).moduleFieldSettings.deals), settingsBeforeDeniedAction);
   });
 
@@ -4618,7 +4755,7 @@ async function storageEntries(page) {
     await goTo(page, 'Negócios');
     const manage = page.getByRole('button', { name: 'Gerenciar campos' });
     await manage.click();
-    const dialog = page.locator('#fieldManagerDialog');
+    const dialog = page.locator('#page-fields-admin');
     const globalToggle = dialog.getByLabel('Campo geral teste');
     assert.equal(await globalToggle.isChecked(), true);
     await globalToggle.uncheck();
@@ -4629,9 +4766,10 @@ async function storageEntries(page) {
     assert.deepEqual(saved.deals.map(deal => deal.customFields[0].value), valuesBefore);
     assert.deepEqual(saved.deals.map(deal => deal.visibleCustomFieldKeys), individualVisibilityBefore);
 
+    await goTo(page, 'Negócios');
     await manage.click();
     assert.equal(await dialog.getByLabel('Campo geral teste').isChecked(), false);
-    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await goTo(page, 'Negócios');
 
     const drawer = page.locator('#entityDrawer');
     for (const deal of saved.deals.slice(0, 2)) {
@@ -4651,6 +4789,7 @@ async function storageEntries(page) {
     await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
     saved = await stateFrom(page);
     assert.deepEqual(saved.moduleFieldSettings.deals.hiddenCustomFieldKeys, []);
+    await goTo(page, 'Negócios');
 
     await page.getByRole('button', { name: saved.deals[0].title }).click();
     await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
@@ -4710,11 +4849,12 @@ async function storageEntries(page) {
     await drawer.getByRole('button', { name: 'Fechar painel' }).click();
 
     await page.getByRole('button', { name: 'Gerenciar campos' }).click();
-    const dialog = page.locator('#fieldManagerDialog');
+    const dialog = page.locator('#page-fields-admin');
     assert.equal(await dialog.getByLabel('Campo global pelo x').isChecked(), false);
     await dialog.getByLabel('Campo global pelo x').check();
     await dialog.getByRole('button', { name: 'Salvar visualização' }).click();
     assert.deepEqual((await stateFrom(page)).moduleFieldSettings.deals.hiddenCustomFieldKeys, []);
+    await goTo(page, 'Negócios');
     await page.getByRole('button', { name: firstDeal.title }).click();
     await drawer.getByRole('tab', { name: 'Campos adicionais' }).click();
     assert.equal(await drawer.getByLabel('Campo global pelo x').inputValue(), valuesBefore[0]);

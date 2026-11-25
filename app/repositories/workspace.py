@@ -36,7 +36,7 @@ from app.models import (
     UserDashboardPreference,
     UserModulePreference,
 )
-from app.schemas import MODULES, WorkspaceState
+from app.schemas import CUSTOM_FIELD_MODULES, MODULES, WorkspaceReferenceError, WorkspaceState
 
 
 ENTITY_MODELS = {
@@ -216,8 +216,8 @@ class WorkspaceRepository:
             "deals": self._read_payloads(Deal),
             "products": self._read_payloads(Product),
             "notifications": self._read_payloads(Notification),
-            "customFieldSchemas": {module: [] for module in MODULES},
-            "moduleFieldSettings": {module: {"hiddenStandardFields": [], "hiddenCustomFieldKeys": []} for module in MODULES},
+            "customFieldSchemas": {module: [] for module in CUSTOM_FIELD_MODULES},
+            "moduleFieldSettings": {module: {"hiddenStandardFields": [], "hiddenCustomFieldKeys": []} for module in CUSTOM_FIELD_MODULES},
             "ui": {"savedFilters": [], "viewModesByUser": {}, "dashboardScopeByUser": {}},
         }
         definitions = self.session.scalars(
@@ -247,6 +247,8 @@ class WorkspaceRepository:
                 item["userCreated"] = True
             if definition.redact_in_history:
                 item["redactInHistory"] = True
+            if definition.pipeline_id is not None:
+                item["pipelineId"] = str(definition.pipeline_id)
             state["customFieldSchemas"].setdefault(definition.module, []).append(item)
 
         settings = self.session.scalars(
@@ -789,14 +791,20 @@ class WorkspaceRepository:
     def _reconcile_definitions(self, schemas: dict[str, list[dict[str, Any]]]) -> dict[tuple[str, str], CustomFieldDefinition]:
         result: dict[tuple[str, str], CustomFieldDefinition] = {}
         active = self.session.scalars(select(CustomFieldDefinition).where(CustomFieldDefinition.workspace_id == self.workspace_id, CustomFieldDefinition.deleted_at.is_(None))).all()
-        present = {(module, item["key"]) for module in MODULES for item in (schemas.get(module) or [])}
+        present = {(module, item["key"]) for module in CUSTOM_FIELD_MODULES for item in (schemas.get(module) or [])}
         for row in active:
             if (row.module, row.key) not in present:
                 row.deleted_at = _now()
-        for module in MODULES:
+        pipeline_ids = set(
+            self.session.scalars(select(DealPipeline.id).where(DealPipeline.workspace_id == self.workspace_id)).all()
+        )
+        for module in CUSTOM_FIELD_MODULES:
             for position, item in enumerate(schemas.get(module) or []):
+                pipeline_id = UUID(str(item["pipelineId"])) if item.get("pipelineId") is not None else None
+                if pipeline_id is not None and (module != "deals" or pipeline_id not in pipeline_ids):
+                    raise WorkspaceReferenceError(f"customFieldSchemas.{module}[{position}].pipelineId", "Funil não encontrado")
                 row = self.session.scalar(select(CustomFieldDefinition).where(CustomFieldDefinition.workspace_id == self.workspace_id, CustomFieldDefinition.module == module, CustomFieldDefinition.key == item["key"]))
-                values = dict(label=item.get("label", item["key"]), field_type=item.get("type", "text"), options=item.get("options") or [], source=item.get("source", "custom"), source_name=item.get("sourceName"), source_occurrence=item.get("sourceOccurrence"), position=item.get("position", position), user_created=bool(item.get("userCreated", False)), redact_in_history=bool(item.get("redactInHistory", False)), deleted_at=None)
+                values = dict(label=item.get("label", item["key"]), field_type=item.get("type", "text"), options=item.get("options") or [], source=item.get("source", "custom"), source_name=item.get("sourceName"), source_occurrence=item.get("sourceOccurrence"), position=item.get("position", position), user_created=bool(item.get("userCreated", False)), redact_in_history=bool(item.get("redactInHistory", False)), pipeline_id=pipeline_id, deleted_at=None)
                 if row is None:
                     row = CustomFieldDefinition(workspace_id=self.workspace_id, module=module, key=item["key"], **values)
                     self.session.add(row)
@@ -807,8 +815,8 @@ class WorkspaceRepository:
         return result
 
     def _reconcile_record_fields(self, data: dict[str, Any], definitions: dict[tuple[str, str], CustomFieldDefinition]) -> None:
-        for module in MODULES:
-            for record in data[module]:
+        for module in CUSTOM_FIELD_MODULES:
+            for record in data.get(module) or []:
                 filters = (CustomFieldValue.workspace_id == self.workspace_id, CustomFieldValue.module == module, CustomFieldValue.record_id == record["id"])
                 self.session.execute(delete(CustomFieldValue).where(*filters))
                 self.session.execute(delete(RecordVisibleCustomField).where(RecordVisibleCustomField.workspace_id == self.workspace_id, RecordVisibleCustomField.module == module, RecordVisibleCustomField.record_id == record["id"]))
@@ -823,7 +831,7 @@ class WorkspaceRepository:
 
     def _reconcile_module_settings(self, settings: dict[str, dict[str, Any]]) -> None:
         self.session.execute(delete(ModuleFieldSetting).where(ModuleFieldSetting.workspace_id == self.workspace_id))
-        for module in MODULES:
+        for module in CUSTOM_FIELD_MODULES:
             item = settings.get(module) or {}
             self.session.add(ModuleFieldSetting(workspace_id=self.workspace_id, module=module, hidden_standard_fields=item.get("hiddenStandardFields") or [], hidden_custom_field_keys=item.get("hiddenCustomFieldKeys") or []))
 

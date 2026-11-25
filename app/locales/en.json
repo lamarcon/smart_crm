@@ -166,5 +166,7 @@
   "Mova os {n} Negócios deste funil antes de arquivá-lo.": "Move the {n} Deals of this pipeline before archiving it.",
   "Restaure o funil antes de torná-lo principal.": "Restore the pipeline before making it the main one.",
   "Funil não encontrado.": "Pipeline not found.",
-  "Funil": "Pipeline"
+  "Funil": "Pipeline",
+  "O funil principal fica sempre em Negócios.": "The main pipeline always stays under Deals.",
+  "Escolha um dos ícones disponíveis.": "Choose one of the available icons."
 }

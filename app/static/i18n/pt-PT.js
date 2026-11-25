@@ -198,5 +198,10 @@ window.SMART_CRM_I18N['pt-PT'] = {
   "Item {p0} excluído.": "Item {p0} eliminado.",
   "{p14} registro(s) visível(is)": "{p14} registo(s) visível(eis)",
   "Salvar": "Guardar",
-  "Salvar filtro": "Guardar filtro"
+  "Salvar filtro": "Guardar filtro",
+  "{p7} registro(s) visível(is)": "{p7} registo(s) visível(eis)",
+  "Mostrar como aba no menu": "Mostrar como separador no menu",
+  "Campos só dos Negócios do funil {p0}. Os campos padrão e os de todos os funis ficam na aba Negócios.": "Campos só dos Negócios do funil {p0}. Os campos padrão e os de todos os funis ficam no separador Negócios.",
+  "Campos desta aba aparecem nos Negócios de todos os funis.": "Os campos deste separador aparecem nos Negócios de todos os funis.",
+  "Funil exibido como aba no menu.": "Funil apresentado como separador no menu."
 };

@@ -88,6 +88,11 @@ def persist(repository: WorkspaceRepository, state: dict) -> None:
 
 def without_pipeline_metadata(state: dict) -> dict:
     comparable = deepcopy(state)
+    # Products joined the modules with custom fields; an empty products entry is the default.
+    if (comparable.get("customFieldSchemas") or {}).get("products") == []:
+        comparable["customFieldSchemas"].pop("products")
+    if (comparable.get("moduleFieldSettings") or {}).get("products") == {"hiddenStandardFields": [], "hiddenCustomFieldKeys": []}:
+        comparable["moduleFieldSettings"].pop("products")
     for deal in comparable.get("deals", []):
         deal.pop("pipelineId", None)
         if deal.get("currency") == "BRL":
@@ -289,7 +294,7 @@ def test_hidden_fields_and_preferences_round_trip(repository) -> None:
     original = sample_state()
     persist(repo, original)
     loaded = repo.read_active().model_dump(by_alias=True, exclude_none=True)
-    assert loaded["moduleFieldSettings"] == original["moduleFieldSettings"]
+    assert without_pipeline_metadata(loaded)["moduleFieldSettings"] == original["moduleFieldSettings"]
     assert loaded["ui"] == original["ui"]
 
 

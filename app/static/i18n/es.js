@@ -814,5 +814,17 @@ window.SMART_CRM_I18N['es'] = {
   "Salvar filtro": "Guardar filtro",
   "Nome do filtro": "Nombre del filtro",
   "Descartar Lead": "Descartar Lead",
-  "Motivo do descarte": "Motivo del descarte"
+  "Motivo do descarte": "Motivo del descarte",
+  "Escolha o módulo ou o funil e configure os campos dele.": "Elige el módulo o el embudo y configura sus campos.",
+  "Módulos": "Módulos",
+  "Campos de cada módulo e de cada funil": "Campos de cada módulo y de cada embudo",
+  "{p7} registro(s) visível(is)": "{p7} registro(s) visible(s)",
+  "O funil principal fica sempre em Negócios.": "El embudo principal siempre queda en Negocios.",
+  "Mostrar como aba no menu": "Mostrar como pestaña en el menú",
+  "Ícone": "Icono",
+  "Campos só dos Negócios do funil {p0}. Os campos padrão e os de todos os funis ficam na aba Negócios.": "Campos solo de los negocios del embudo {p0}. Los campos estándar y los de todos los embudos están en la pestaña Negocios.",
+  "Campos desta aba aparecem nos Negócios de todos os funis.": "Los campos de esta pestaña aparecen en los negocios de todos los embudos.",
+  "Funil exibido como aba no menu.": "Embudo mostrado como pestaña en el menú.",
+  "Funil voltou para dentro de Negócios.": "El embudo volvió a Negocios.",
+  "Ícone do funil atualizado.": "Icono del embudo actualizado."
 };

@@ -88,6 +88,7 @@ class DealPipeline(Base, TimestampMixin):
             postgresql_where=text("is_default"),
         ),
         CheckConstraint("NOT (is_default AND archived_at IS NOT NULL)", name="default_not_archived"),
+        CheckConstraint("NOT (is_default AND menu_tab)", name="default_not_menu_tab"),
     )
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True)
@@ -101,6 +102,9 @@ class DealPipeline(Base, TimestampMixin):
     # Order of the pipelines on screen; archived pipelines keep their deals' history.
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Shown as its own tab in the side menu instead of under "Negócios".
+    menu_tab: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    menu_icon: Mapped[str | None] = mapped_column(String(8))
 
 
 class DealPipelineStage(Base, TimestampMixin):
@@ -604,6 +608,13 @@ class CustomFieldDefinition(Base, TimestampMixin, SoftDeleteMixin):
         UniqueConstraint("workspace_id", "module", "key"),
         UniqueConstraint("workspace_id", "module", "source_name", "source_occurrence"),
         Index("ix_custom_definitions_module_active", "workspace_id", "module", "deleted_at"),
+        ForeignKeyConstraint(
+            ["workspace_id", "pipeline_id"],
+            ["deal_pipelines.workspace_id", "deal_pipelines.id"],
+            name="fk_custom_field_definitions_pipeline",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("pipeline_id IS NULL OR module = 'deals'", name="pipeline_only_deals"),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="RESTRICT"), nullable=False)
@@ -620,6 +631,8 @@ class CustomFieldDefinition(Base, TimestampMixin, SoftDeleteMixin):
     redact_in_history: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # A deal field of one pipeline only shows on that pipeline's deals.
+    pipeline_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
 
 
 class CustomFieldValue(Base):

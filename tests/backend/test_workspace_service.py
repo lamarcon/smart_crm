@@ -102,6 +102,11 @@ def state() -> WorkspaceState:
 
 def without_pipeline_metadata(state_value: dict) -> dict:
     comparable = deepcopy(state_value)
+    # Products joined the modules with custom fields; an empty products entry is the default.
+    if (comparable.get("customFieldSchemas") or {}).get("products") == []:
+        comparable["customFieldSchemas"].pop("products")
+    if (comparable.get("moduleFieldSettings") or {}).get("products") == {"hiddenStandardFields": [], "hiddenCustomFieldKeys": []}:
+        comparable["moduleFieldSettings"].pop("products")
     for deal in comparable.get("deals", []):
         deal.pop("pipelineId", None)
         if deal.get("currency") == "BRL":

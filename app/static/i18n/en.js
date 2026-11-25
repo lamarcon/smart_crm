@@ -814,5 +814,17 @@ window.SMART_CRM_I18N['en'] = {
   "Salvar filtro": "Save filter",
   "Nome do filtro": "Filter name",
   "Descartar Lead": "Discard Lead",
-  "Motivo do descarte": "Reason for discarding"
+  "Motivo do descarte": "Reason for discarding",
+  "Escolha o módulo ou o funil e configure os campos dele.": "Choose the module or pipeline and set up its fields.",
+  "Módulos": "Modules",
+  "Campos de cada módulo e de cada funil": "Fields of each module and pipeline",
+  "{p7} registro(s) visível(is)": "{p7} visible record(s)",
+  "O funil principal fica sempre em Negócios.": "The main pipeline always stays under Deals.",
+  "Mostrar como aba no menu": "Show as a menu tab",
+  "Ícone": "Icon",
+  "Campos só dos Negócios do funil {p0}. Os campos padrão e os de todos os funis ficam na aba Negócios.": "Fields only for the deals of the {p0} pipeline. Standard fields and fields of every pipeline are in the Deals tab.",
+  "Campos desta aba aparecem nos Negócios de todos os funis.": "Fields in this tab show on the deals of every pipeline.",
+  "Funil exibido como aba no menu.": "Pipeline shown as a menu tab.",
+  "Funil voltou para dentro de Negócios.": "Pipeline moved back under Deals.",
+  "Ícone do funil atualizado.": "Pipeline icon updated."
 };

@@ -14,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_valid
 from app.security.passwords import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
 
 MODULES = ("leads", "contacts", "companies", "deals")
+# Modules whose records carry custom fields (products have no links of their own).
+CUSTOM_FIELD_MODULES = (*MODULES, "products")
 EXPECTED_PUBLIC_HOST = "sc2030.brbots.com"
 RESERVED_TENANT_SLUGS = frozenset({"api", "docs", "redoc", "static", "health", "openapi.json"})
 TENANT_SLUG_PATTERN = re.compile(r"[a-z0-9-]{1,63}\Z")
@@ -331,6 +333,8 @@ class DealPipelineResponse(PipelineContractModel):
     is_default: bool = Field(default=True, alias="isDefault")
     position: int = 0
     archived: bool = False
+    menu_tab: bool = Field(default=False, alias="menuTab")
+    menu_icon: str | None = Field(default=None, alias="menuIcon")
     pipeline_version: int = Field(alias="pipelineVersion", ge=1)
     workspace_version: int = Field(alias="workspaceVersion", ge=0)
     default_stage_id: UUID = Field(alias="defaultStageId")
@@ -347,6 +351,8 @@ class DealPipelineChangeRequest(PipelineContractModel):
     name: str | None = Field(default=None, max_length=200)
     archived: bool | None = None
     is_default: bool | None = Field(default=None, alias="isDefault")
+    menu_tab: bool | None = Field(default=None, alias="menuTab")
+    menu_icon: str | None = Field(default=None, alias="menuIcon", max_length=8)
 
 
 class DealPipelineAuditEventResponse(PipelineContractModel):
@@ -525,6 +531,14 @@ class WorkspaceReferenceError(ValueError):
         self.message = message
 
 
+def _is_uuid(value: Any) -> bool:
+    try:
+        UUID(str(value))
+    except ValueError:
+        return False
+    return True
+
+
 def _require(condition: bool, path: str, message: str) -> None:
     if not condition:
         raise WorkspaceReferenceError(path, message)
@@ -602,7 +616,7 @@ def validate_references(state: WorkspaceState) -> None:
 
     definition_keys: dict[str, set[str]] = {}
     schemas = data.get("customFieldSchemas") or {}
-    for module in MODULES:
+    for module in CUSTOM_FIELD_MODULES:
         found: set[str] = set()
         for index, definition in enumerate(schemas.get(module) or []):
             key = definition.get("key")
@@ -610,8 +624,12 @@ def validate_references(state: WorkspaceState) -> None:
             _require(isinstance(key, str) and bool(key), path, "Chave obrigatória")
             _require(key not in found, path, "Chave duplicada")
             found.add(key)
+            if definition.get("pipelineId") is not None:
+                pipeline_path = f"customFieldSchemas.{module}[{index}].pipelineId"
+                _require(module == "deals", pipeline_path, "Só campos de Negócios pertencem a um funil")
+                _require(_is_uuid(definition.get("pipelineId")), pipeline_path, "Funil inválido")
         definition_keys[module] = found
-        for record_index, record in enumerate(data[module]):
+        for record_index, record in enumerate(data.get(module) or []):
             for field_index, field in enumerate(record.get("customFields") or []):
                 key = field.get("key")
                 path = f"{module}[{record_index}].customFields[{field_index}].key"
@@ -638,6 +656,6 @@ def count_state(state: WorkspaceState) -> PersistedCounts:
         notifications=len(data["notifications"]),
         customFields=sum(
             len((data.get("customFieldSchemas") or {}).get(module) or [])
-            for module in MODULES
+            for module in CUSTOM_FIELD_MODULES
         ),
     )

@@ -1366,6 +1366,8 @@ def create_app(
             name=payload.name,
             archived=payload.archived,
             is_default=payload.is_default,
+            menu_tab=payload.menu_tab,
+            menu_icon=payload.menu_icon,
         )
 
     @app.get(

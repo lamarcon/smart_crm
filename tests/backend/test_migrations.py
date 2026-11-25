@@ -20,7 +20,7 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+psycopg://smartcrm:smartcrm_local_dev@127.0.0.1:5432/smartcrm_test",
 )
 ACTIVITY_HEAD = "e1c4a7b9d2f6"
-TENANT_HEAD = "f5b2d8e4a6c3"
+TENANT_HEAD = "b8d2f4a6c9e1"
 
 
 def alembic_config(connection=None) -> Config:  # noqa: ANN001
@@ -292,7 +292,7 @@ def test_upgrade_repairs_activity_head_missing_history_redaction_column(
     assert connection.scalar(text("SELECT count(*) FROM custom_field_definitions")) == 1
     definition_after = connection.scalar(
         text(
-            "SELECT to_jsonb(definition) - 'redact_in_history' "
+            "SELECT to_jsonb(definition) - 'redact_in_history' - 'pipeline_id' "
             "FROM custom_field_definitions AS definition WHERE id = :definition_id"
         ),
         {"definition_id": definition_id},
@@ -476,4 +476,51 @@ def test_multiple_pipelines_downgrade_refuses_deals_outside_the_default(isolated
     command.downgrade(config, "e1a7c3f9b2d4")
     columns = {item["name"] for item in inspect(connection).get_columns("deal_pipelines", schema=schema)}
     assert "archived_at" not in columns
+    command.upgrade(config, "head")
+
+
+def test_pipeline_menu_tabs_and_scoped_fields(isolated_migration) -> None:
+    connection, schema, config = isolated_migration
+    command.upgrade(config, "head")
+    pipeline_columns = {item["name"] for item in inspect(connection).get_columns("deal_pipelines", schema=schema)}
+    field_columns = {item["name"] for item in inspect(connection).get_columns("custom_field_definitions", schema=schema)}
+    assert {"menu_tab", "menu_icon"} <= pipeline_columns
+    assert "pipeline_id" in field_columns
+    connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+    default = connection.execute(text("SELECT id FROM deal_pipelines WHERE is_default")).scalar()
+    assert connection.execute(text("SELECT menu_tab FROM deal_pipelines WHERE id = :p"), {"p": default}).scalar() is False
+
+    def define(key: str, module: str, pipeline) -> None:  # noqa: ANN001
+        connection.execute(
+            text(
+                "INSERT INTO custom_field_definitions (workspace_id, module, key, label, field_type, options, source, position, user_created, pipeline_id, created_at, updated_at) "
+                "VALUES ('default', :module, :key, :key, 'text', '[]'::jsonb, 'custom', 0, true, :p, now(), now())"
+            ),
+            {"module": module, "key": key, "p": pipeline},
+        )
+
+    define("user:scoped", "deals", default)
+    savepoint = connection.begin_nested()
+    with pytest.raises(Exception):
+        define("user:contact-scoped", "contacts", default)
+    savepoint.rollback()
+    savepoint = connection.begin_nested()
+    with pytest.raises(Exception):
+        define("user:ghost", "deals", uuid.uuid4())
+    savepoint.rollback()
+    savepoint = connection.begin_nested()
+    with pytest.raises(Exception):
+        connection.execute(text("UPDATE deal_pipelines SET menu_tab = true WHERE is_default"))
+    savepoint.rollback()
+    connection.commit()
+
+    # The previous release cannot show a field of one pipeline: the downgrade refuses it.
+    with pytest.raises(Exception):
+        command.downgrade(config, "f5b2d8e4a6c3")
+    connection.rollback()
+    connection.execute(text("SELECT set_config('smartcrm.workspace_id', 'default', true)"))
+    connection.execute(text("DELETE FROM custom_field_definitions WHERE key = 'user:scoped'"))
+    connection.commit()
+    command.downgrade(config, "f5b2d8e4a6c3")
+    assert "menu_tab" not in {item["name"] for item in inspect(connection).get_columns("deal_pipelines", schema=schema)}
     command.upgrade(config, "head")

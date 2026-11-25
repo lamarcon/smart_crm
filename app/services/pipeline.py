@@ -417,6 +417,8 @@ class DealPipelineService:
         ("Ganho", "won", "#22C55E"),
         ("Perdido", "lost", "#EF4444"),
     )
+    # Icons a pipeline tab may use in the side menu (same glyph style as the menu).
+    MENU_ICONS = ("◇", "◆", "★", "⚑", "●", "▲", "■", "✦", "⚙", "☎", "✉", "⌂", "♥", "⚡", "☰", "✓")
 
     def list(
         self, session: Session, principal: PrincipalScope, *, include_archived: bool = False
@@ -483,8 +485,10 @@ class DealPipelineService:
         name: object = None,
         archived: bool | None = None,
         is_default: bool | None = None,
+        menu_tab: bool | None = None,
+        menu_icon: str | None = None,
     ) -> DealPipelineResponse:
-        """Rename, archive/restore or make a pipeline the default one."""
+        """Rename, archive/restore, make default or show a pipeline as a menu tab."""
 
         self._require_admin(principal)
         repository = self._repository(session, principal)
@@ -519,8 +523,24 @@ class DealPipelineService:
         if is_default is True and not pipeline.is_default:
             if pipeline.archived_at is not None:
                 raise _validation("archived_pipeline_default", "isDefault", "Restaure o funil antes de torná-lo principal.")
+            if pipeline.menu_tab:
+                # The default pipeline always lives under "Negócios".
+                pipeline.menu_tab = False
+                actions.append({"type": "pipeline.menu_tab", "to": False})
             repository.make_default(pipeline)
             actions.append({"type": "pipeline.default"})
+        if menu_icon is not None and menu_icon != (pipeline.menu_icon or ""):
+            if menu_icon not in self.MENU_ICONS:
+                raise _validation("invalid_menu_icon", "menuIcon", "Escolha um dos ícones disponíveis.")
+            actions.append({"type": "pipeline.menu_icon", "from": pipeline.menu_icon, "to": menu_icon})
+            pipeline.menu_icon = menu_icon
+        if menu_tab is not None and menu_tab != bool(pipeline.menu_tab):
+            if menu_tab and pipeline.is_default:
+                raise _validation(
+                    "default_pipeline_menu_tab", "menuTab", "O funil principal fica sempre em Negócios."
+                )
+            pipeline.menu_tab = menu_tab
+            actions.append({"type": "pipeline.menu_tab", "to": menu_tab})
         if not actions:
             return self._response(session, principal, repository.load(pipeline.id))
         pipeline.version += 1
@@ -775,6 +795,8 @@ class DealPipelineService:
             isDefault=bool(pipeline.is_default),
             position=int(pipeline.position or 0),
             archived=pipeline.archived_at is not None,
+            menuTab=bool(pipeline.menu_tab),
+            menuIcon=pipeline.menu_icon,
             pipelineVersion=pipeline.version,
             workspaceVersion=cls._workspace_version(session, principal),
             defaultStageId=pipeline.default_stage_id,

@@ -315,6 +315,15 @@
     .stage-steps { display: flex; gap: 8px; }
     .pipeline-manager { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--slate-200); border-radius: 10px; background: white; }
     .pipeline-manager-pick { display: grid; gap: 4px; min-width: 220px; }
+    .pipeline-menu-options { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+    .pipeline-menu-options label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--navy-800); }
+    .pipeline-menu-options select { width: auto; min-width: 64px; }
+    .nav button.nav-sub { padding: 8px 12px 8px 38px; font-size: 13px; }
+    .field-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .field-tabs button { border: 1px solid var(--slate-200); border-radius: 999px; padding: 7px 14px; background: white; color: var(--navy-800); font-weight: 650; cursor: pointer; }
+    .field-tabs button[aria-selected="true"] { border-color: var(--navy-800); background: var(--navy-800); color: white; }
+    .field-tabs .field-tab-pipeline::before { content: "⇄ "; opacity: .7; }
+    .fields-admin-card { padding: 18px; border: 1px solid var(--slate-200); border-radius: 14px; background: white; }
     .quote-items { width: 100%; font-size: 12px; }
     .quote-items .num { text-align: right; white-space: nowrap; }
     .quote-items small { display: block; color: var(--slate-500); }
@@ -595,10 +604,12 @@
         <button data-view="companies"><span class="nav-icon">▦</span>Empresas</button>
         <button data-view="products"><span class="nav-icon">▤</span>Produtos</button>
         <button data-view="deals"><span class="nav-icon">◇</span>Negócios <span class="nav-count" id="dealNavCount">0</span></button>
+        <div id="pipelineNav"></div>
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
         <button data-view="pipeline-admin" data-admin-nav hidden><span class="nav-icon">⇄</span>Funil de negócios</button>
         <button data-view="admin" data-admin-nav hidden><span class="nav-icon">⚙</span>Usuários e permissões</button>
         <button data-view="permissions" data-admin-nav hidden><span class="nav-icon">⚿</span>Permissões</button>
+        <button data-view="fields-admin" data-admin-nav hidden><span class="nav-icon">☷</span>Campos personalizados</button>
       </nav>
       <small class="app-version" id="appVersion" hidden></small>
     </aside>
@@ -631,6 +642,37 @@
         <section class="page" id="page-pipeline-admin"></section>
         <section class="page" id="page-admin"></section>
         <section class="page" id="page-permissions"></section>
+        <section class="page" id="page-fields-admin">
+          <div class="page-toolbar"><div><h2>Campos personalizados</h2><p>Escolha o módulo ou o funil e configure os campos dele.</p></div></div>
+          <div class="field-tabs" id="fieldManagerTabs" role="tablist" aria-label="Módulos"></div>
+          <div class="fields-admin-card" id="fieldManagerHost">
+            <form id="fieldManagerForm">
+              <p class="hint" id="fieldManagerScopeHint"></p>
+              <div>
+                <section class="field-manager-section" id="fieldManagerStandardSection">
+                  <h4>Campos padrão visíveis</h4>
+                  <div class="field-manager-list" id="fieldManagerStandardFields"></div>
+                </section>
+                <section class="field-manager-section">
+                  <h4>Campos adicionais visíveis em todos os cadastros</h4>
+                  <p class="hint">A ocultação geral não apaga valores nem substitui a escolha individual de cada cadastro.</p>
+                  <div class="field-manager-list" id="fieldManagerCustomFields"></div>
+                  <button type="button" class="button small" data-action="save-field-visibility">Salvar visualização</button>
+                </section>
+                <section class="field-manager-section">
+                  <h4>Criar campo personalizado</h4>
+                  <div class="form-grid" style="margin-top:14px">
+                    <div class="field"><label for="customFieldName">Nome do campo</label><input id="customFieldName" autocomplete="off"></div>
+                    <div class="field"><label for="customFieldType">Tipo do campo</label><select id="customFieldType"></select></div>
+                    <div class="field full" id="customFieldOptionsWrap" hidden><label for="customFieldOptions">Opções</label><textarea id="customFieldOptions" placeholder="Uma opção por linha"></textarea></div>
+                  </div>
+                  <p class="field-manager-error" id="fieldManagerError" role="alert"></p>
+                  <button type="button" class="button primary" data-action="create-custom-field">Criar campo</button>
+                </section>
+              </div>
+            </form>
+          </div>
+        </section>
       </div>
     </main>
   </div>
@@ -798,32 +840,6 @@
     </form>
   </dialog>
 
-  <dialog id="fieldManagerDialog">
-    <form id="fieldManagerForm">
-      <div class="modal-head"><div><h3 id="fieldManagerTitle">Gerenciar campos</h3><p class="hint">A configuração vale para todo o módulo.</p></div><button type="button" class="close-button" data-close="fieldManagerDialog" aria-label="Fechar gerenciador de campos">×</button></div>
-      <div class="modal-body">
-        <section class="field-manager-section">
-          <h4>Campos padrão visíveis</h4>
-          <div class="field-manager-list" id="fieldManagerStandardFields"></div>
-          <h4 style="margin-top:18px">Campos adicionais visíveis em todos os cadastros</h4>
-          <p class="hint">A ocultação geral não apaga valores nem substitui a escolha individual de cada cadastro.</p>
-          <div class="field-manager-list" id="fieldManagerCustomFields"></div>
-          <button type="button" class="button small" data-action="save-field-visibility">Salvar visualização</button>
-        </section>
-        <section class="field-manager-section">
-          <h4>Criar campo personalizado</h4>
-          <div class="form-grid" style="margin-top:14px">
-            <div class="field"><label for="customFieldName">Nome do campo</label><input id="customFieldName" autocomplete="off"></div>
-            <div class="field"><label for="customFieldType">Tipo do campo</label><select id="customFieldType"></select></div>
-            <div class="field full" id="customFieldOptionsWrap" hidden><label for="customFieldOptions">Opções</label><textarea id="customFieldOptions" placeholder="Uma opção por linha"></textarea></div>
-          </div>
-          <p class="field-manager-error" id="fieldManagerError" role="alert"></p>
-          <button type="button" class="button primary" data-action="create-custom-field">Criar campo</button>
-        </section>
-      </div>
-      <div class="modal-foot"><button type="button" class="button" data-close="fieldManagerDialog">Fechar</button></div>
-    </form>
-  </dialog>
 
   <dialog id="userDialog">
     <form id="userForm">
@@ -1050,6 +1066,8 @@
     LEGACY_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
     const READ_ONLY_WARNING = 'Banco indisponível. Alterações bloqueadas.';
     const GENERIC_LOGIN_ERROR = 'Não foi possível entrar com os dados informados.';
+    // Modules whose records carry custom fields.
+    const CUSTOM_FIELD_COLLECTIONS = ['leads', 'contacts', 'companies', 'deals', 'products'];
     const leadStages = ['Em contato', 'Lead descartado', 'Lead convertido'];
     // Every active pipeline of the company; dealPipeline is the one on screen.
     let dealPipelines = [];
@@ -1077,6 +1095,13 @@
     function pipelineById(pipelineId) { return knownPipelines().find(pipeline => pipeline.id === pipelineId) || null; }
     function mainPipeline() { return knownPipelines().find(pipeline => pipeline.isDefault !== false) || knownPipelines()[0] || null; }
     function hasSeveralPipelines() { return knownPipelines().length > 1; }
+    // Icons a pipeline tab can use (the server accepts only these).
+    const PIPELINE_MENU_ICONS = ['◇', '◆', '★', '⚑', '●', '▲', '■', '✦', '⚙', '☎', '✉', '⌂', '♥', '⚡', '☰', '✓'];
+    // A pipeline shown as its own menu tab; the main one always stays under "Negócios".
+    function isMenuTab(pipeline) { return Boolean(pipeline?.menuTab && !pipeline?.isDefault); }
+    function menuTabPipelines() { return knownPipelines().filter(isMenuTab); }
+    function dealsMenuPipelines() { return knownPipelines().filter(pipeline => !isMenuTab(pipeline)); }
+    let lastDealsPipelineId = null;
     function activeDealStages(pipelineId) {
       const pipeline = pipelineId ? pipelineById(pipelineId) : dealPipeline;
       return (pipeline?.stages || []).filter(stage => stage.active).sort((left, right) => left.position - right.position);
@@ -1100,6 +1125,7 @@
       const pipeline = pipelineById(pipelineId);
       if (!pipeline) return;
       dealPipeline = pipeline;
+      if (!isMenuTab(pipeline)) lastDealsPipelineId = pipeline.id;
       try { localStorage.setItem(PIPELINE_STORAGE_KEY, pipeline.id); } catch (_) { /* optional */ }
       resetPipelineEditorDraft();
       resetPipelineHistory();
@@ -1144,7 +1170,8 @@
       notifications: ['Notificações', 'Atualizações relevantes da sua operação'],
       'pipeline-admin': ['Funil de negócios', 'Configure etapas, ordem e estado inicial'],
       admin: ['Usuários e permissões', 'Convites, cargos e perfis de acesso'],
-      permissions: ['Permissões', 'O que cada perfil pode fazer em cada módulo']
+      permissions: ['Permissões', 'O que cada perfil pode fazer em cada módulo'],
+      'fields-admin': ['Campos personalizados', 'Campos de cada módulo e de cada funil']
     };
     const entityConfigs = {
       leads: {
@@ -1311,9 +1338,9 @@
         user.status ||= 'Ativo';
         user.invitedAt ||= null;
       });
-      normalized.customFieldSchemas ||= { leads: [], contacts: [], companies: [], deals: [] };
+      normalized.customFieldSchemas ||= { leads: [], contacts: [], companies: [], deals: [], products: [] };
       normalized.moduleFieldSettings ||= { leads: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] }, contacts: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] }, companies: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] }, deals: { hiddenStandardFields: [], hiddenCustomFieldKeys: [] } };
-      ['leads', 'contacts', 'companies', 'deals'].forEach(collection => {
+      CUSTOM_FIELD_COLLECTIONS.forEach(collection => {
         normalized.customFieldSchemas[collection] = Array.isArray(normalized.customFieldSchemas[collection]) ? normalized.customFieldSchemas[collection] : [];
         normalized.moduleFieldSettings[collection] ||= { hiddenStandardFields: [], hiddenCustomFieldKeys: [] };
         normalized.moduleFieldSettings[collection].hiddenStandardFields = Array.isArray(normalized.moduleFieldSettings[collection].hiddenStandardFields) ? normalized.moduleFieldSettings[collection].hiddenStandardFields : [];
@@ -1365,6 +1392,7 @@
         active: product.active !== false,
         metadata: Array.isArray(product.metadata) ? product.metadata : []
       }));
+      normalized.products.forEach(product => ensureSchemaFields(normalized, 'products', product));
       const defaults = defaultUiState(normalized.users || []);
       normalized.ui ||= defaults;
       normalized.ui.filtersByUser ||= {};
@@ -2679,7 +2707,8 @@
       const selectedStages = filter.criteria.stage?.value || [];
       const quickStage = selectedStages.length === 1 ? selectedStages[0] : 'Todos';
       const normalizedStages = entity === 'deals' ? stageOptions : stageOptions.map(name => ({ id: name, name }));
-      const pipelinePick = entity === 'deals' && hasSeveralPipelines() ? pipelineSelectHTML('data-pipeline-select aria-label="Funil"', dealPipeline?.id) : '';
+      // Pipelines with their own menu tab are left out of the picker inside "Negócios".
+      const pipelinePick = entity === 'deals' && !isMenuTab(dealPipeline) && dealsMenuPipelines().length > 1 ? pipelineSelectHTML('data-pipeline-select aria-label="Funil"', dealPipeline?.id, dealsMenuPipelines()) : '';
       const stageFilter = normalizedStages.length ? `<select data-stage-filter="${entity}" aria-label="Filtrar por etapa"><option value="Todos">Todos</option>${normalizedStages.map(stage => `<option value="${escapeHTML(stage.id)}" ${quickStage === stage.id ? 'selected' : ''}>${escapeHTML(stage.name)}</option>`).join('')}</select>` : '';
       const countBadge = activeFilterCount(entity);
       const mode = stageOptions.length ? getViewMode(entity) : 'list';
@@ -2725,7 +2754,7 @@
         .sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'));
       const rows = records.map(item => `<tr data-product-row="${escapeHTML(item.id)}"><td><div class="entity"><span class="entity-avatar">${initials(item.name)}</span><div><button class="entity-link" data-action="open-record" data-entity="product" data-id="${escapeHTML(item.id)}">${escapeHTML(item.name)}</button><small>${item.sku ? `SKU ${escapeHTML(item.sku)}` : 'Sem código'}</small></div></div></td><td>${escapeHTML(item.category || '—')}</td><td><b>${escapeHTML(money(item.price, dealCurrency(item)))}</b><small> / ${escapeHTML(item.unit || 'un')}</small></td><td><span class="tag ${item.active !== false ? 'green' : ''}">${item.active !== false ? 'Ativo' : 'Inativo'}</span></td><td>${can('products', 'delete') ? `<div class="row-actions"><button class="row-action" data-action="delete" data-entity="product" data-id="${escapeHTML(item.id)}" title="Excluir">⌫</button></div>` : ''}</td></tr>`).join('');
       const table = rows ? `<table><thead><tr><th>Produto</th><th>Categoria</th><th>Preço</th><th>Situação</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('Nenhum Produto encontrado');
-      return `<div class="page-toolbar"><div><h2>Produtos</h2><p>Catálogo usado nos orçamentos dos Negócios.${manage ? '' : ' Seu perfil não altera o catálogo.'}</p></div><div class="toolbar-actions">${can('products', 'export') ? '<button class="button" data-action="export" data-scope="products">⇩ Exportar</button>' : ''}${can('products', 'create') ? '<button class="button primary" data-action="new" data-entity="product">＋ Novo Produto</button>' : ''}</div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-product-search value="${escapeHTML(productSearch)}" placeholder="Buscar por nome, código ou categoria..." aria-label="Buscar produtos"></div><label class="inline-check"><input type="checkbox" data-product-inactive ${showInactiveProducts ? 'checked' : ''}> Mostrar inativos</label></div><div class="table-wrap">${table}</div><div class="table-footer"><span>${records.length} registro(s) visível(is)</span><span>Catálogo do workspace</span></div></div>`;
+      return `<div class="page-toolbar"><div><h2>Produtos</h2><p>Catálogo usado nos orçamentos dos Negócios.${manage ? '' : ' Seu perfil não altera o catálogo.'}</p></div><div class="toolbar-actions">${currentUser().role === 'Administrador' ? '<button class="button" data-action="manage-fields" data-scope="products">Gerenciar campos</button>' : ''}${can('products', 'export') ? '<button class="button" data-action="export" data-scope="products">⇩ Exportar</button>' : ''}${can('products', 'create') ? '<button class="button primary" data-action="new" data-entity="product">＋ Novo Produto</button>' : ''}</div></div><div class="list-card"><div class="list-tools"><div class="search"><span>⌕</span><input data-product-search value="${escapeHTML(productSearch)}" placeholder="Buscar por nome, código ou categoria..." aria-label="Buscar produtos"></div><label class="inline-check"><input type="checkbox" data-product-inactive ${showInactiveProducts ? 'checked' : ''}> Mostrar inativos</label></div><div class="table-wrap">${table}</div><div class="table-footer"><span>${records.length} registro(s) visível(is)</span><span>Catálogo do workspace</span></div></div>`;
     }
 
     function dealsHTML() {
@@ -2835,13 +2864,46 @@
 
     // The pipeline on screen; omitted with a single pipeline (older servers know only that one).
     function pipelineUrl() { return hasSeveralPipelines() ? `/api/deal-pipeline?pipelineId=${encodeURIComponent(dealPipeline.id)}` : '/api/deal-pipeline'; }
-    function pipelineSelectHTML(attributes, selectedId) {
-      return `<select ${attributes}>${knownPipelines().map(pipeline => `<option value="${escapeHTML(pipeline.id)}" ${pipeline.id === selectedId ? 'selected' : ''}>${escapeHTML(pipeline.name)}${pipeline.isDefault ? ' ★' : ''}</option>`).join('')}</select>`;
+    function pipelineSelectHTML(attributes, selectedId, pipelines = knownPipelines()) {
+      return `<select ${attributes}>${pipelines.map(pipeline => `<option value="${escapeHTML(pipeline.id)}" ${pipeline.id === selectedId ? 'selected' : ''}>${escapeHTML(pipeline.name)}${pipeline.isDefault ? ' ★' : ''}</option>`).join('')}</select>`;
     }
     function pipelineManagerHTML() {
       const current = dealPipeline;
       const deals = (state.deals || []).filter(deal => pipelineOfDeal(deal)?.id === current.id).length;
-      return `<section class="pipeline-manager" aria-label="Funis de negócios"><div class="pipeline-manager-pick"><label for="pipelineManagerSelect">Funil</label>${pipelineSelectHTML('id="pipelineManagerSelect" data-pipeline-select', current.id)}<span class="hint">${current.isDefault ? 'Funil principal' : `${deals} Negócio(s) neste funil`}</span></div><div class="toolbar-actions"><button class="button" type="button" data-action="new-pipeline">＋ Novo funil</button><button class="button" type="button" data-action="rename-pipeline">Renomear</button>${current.isDefault ? '' : `<button class="button" type="button" data-action="default-pipeline">Tornar principal</button><button class="button danger" type="button" data-action="archive-pipeline">Arquivar funil</button>`}</div></section>`;
+      return `<section class="pipeline-manager" aria-label="Funis de negócios"><div class="pipeline-manager-pick"><label for="pipelineManagerSelect">Funil</label>${pipelineSelectHTML('id="pipelineManagerSelect" data-pipeline-select', current.id)}<span class="hint">${current.isDefault ? 'Funil principal' : `${deals} Negócio(s) neste funil`}</span></div>${pipelineMenuOptionsHTML(current)}<div class="toolbar-actions"><button class="button" type="button" data-action="new-pipeline">＋ Novo funil</button><button class="button" type="button" data-action="rename-pipeline">Renomear</button>${current.isDefault ? '' : `<button class="button" type="button" data-action="default-pipeline">Tornar principal</button><button class="button danger" type="button" data-action="archive-pipeline">Arquivar funil</button>`}</div></section>`;
+    }
+    function pipelineMenuOptionsHTML(pipeline) {
+      if (pipeline.isDefault) return '<div class="pipeline-menu-options"><span class="hint">O funil principal fica sempre em Negócios.</span></div>';
+      const icon = pipeline.menuIcon || PIPELINE_MENU_ICONS[0];
+      return `<div class="pipeline-menu-options"><label><input type="checkbox" data-pipeline-menu-tab ${pipeline.menuTab ? 'checked' : ''}>Mostrar como aba no menu</label><label for="pipelineMenuIcon">Ícone</label><select id="pipelineMenuIcon" data-pipeline-menu-icon>${PIPELINE_MENU_ICONS.map(item => `<option value="${item}" ${item === icon ? 'selected' : ''}>${item}</option>`).join('')}</select></div>`;
+    }
+    function changePipelineMenu(body, success) {
+      if (!dealPipeline || dealPipeline.isDefault) return;
+      void changePipelines({ url: `/api/deal-pipelines/${encodeURIComponent(dealPipeline.id)}`, method: 'PATCH', body: { pipelineVersion: dealPipeline.pipelineVersion, ...body } }, success);
+    }
+    // Pipelines inside "Negócios" become sub-items when there are several; tabs get their own item.
+    function renderPipelineNav() {
+      const holder = document.getElementById('pipelineNav');
+      if (!holder) return;
+      if (!can('deals', 'read')) { holder.innerHTML = ''; return; }
+      const inside = dealsMenuPipelines();
+      const subs = inside.length > 1 ? inside.map(pipeline => `<button class="nav-sub" data-view="deals" data-pipeline-nav="${escapeHTML(pipeline.id)}"><span class="nav-icon">›</span>${escapeHTML(pipeline.name)}</button>`).join('') : '';
+      const tabs = menuTabPipelines().map(pipeline => `<button data-view="deals" data-pipeline-nav="${escapeHTML(pipeline.id)}"><span class="nav-icon">${escapeHTML(pipeline.menuIcon || PIPELINE_MENU_ICONS[0])}</span>${escapeHTML(pipeline.name)}</button>`).join('');
+      holder.innerHTML = subs + tabs;
+    }
+    function navButtonActive(button, view) {
+      if (button.dataset.view !== view) return false;
+      if (view !== 'deals') return true;
+      if (button.dataset.pipelineNav === undefined) return !isMenuTab(dealPipeline);
+      return button.dataset.pipelineNav === dealPipeline?.id;
+    }
+    function openDealsFromMenu(pipelineId) {
+      if (pipelineId && pipelineId !== dealPipeline?.id) selectPipeline(pipelineId);
+      else if (!pipelineId && isMenuTab(dealPipeline)) {
+        const back = dealsMenuPipelines().find(pipeline => pipeline.id === lastDealsPipelineId) || mainPipeline();
+        if (back) selectPipeline(back.id);
+      }
+      showView('deals');
     }
     async function changePipelines(request, success) {
       try {
@@ -3585,6 +3647,7 @@
       renderSessionIdentity();
       updateCounts();
       document.querySelectorAll('[data-admin-nav]').forEach(item => { item.hidden = currentUser().role !== 'Administrador'; });
+      renderPipelineNav();
       PERMISSION_MODULES.forEach(module => { document.querySelector(`.nav [data-view="${module}"]`).hidden = !can(module, 'read'); });
       document.getElementById('page-dashboard').innerHTML = dashboardHTML();
       document.getElementById('page-leads').innerHTML = leadsHTML();
@@ -3601,15 +3664,16 @@
     }
 
     function showView(view, closeMobile = true) {
-      if (['admin', 'pipeline-admin', 'permissions'].includes(view) && currentUser().role !== 'Administrador') view = 'dashboard';
+      if (['admin', 'pipeline-admin', 'permissions', 'fields-admin'].includes(view) && currentUser().role !== 'Administrador') view = 'dashboard';
       if (PERMISSION_MODULES.includes(view) && !can(view, 'read')) view = 'dashboard';
       if (!pageMeta[view]) view = 'dashboard';
       const entering = activeView !== view;
       activeView = view;
       document.querySelectorAll('.page').forEach(page => page.classList.toggle('active', page.id === `page-${view}`));
-      document.querySelectorAll('.nav button').forEach(button => button.classList.toggle('active', button.dataset.view === view));
+      document.querySelectorAll('.nav button').forEach(button => button.classList.toggle('active', navButtonActive(button, view)));
       const [title, subtitle] = pageMeta[view];
-      document.getElementById('topTitle').textContent = title;
+      // A pipeline tab is titled with its own name.
+      document.getElementById('topTitle').textContent = view === 'deals' && isMenuTab(dealPipeline) ? dealPipeline.name : title;
       document.getElementById('topSubtitle').textContent = subtitle;
       if (closeMobile) toggleSidebar(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3617,6 +3681,7 @@
       // Keys are refreshed on every visit so "last use" stays current.
       if (entering && view === 'admin' && currentUser().role === 'Administrador') void loadIntakeKeys();
       if (entering && view === 'permissions' && currentUser().role === 'Administrador') void loadPermissions();
+      if (entering && view === 'fields-admin' && currentUser().role === 'Administrador') renderFieldManager({ reset: true });
     }
 
     // Company and contact references -------------------------------------------
@@ -3794,18 +3859,34 @@
       ]
     };
 
-    function fieldManagerEntity(scope) { return ({ leads: 'lead', contacts: 'contact', companies: 'company', deals: 'deal' })[scope]; }
+    function fieldManagerEntity(scope) { return ({ leads: 'lead', contacts: 'contact', companies: 'company', deals: 'deal', products: 'product' })[scope]; }
+    // Tabs of the custom fields page: one per module, then one per pipeline.
+    const FIELD_TAB_MODULES = [['leads', 'Leads'], ['contacts', 'Contatos'], ['companies', 'Empresas'], ['deals', 'Negócios'], ['products', 'Produtos']];
+    function fieldManagerTabsHTML(scope, pipelineId) {
+      const modules = FIELD_TAB_MODULES.map(([key, label]) => `<button type="button" role="tab" data-action="field-tab" data-scope="${key}" aria-selected="${key === scope && !pipelineId}">${label}</button>`);
+      const pipelines = hasSeveralPipelines() ? knownPipelines().map(pipeline => `<button type="button" role="tab" class="field-tab-pipeline" data-action="field-tab" data-scope="deals" data-pipeline-id="${escapeHTML(pipeline.id)}" aria-selected="${pipeline.id === pipelineId}" aria-label="${escapeHTML(`Funil ${pipeline.name}`)}">${escapeHTML(pipeline.name)}</button>`) : [];
+      return [...modules, ...pipelines].join('');
+    }
+    function fieldScopeOf(schema) { return schema.pipelineId || null; }
 
-    function renderFieldManager() {
+    function renderFieldManager({ reset = false } = {}) {
       const form = document.getElementById('fieldManagerForm');
+      if (!fieldManagerEntity(form.dataset.scope)) form.dataset.scope = 'leads';
+      if (form.dataset.pipelineId && !pipelineById(form.dataset.pipelineId)) delete form.dataset.pipelineId;
       const scope = form.dataset.scope;
+      const pipelineId = form.dataset.pipelineId || null;
       const entity = fieldManagerEntity(scope);
-      if (!entity) return;
+      document.getElementById('fieldManagerTabs').innerHTML = fieldManagerTabsHTML(scope, pipelineId);
+      document.getElementById('fieldManagerStandardSection').hidden = Boolean(pipelineId);
+      document.getElementById('fieldManagerScopeHint').textContent = pipelineId
+        ? `Campos só dos Negócios do funil ${pipelineById(pipelineId)?.name || ''}. Os campos padrão e os de todos os funis ficam na aba Negócios.`
+        : scope === 'deals' && hasSeveralPipelines() ? 'Campos desta aba aparecem nos Negócios de todos os funis.' : 'A configuração vale para todo o módulo.';
       const hidden = new Set(state.moduleFieldSettings[scope]?.hiddenStandardFields || []);
       document.getElementById('fieldManagerStandardFields').innerHTML = formDefinitions[entity].map(([name, label]) => `<label class="field-manager-check"><input type="checkbox" data-standard-field="${escapeHTML(name)}" ${hidden.has(name) ? '' : 'checked'}>${escapeHTML(label)}</label>`).join('');
-      const schemas = state.customFieldSchemas[scope] || [];
+      const schemas = (state.customFieldSchemas[scope] || []).filter(field => fieldScopeOf(field) === pipelineId);
       const hiddenCustom = new Set(state.moduleFieldSettings[scope]?.hiddenCustomFieldKeys || []);
       document.getElementById('fieldManagerCustomFields').innerHTML = schemas.length ? schemas.map(field => `<label class="field-manager-check"><input type="checkbox" aria-label="${escapeHTML(field.label)}" data-module-custom-field="${escapeHTML(field.key)}" ${hiddenCustom.has(field.key) ? '' : 'checked'}><span>${escapeHTML(field.label)} <small class="hint">· ${escapeHTML(customFieldTypes.find(([type]) => type === field.type)?.[1] || field.type)}</small></span></label>`).join('') : '<span class="hint">Nenhum campo personalizado criado.</span>';
+      if (!reset && document.getElementById('customFieldType').options.length) return;
       document.getElementById('customFieldType').innerHTML = customFieldTypes.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
       document.getElementById('customFieldName').value = '';
       document.getElementById('customFieldType').value = 'text';
@@ -3814,13 +3895,15 @@
       document.getElementById('fieldManagerError').textContent = '';
     }
 
-    function openFieldManager(scope) {
+    // "Gerenciar campos" in a module opens the custom fields page on that module (or pipeline).
+    function openFieldManager(scope, pipelineId = null) {
       if (currentUser().role !== 'Administrador' || !fieldManagerEntity(scope)) return false;
       const form = document.getElementById('fieldManagerForm');
       form.dataset.scope = scope;
-      document.getElementById('fieldManagerTitle').textContent = `Gerenciar campos de ${entityConfigs[scope].label === 'Negócio' ? 'Negócios' : entityConfigs[scope].label + 's'}`;
-      renderFieldManager();
-      document.getElementById('fieldManagerDialog').showModal();
+      if (pipelineId && scope === 'deals') form.dataset.pipelineId = pipelineId;
+      else delete form.dataset.pipelineId;
+      if (activeView === 'fields-admin') renderFieldManager({ reset: true });
+      else showView('fields-admin');
       return true;
     }
 
@@ -3828,11 +3911,15 @@
       if (currentUser().role !== 'Administrador') return false;
       const form = document.getElementById('fieldManagerForm');
       const scope = form.dataset.scope;
-      state.moduleFieldSettings[scope].hiddenStandardFields = Array.from(form.querySelectorAll('[data-standard-field]:not(:checked)')).map(input => input.dataset.standardField);
-      state.moduleFieldSettings[scope].hiddenCustomFieldKeys = Array.from(form.querySelectorAll('[data-module-custom-field]:not(:checked)')).map(input => input.dataset.moduleCustomField);
+      state.moduleFieldSettings[scope] ||= { hiddenStandardFields: [], hiddenCustomFieldKeys: [] };
+      if (!form.dataset.pipelineId) state.moduleFieldSettings[scope].hiddenStandardFields = Array.from(form.querySelectorAll('[data-standard-field]:not(:checked)')).map(input => input.dataset.standardField);
+      // Only the fields of this tab change; the other tabs keep their choice.
+      const shown = new Set(Array.from(form.querySelectorAll('[data-module-custom-field]')).map(input => input.dataset.moduleCustomField));
+      const hidden = Array.from(form.querySelectorAll('[data-module-custom-field]:not(:checked)')).map(input => input.dataset.moduleCustomField);
+      state.moduleFieldSettings[scope].hiddenCustomFieldKeys = [...(state.moduleFieldSettings[scope].hiddenCustomFieldKeys || []).filter(key => !shown.has(key)), ...hidden];
       saveState();
-      document.getElementById('fieldManagerDialog').close();
       render();
+      renderFieldManager();
       toast('Visualização de campos atualizada.');
       return true;
     }
@@ -3851,11 +3938,12 @@
       if (currentUser().role !== 'Administrador') return false;
       const form = document.getElementById('fieldManagerForm');
       const scope = form.dataset.scope;
+      const pipelineId = scope === 'deals' ? form.dataset.pipelineId || null : null;
       const name = document.getElementById('customFieldName').value.trim();
       const type = document.getElementById('customFieldType').value;
       const error = document.getElementById('fieldManagerError');
       if (!name) { error.textContent = 'Informe o nome do campo.'; return false; }
-      if ((state.customFieldSchemas[scope] || []).some(field => field.label.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR'))) {
+      if ((state.customFieldSchemas[scope] || []).some(field => fieldScopeOf(field) === pipelineId && field.label.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR'))) {
         error.textContent = 'Já existe um campo com esse nome.';
         return false;
       }
@@ -3863,6 +3951,8 @@
       if (['select', 'multiselect'].includes(type) && !options.length) { error.textContent = 'Informe ao menos uma opção.'; return false; }
       const key = `user:${Date.now().toString(36)}:${name.toLocaleLowerCase('pt-BR').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'campo'}`;
       const schema = { key, label: name, type, options, userCreated: true };
+      if (pipelineId) schema.pipelineId = pipelineId;
+      state.customFieldSchemas[scope] ||= [];
       state.customFieldSchemas[scope].push(schema);
       state[scope].forEach(record => {
         record.customFields = Array.isArray(record.customFields) ? record.customFields : [];
@@ -3870,7 +3960,7 @@
         record.visibleCustomFieldKeys = [...new Set([...(record.visibleCustomFieldKeys || []), key])];
       });
       saveState();
-      renderFieldManager();
+      renderFieldManager({ reset: true });
       toast(`Campo ${name} criado.`);
       return true;
     }
@@ -4300,7 +4390,10 @@
 
     function moduleAvailableCustomFields(collection, record) {
       const hidden = new Set(state.moduleFieldSettings[collection]?.hiddenCustomFieldKeys || []);
-      return (Array.isArray(record?.customFields) ? record.customFields : []).filter(field => !hidden.has(field.key));
+      // A deal field of one pipeline only shows on that pipeline's deals.
+      const scopes = new Map((state.customFieldSchemas[collection] || []).map(schema => [schema.key, schema.pipelineId || null]));
+      const pipelineId = collection === 'deals' ? pipelineOfDeal(record)?.id : null;
+      return (Array.isArray(record?.customFields) ? record.customFields : []).filter(field => !hidden.has(field.key) && (!scopes.get(field.key) || scopes.get(field.key) === pipelineId));
     }
 
     function openEntityDrawer(entity, id, options = {}) {
@@ -4329,9 +4422,9 @@
       renderDrawerCustomFields(record);
       const customTab = document.querySelector('[data-drawer-tab="custom"]');
       const quotesTab = document.querySelector('[data-drawer-tab="quotes"]');
-      customTab.hidden = entity === 'product';
+      customTab.hidden = false;
       quotesTab.hidden = entity !== 'deal';
-      document.getElementById('drawerTabs').hidden = entity === 'product';
+      document.getElementById('drawerTabs').hidden = false;
       const readOnly = !canRecord(collection, 'update', record);
       document.querySelectorAll('#drawerFields input, #drawerFields select, #drawerFields textarea, #drawerFields button, #drawerCustomFields input, #drawerCustomFields select, #drawerCustomFields textarea').forEach(element => { element.disabled = readOnly; });
       drawer.dataset.readOnly = String(readOnly);
@@ -5481,7 +5574,7 @@
     }
 
     const durableActions = new Set([
-      'new', 'add-custom-field', 'hide-custom-field', 'manage-fields', 'save-field-visibility',
+      'new', 'add-custom-field', 'hide-custom-field', 'save-field-visibility',
       'create-custom-field', 'new-user', 'edit-user', 'resend-invite', 'cancel-invite', 'reactivate-user', 'user-status',
       'open-bitrix-import', 'open-deleted', 'restore-deleted', 'save-filter', 'delete-saved-filter', 'set-view-mode',
       'request-stage', 'undo-stage', 'delete', 'convert', 'discard', 'quote', 'edit-quote', 'delete-quote', 'stage-step',
@@ -5511,6 +5604,7 @@
     document.addEventListener('click', event => {
       const button = event.target.closest('button');
       if (!button) return;
+      if (button.dataset.view === 'deals') { openDealsFromMenu(button.dataset.pipelineNav); return; }
       if (button.dataset.view) { showView(button.dataset.view); return; }
       const action = button.dataset.action;
       if (action === 'add-metadata') {
@@ -5552,7 +5646,8 @@
       if (action === 'company-workspace-tab') setCompanyWorkspaceTab(button.dataset.companyWorkspaceTab);
       if (action === 'add-custom-field') addDrawerCustomField();
       if (action === 'hide-custom-field') hideDrawerCustomField(button.dataset.key);
-      if (action === 'manage-fields') openFieldManager(button.dataset.scope);
+      if (action === 'manage-fields') openFieldManager(button.dataset.scope, button.dataset.scope === 'deals' && isMenuTab(dealPipeline) ? dealPipeline.id : null);
+      if (action === 'field-tab') openFieldManager(button.dataset.scope, button.dataset.pipelineId || null);
       if (action === 'save-field-visibility') saveFieldVisibility();
       if (action === 'create-custom-field') createCustomField();
       if (action === 'new-user') openUserDialog();
@@ -5645,6 +5740,8 @@
       if (event.target.dataset.bitrixEntity) syncBitrixImportButton();
       if (event.target.dataset.permissionModule) updatePermissionCell(event.target);
       if (event.target.matches?.('[data-pipeline-select]')) selectPipeline(event.target.value);
+      if (event.target.matches?.('[data-pipeline-menu-tab]')) changePipelineMenu({ menuTab: event.target.checked, menuIcon: document.getElementById('pipelineMenuIcon')?.value }, event.target.checked ? 'Funil exibido como aba no menu.' : 'Funil voltou para dentro de Negócios.');
+      if (event.target.matches?.('[data-pipeline-menu-icon]')) changePipelineMenu({ menuIcon: event.target.value }, 'Ícone do funil atualizado.');
       if (event.target.matches?.('[data-deal-pipeline]')) {
         // The stage list follows the chosen pipeline, starting at its initial stage.
         const stageSelect = event.target.form?.querySelector('[data-deal-stage]');
