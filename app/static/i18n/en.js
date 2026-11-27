@@ -894,5 +894,7 @@ window.SMART_CRM_I18N['en'] = {
   "90 dias": "90 days",
   "30 dias": "30 days",
   "1 ano": "1 year",
-  "Revogar token {p6}": "Revoke token {p6}"
+  "Revogar token {p6}": "Revoke token {p6}",
+  "Recolher funis": "Collapse pipelines",
+  "Expandir funis": "Expand pipelines"
 };

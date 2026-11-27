@@ -3987,6 +3987,40 @@ async function storageEntries(page) {
     return workspace;
   })() });
 
+  await run('PIPE-NAV-01 recolhe e expande os funis de Negócios no menu e lembra a escolha', async page => {
+    const subs = async () => (await page.locator('#pipelineNav button.nav-sub').allTextContents()).map(text => text.trim());
+    const toggle = page.locator('#pipelineNavToggle');
+    await goTo(page, 'Negócios');
+    assert.deepEqual(await subs(), ['›Vendas CMS', '›Pós-venda']);
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+
+    await page.getByRole('button', { name: 'Recolher funis' }).click();
+    assert.deepEqual(await subs(), []);
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+    // Negócios stays highlighted and keeps opening the selected pipeline.
+    assert.equal(await page.locator('.nav [data-view="deals"]:not([data-pipeline-nav])').getAttribute('class'), 'active');
+    assert.equal(await page.locator('#page-deals').isVisible(), true);
+
+    await page.reload();
+    await page.locator('#pipelineNavToggle').waitFor({ state: 'attached' });
+    await page.waitForFunction(() => !document.getElementById('pipelineNavToggle').hidden);
+    assert.deepEqual(await subs(), []);
+    await page.getByRole('button', { name: 'Expandir funis' }).click();
+    assert.deepEqual(await subs(), ['›Vendas CMS', '›Pós-venda']);
+    await page.locator('#pipelineNav').getByRole('button', { name: 'Pós-venda' }).click();
+    await page.locator('#page-deals').getByText('Suporte anual Arkos').waitFor();
+  }, { extraPipelines: [afterSalesPipeline()], preloadState: (() => {
+    const workspace = minimalWorkspace();
+    workspace.deals.push({ id: 'N-PV1', title: 'Suporte anual Arkos', company: 'Arkos', contact: '', amount: 900, additionalAmount: 900, additionalReason: '', pipelineId: '20000000-0000-4000-8000-000000000002', stageId: AFTER_SALES_STAGE_IDS[0], stage: 'Em andamento', responsibleId: 'u-admin', assistants: [], updatedAt: '1 out, 10:00', quotes: [], stageHistory: [] });
+    return workspace;
+  })() });
+
+  await run('PIPE-NAV-02 com um funil só, não mostra o botão de recolher', async page => {
+    await goTo(page, 'Negócios');
+    assert.equal(await page.locator('#pipelineNavToggle').isVisible(), false);
+    assert.equal(await page.locator('#pipelineNav button').count(), 0);
+  }, { preloadState: minimalWorkspace() });
+
   await run('PIPE-TAB-01 funil vira aba própria no menu com ícone e os demais ficam dentro de Negócios', async page => {
     const api = apiByPage.get(page);
     const nav = page.locator('.nav');

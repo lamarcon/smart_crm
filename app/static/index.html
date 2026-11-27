@@ -320,6 +320,10 @@
     .pipeline-menu-options { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
     .pipeline-menu-options label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--navy-800); }
     .pipeline-menu-options select { width: auto; min-width: 64px; }
+    .nav-row { display: flex; align-items: center; gap: 2px; }
+    .nav-row > button[data-view] { flex: 1 1 auto; min-width: 0; }
+    .nav button.nav-toggle { width: 30px; flex: 0 0 30px; justify-content: center; padding: 8px 0; font-size: 13px; color: #8d9bb3; }
+    .nav button.nav-toggle:hover { color: #e7edf7; }
     .nav button.nav-sub { padding: 8px 12px 8px 38px; font-size: 13px; }
     .field-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
     .field-tabs button { border: 1px solid var(--slate-200); border-radius: 999px; padding: 7px 14px; background: white; color: var(--navy-800); font-weight: 650; cursor: pointer; }
@@ -616,7 +620,7 @@
         <button data-view="contacts"><span class="nav-icon">♙</span>Contatos</button>
         <button data-view="companies"><span class="nav-icon">▦</span>Empresas</button>
         <button data-view="products"><span class="nav-icon">▤</span>Produtos</button>
-        <button data-view="deals"><span class="nav-icon">◇</span>Negócios <span class="nav-count" id="dealNavCount">0</span></button>
+        <div class="nav-row"><button data-view="deals"><span class="nav-icon">◇</span>Negócios <span class="nav-count" id="dealNavCount">0</span></button><button type="button" class="nav-toggle" id="pipelineNavToggle" data-action="toggle-pipeline-nav" aria-controls="pipelineNav" aria-expanded="true" aria-label="Recolher funis" hidden>▾</button></div>
         <div id="pipelineNav"></div>
         <button data-view="notifications"><span class="nav-icon">◉</span>Notificações <span class="nav-count" id="noticeNavCount">0</span></button>
         <div class="nav-label nav-module">Integrações</div>
@@ -1093,6 +1097,9 @@
     let dealPipeline = null;
     let dealPipelineError = '';
     const PIPELINE_STORAGE_KEY = 'smart-crm-pipeline';
+    const PIPELINE_NAV_COLLAPSED_KEY = 'smart-crm-pipeline-nav-collapsed';
+    let pipelineNavCollapsed = false;
+    try { pipelineNavCollapsed = localStorage.getItem(PIPELINE_NAV_COLLAPSED_KEY) === 'true'; } catch (_) { /* optional */ }
     let pipelineEditorDraft = null;
     let pipelineEditorDirty = false;
     let pipelineEditorSaving = false;
@@ -2924,11 +2931,30 @@
     function renderPipelineNav() {
       const holder = document.getElementById('pipelineNav');
       if (!holder) return;
-      if (!can('deals', 'read')) { holder.innerHTML = ''; return; }
+      if (!can('deals', 'read')) {
+        holder.innerHTML = '';
+        const hiddenToggle = document.getElementById('pipelineNavToggle');
+        if (hiddenToggle) hiddenToggle.hidden = true;
+        return;
+      }
       const inside = dealsMenuPipelines();
-      const subs = inside.length > 1 ? inside.map(pipeline => `<button class="nav-sub" data-view="deals" data-pipeline-nav="${escapeHTML(pipeline.id)}"><span class="nav-icon">›</span>${escapeHTML(pipeline.name)}</button>`).join('') : '';
+      const toggle = document.getElementById('pipelineNavToggle');
+      if (toggle) {
+        toggle.hidden = inside.length <= 1;
+        toggle.textContent = pipelineNavCollapsed ? '▸' : '▾';
+        toggle.setAttribute('aria-expanded', String(!pipelineNavCollapsed));
+        toggle.setAttribute('aria-label', pipelineNavCollapsed ? 'Expandir funis' : 'Recolher funis');
+        toggle.title = pipelineNavCollapsed ? 'Expandir funis' : 'Recolher funis';
+      }
+      const subs = inside.length > 1 && !pipelineNavCollapsed ? inside.map(pipeline => `<button class="nav-sub" data-view="deals" data-pipeline-nav="${escapeHTML(pipeline.id)}"><span class="nav-icon">›</span>${escapeHTML(pipeline.name)}</button>`).join('') : '';
       const tabs = menuTabPipelines().map(pipeline => `<button data-view="deals" data-pipeline-nav="${escapeHTML(pipeline.id)}"><span class="nav-icon">${escapeHTML(pipeline.menuIcon || PIPELINE_MENU_ICONS[0])}</span>${escapeHTML(pipeline.name)}</button>`).join('');
       holder.innerHTML = subs + tabs;
+    }
+    function togglePipelineNav() {
+      pipelineNavCollapsed = !pipelineNavCollapsed;
+      try { localStorage.setItem(PIPELINE_NAV_COLLAPSED_KEY, String(pipelineNavCollapsed)); } catch (_) { /* optional */ }
+      renderPipelineNav();
+      showView(activeView, false);
     }
     function navButtonActive(button, view) {
       if (button.dataset.view !== view) return false;
@@ -5853,6 +5879,7 @@
         return;
       }
       if (action === 'remove-metadata') { button.closest('[data-metadata-row]').remove(); return; }
+      if (action === 'toggle-pipeline-nav') { togglePipelineNav(); return; }
       if (action === 'confirm-bootstrap') { confirmBootstrap(); return; }
       if (action === 'open-bootstrap') { openBootstrapDialog(); return; }
       if (durableActions.has(action) && !requireWritableWorkspace()) return;
